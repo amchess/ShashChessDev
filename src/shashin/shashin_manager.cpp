@@ -219,29 +219,22 @@ const RootShashinState& ShashinManager::getState() const {
 
 // Fortress detection method
 bool ShashinManager::isFortress(const Position& pos) {
-    // Do not consider early positions as fortress positions.
-    if (pos.game_ply() < 30)
-        return false;
-
-    // 1. Pawn structure: no breakthrough is possible.
-    if (pos.has_pawn_breaks())
-        return false;
-
-    // 2. The defending king is cut off (or “restricted”) from penetrating.
-    if (!pos.is_king_cutoff(pos.side_to_move()))
-        return false;
-
-    // 3. The defender has waiting moves available so that it cannot be forced into zugzwang.
-    if (!pos.has_safe_waiting_moves())
-        return false;
-
-    // 4. Material imbalance typical for fortress positions:
-    int  whiteMaterial = pos.non_pawn_material(WHITE);
-    int  blackMaterial = pos.non_pawn_material(BLACK);
-    bool materialUnbalanced =
-      (whiteMaterial > blackMaterial + 400) || (blackMaterial > whiteMaterial + 400);
-
-    return materialUnbalanced;
+    if (!fortressCached)
+    {
+        // Do not consider early positions as fortress positions.
+        if (pos.game_ply() < 30)
+        {
+            fortressResult = false;
+        }
+        else
+        {
+            // Check all conditions in a single if statement to leverage short-circuit evaluation.
+            fortressResult = !pos.has_pawn_breaks() && pos.is_king_cutoff(pos.side_to_move())
+                          && pos.has_safe_waiting_moves();
+        }
+        fortressCached = true;
+    }
+    return fortressResult;
 }
 // Computes the static evaluation of a position
 Value ShashinManager::static_value(const Eval::NNUE::Networks&   networks,
@@ -251,39 +244,39 @@ Value ShashinManager::static_value(const Eval::NNUE::Networks&   networks,
                                    int                           optimism) {
     MoveList<LEGAL> legalMoves(rootPos);  // It creates a legal moves list
 
-    // Se il re è sotto scacco e non ci sono mosse legali, restituisci VALUE_MATE
+    // If the king is in check and there are no legal moves, return VALUE_MATE
     if (legalMoves.size() == 0 && rootPos.checkers())
     {
         return VALUE_MATE;
     }
 
-    // Se la posizione è una parità o il re non è sotto scacco e non ci sono mosse legali, restituisci VALUE_DRAW
+    // If the position is a draw or the king is not in check and there are no legal moves, return VALUE_DRAW
     if (ss->ply >= MAX_PLY || rootPos.is_draw(ss->ply) || legalMoves.size() == 0)
     {
         return VALUE_DRAW;
     }
 
-    // Valuta la posizione solo se non ci sono scacchi
+    // Evaluate the position only if there are no checks
     if (!rootPos.checkers())
     {
         return Eval::evaluate(networks, rootPos, refreshTable, optimism);
     }
 
-    // Se il re è sotto scacco, valuta le mosse legali
+    // If the king is in check, evaluate the legal moves
     Value bestValue = -VALUE_INFINITE;
     for (const auto& move : legalMoves)
     {
-        // Creazione di una nuova posizione applicando la mossa legale
+        // Create a new position by applying the legal move
         StateInfo stateInfo;
         rootPos.do_move(move, stateInfo);
 
-        // Valuta la nuova posizione
+        // Evaluate the new position
         Value value = -static_value(networks, refreshTable, rootPos, ss + 1, -optimism);
 
-        // Ripristina la posizione originale
+        // Restore the original position
         rootPos.undo_move(move);
 
-        // Aggiorna il miglior valore trovato
+        // Update the best value found
         bestValue = std::max(bestValue, value);
     }
 
@@ -318,36 +311,31 @@ bool ShashinManager::isSacrificialPosition(const Position& rootPos) {
 
 // Checks if there are pawns close to promotion
 bool ShashinManager::isPawnNearPromotion(const Position& rootPos) {
-    //We consider the advanced pawns (near promotion)
-    int advancedPawns = 0;
+    // We consider the advanced pawns (near promotion)
     for (Square s = SQ_A2; s <= SQ_H7; ++s)
     {
         Piece piece = rootPos.piece_on(s);
         if (type_of(piece) == PAWN)
         {
-            if (color_of(piece) == WHITE && rank_of(s) >= RANK_5)
-            {  //advanced white pawns
-                advancedPawns++;
-            }
-            else if (color_of(piece) == BLACK && rank_of(s) <= RANK_4)
-            {  //advanced black pawns
-                advancedPawns++;
+            Rank rank = rank_of(s);
+            if ((color_of(piece) == WHITE && rank >= RANK_5)
+                || (color_of(piece) == BLACK && rank <= RANK_4))
+            {
+                return true;  // Return true as soon as we find an advanced pawn
             }
         }
     }
-    return advancedPawns > 0;
+    return false;  // No advanced pawns found
 }
 
 
 // Static lookup table for Shashin ranges
 static const std::array<ShashinPosition, 101> initializeLookupTable() {
-    // Create the lookup table using a lambda
     std::array<ShashinPosition, 101> lookup{};
-    auto                             assignRange = [&](int start, int end, ShashinPosition pos) {
-        for (int i = start; i <= end; ++i)
-        {
-            lookup[i] = pos;
-        }
+
+    // Populate ranges using a lambda function
+    auto assignRange = [&](int start, int end, ShashinPosition pos) {
+        std::fill(lookup.begin() + start, lookup.begin() + end + 1, pos);
     };
 
     // Populate ranges

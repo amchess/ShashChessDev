@@ -25,8 +25,6 @@ class ShashinManager {
    public:
     explicit ShashinManager();
     ShashinPosition getResilientShashinRange(ShashinPosition range, int depth = 0);
-    // Fortress detection method
-    static bool isFortress(const Position& pos);
     // Manage state
     void             updateRootShashinState(Value score, const Position& rootPos, int depth);
     ShashinPosition  getShashinRange(Value value, const Position& rootPos);
@@ -36,6 +34,8 @@ class ShashinManager {
 
     ShashinPosition
     getInitialShashinRange(Position& rootPos, Value staticValue, const ShashinConfig& config);
+    // Fortress detection method
+    bool isFortress(const Position& pos);
     void  setStaticState(const Position& rootPos);
     bool  isSacrificialPosition(const Position& rootPos);
     bool  isPawnNearPromotion(const Position& rootPos);
@@ -104,6 +104,8 @@ class ShashinManager {
     RootShashinState state;
     bool highMaterial = false, kingDanger=false, pawnsNearPromotion = false;
     int allPiecesCount = 0, kingSafetyScore = 0;;
+    mutable bool fortressCached = false;
+    mutable bool fortressResult = false;
 };
 }  // namespace ShashChess
 #endif  // SHASHIN_MANAGER_H
