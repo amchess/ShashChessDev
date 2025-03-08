@@ -953,8 +953,9 @@ void Search::Worker::iterative_deepening() {
                 // we suppress this output and below pick a proven score/PV for this
                 // thread (from the previous iteration).
                 && !(threads.abortedSearch && is_loss(rootMoves[0].uciScore)))
+            {
                 main_manager()->pv(*this, threads, tt, rootDepth);
-
+            }
             if (threads.stop)
                 break;
         }
@@ -1092,7 +1093,21 @@ Value Search::Worker::search(
     constexpr bool PvNode   = nodeType != NonPV;
     constexpr bool rootNode = nodeType == Root;
     const bool     allNode  = !(PvNode || cutNode);
+    //From Shashin fortress begin
+    // Determine if we are in a fortress (note: use the root position!)
+    const RootShashinState& rootShashinState = g_shashinManager->getState();
+    if (g_shashinManager->isFortress(rootPos))
+    {
+        // Reduce the search depth if in a fortress, because deep searches may be “overconfident”
+        if (depth > 10)
+            depth -= 4;
 
+        // Also, if no progress has been made (say, 30 moves without breakthroughs),
+        // force a draw.
+        if (pos.no_progress_for(30))
+            return VALUE_DRAW;
+    }
+    //from Shashin fortress end
     // Dive into quiescence search when the depth reaches zero
     if (depth <= 0)
     {
