@@ -23,7 +23,7 @@ ShashinPosition ShashinManager::getResilientShashinRange(ShashinPosition range, 
     }
     return range;
 }
-bool ShashinManager::useMoveGenAndStep17CrystalLogic() const {
+bool ShashinManager::useMoveGenAndStep17CrystalLogic() const noexcept {
 
     if (isStrategical() && highMaterial && state.staticState.legalMoveCount >= 30)
     {
@@ -38,55 +38,57 @@ bool ShashinManager::useMoveGenAndStep17CrystalLogic() const {
     return false;
 }
 // Defense degrees
-bool ShashinManager::isTacticalReactive() const {
+bool ShashinManager::isTacticalReactive() const noexcept {
 
     return isInRanges(state.dynamicBase.currentRange, ShashinPosition::LOW_PETROSIAN);
 }
-bool ShashinManager::isTacticalDefensive() const {
+bool ShashinManager::isTacticalDefensive() const noexcept {
 
     return isInRanges(state.dynamicBase.currentRange, ShashinPosition::MIDDLE_LOW_PETROSIAN,
                       ShashinPosition::MIDDLE_PETROSIAN);
 }
 // Utility methods
-bool ShashinManager::isShashinStyle(std::initializer_list<ShashinPosition> positions) const {
+bool ShashinManager::isShashinStyle(
+  std::initializer_list<ShashinPosition> positions) const noexcept {
     return std::any_of(positions.begin(), positions.end(), [this](ShashinPosition pos) {
         return state.dynamicBase.currentRange == pos;
     });
 }
 //isTill begin
-bool ShashinManager::isTillCategory(ShashinPosition lowerBound, ShashinPosition upperBound) const {
+bool ShashinManager::isTillCategory(ShashinPosition lowerBound,
+                                    ShashinPosition upperBound) const noexcept {
     return !isInRanges(state.dynamicBase.currentRange, lowerBound, upperBound);
 }
 //isTill end
-bool ShashinManager::useCrystalFutilityPruningParent() const {
+bool ShashinManager::useCrystalFutilityPruningParent() const noexcept {
     return isTalTacticalHighMiddle() && isSimpleIntermediate() && !kingDanger
         && !isHighPieceDensity()
         && state.dynamicBase.currentDepth < 12;  // Applica il pruning solo a profondità più basse
 }
-bool ShashinManager::useCrystalFutilityPruningChild() const {
+bool ShashinManager::useCrystalFutilityPruningChild() const noexcept {
     return (isAggressive() && state.staticState.legalMoveCount >= 20)
         || (isTacticalReactive() && (state.staticState.legalMoveCount < 20 || highMaterial))
         || (isStrategical() && state.staticState.legalMoveCount >= 30);
 }
-bool ShashinManager::useCrystalNullMoveSearch() const {
+bool ShashinManager::useCrystalNullMoveSearch() const noexcept {
 
     return isInRange(ShashinPosition::HIGH_TAL) || (isAggressive() && highMaterial)
         || (isPassive() && state.staticState.legalMoveCount < 15);
 }
 // Simple intermediate positions: within bounds and low move count
-bool ShashinManager::isSimpleIntermediate() const {
+bool ShashinManager::isSimpleIntermediate() const noexcept {
     return isTillCategory(ShashinPosition::MIDDLE_PETROSIAN, ShashinPosition::MIDDLE_TAL)
         && state.staticState.legalMoveCount <= 20 && !kingDanger && !isHighPieceDensity()
         && state.dynamicBase.currentDepth < 8;
 }
 //for mcts begin
-bool ShashinManager::isMCTSApplicableByValue() const {
+bool ShashinManager::isMCTSApplicableByValue() const noexcept {
     // MCTS is applicable in specific Petrosian zones
     return isInRange(ShashinPosition::HIGH_PETROSIAN)
         || isInRange(ShashinPosition::MIDDLE_HIGH_PETROSIAN)
         || isInRange(ShashinPosition::MIDDLE_PETROSIAN);
 }
-bool ShashinManager::isMCTSExplorationApplicable() const {
+bool ShashinManager::isMCTSExplorationApplicable() const noexcept {
 
     size_t legalMoveCount = state.staticState.legalMoveCount;
     return ((isInRange(ShashinPosition::MIDDLE_HIGH_PETROSIAN)
@@ -95,41 +97,43 @@ bool ShashinManager::isMCTSExplorationApplicable() const {
         || isInRange(ShashinPosition::CAPABLANCA) || isPetrosian();
 }
 //for mcts end
-bool ShashinManager::isComplexPosition() const {
+bool ShashinManager::isComplexPosition() const noexcept {
     size_t legalMoveCount = state.staticState.legalMoveCount;
     return (legalMoveCount >= 25 && highMaterial) || kingDanger || pawnsNearPromotion;
 }
-bool ShashinManager::isHighPieceDensityCapablancaPosition() const {
+bool ShashinManager::isHighPieceDensityCapablancaPosition() const noexcept {
     return isInRange(ShashinPosition::CAPABLANCA) && isHighPieceDensity();
 }
 // Determines whether to allow Crystal's ProbCut logic (~4 Elo improvement)
 // This logic prunes the search tree earlier when the position is non-critical.
-bool ShashinManager::allowCrystalProbCut() const {
+bool ShashinManager::allowCrystalProbCut() const noexcept {
 
     return (isTalTacticalHighMiddle() && state.staticState.legalMoveCount < 30)
         || (isStrategical() && highMaterial);
 }
-bool ShashinManager::isTacticalReduction() const {
+bool ShashinManager::isTacticalReduction() const noexcept {
     return (isAggressive() && (highMaterial || !isHighPieceDensity()));
 }
 // Determines whether to skip Step 10: Internal Iterative Reductions (~9 Elo)
 // This method adjusts the logic based on Shashin's position classification
 // and the complexity of the current position.
-bool ShashinManager::avoidStep10() const {
+bool ShashinManager::avoidStep10() const noexcept {
 
     return (isPassive() && state.staticState.legalMoveCount < 20)
         ||                                  // Skip for passive zones with low activity
            isStrategical() ||               // Skip for strategic zones
            (isAggressive() && kingDanger);  // Skip for aggressive zones with king danger
 }
-bool ShashinManager::isTalTacticalHighMiddle() const {
+bool ShashinManager::isTalTacticalHighMiddle() const noexcept {
     return isInRange(ShashinPosition::HIGH_TAL) || isInRange(ShashinPosition::MIDDLE_HIGH_TAL);
 }
-bool ShashinManager::isKingExposed() const {
+bool ShashinManager::isKingExposed() const noexcept {
     return kingSafetyScore < -30;  // Arbitrary threeshold to define in danger king
 }
-bool ShashinManager::isLowActivity() const { return state.staticState.legalMoveCount < 20; }
-bool ShashinManager::useEarlyPruning() const {
+bool ShashinManager::isLowActivity() const noexcept {
+    return state.staticState.legalMoveCount < 20;
+}
+bool ShashinManager::useEarlyPruning() const noexcept {
     // No pruning beyond depth 8
     if (state.dynamicBase.currentDepth > 6)
         return false;
@@ -144,12 +148,12 @@ bool ShashinManager::useEarlyPruning() const {
     return false;  // Default: no pruning
 }
 //Tactical zones
-bool ShashinManager::isTal() const {
+bool ShashinManager::isTal() const noexcept {
     return isShashinStyle(
       {ShashinPosition::LOW_TAL, ShashinPosition::MIDDLE_TAL, ShashinPosition::HIGH_TAL});
 }
 // Attack degrees
-bool ShashinManager::isTacticalInitiative() const {
+bool ShashinManager::isTacticalInitiative() const noexcept {
     return isInRanges(state.dynamicBase.currentRange, ShashinPosition::LOW_TAL);
 }
 void ShashinManager::initDynamicBaseState(Value                currentValue,
@@ -209,16 +213,16 @@ void ShashinManager::setDynamicDerivedState() {
     derived.isHighTal = isInRange(ShashinPosition::HIGH_TAL);
 }
 // Getter and Setter for depth
-void ShashinManager::setDepth(int depth) { state.dynamicBase.currentDepth = depth; }
-int  ShashinManager::getDepth() const { return state.dynamicBase.currentDepth; }
+void ShashinManager::setDepth(int depth) noexcept { state.dynamicBase.currentDepth = depth; }
+int  ShashinManager::getDepth() const noexcept { return state.dynamicBase.currentDepth; }
 
 // Returns a safe copy of the current state
-const RootShashinState& ShashinManager::getState() const {
+const RootShashinState& ShashinManager::getState() const noexcept {
     return state;
 }  // It returns a safe state copy
 
 // Fortress detection method
-bool ShashinManager::isFortress(const Position& pos) {
+bool ShashinManager::isFortress(const Position& pos) const {
     if (!fortressCached)
     {
         // Do not consider early positions as fortress positions.
@@ -297,7 +301,7 @@ void ShashinManager::setStaticState(const Position& rootPos) {
 }
 
 // Determines if the position is highly sacrificial
-bool ShashinManager::isSacrificialPosition(const Position& rootPos) {
+bool ShashinManager::isSacrificialPosition(const Position& rootPos) const {
     MoveList<LEGAL> legalMoves(rootPos);
     for (const auto& move : legalMoves)
     {
@@ -310,7 +314,7 @@ bool ShashinManager::isSacrificialPosition(const Position& rootPos) {
 }
 
 // Checks if there are pawns close to promotion
-bool ShashinManager::isPawnNearPromotion(const Position& rootPos) {
+bool ShashinManager::isPawnNearPromotion(const Position& rootPos) const {
     // We consider the advanced pawns (near promotion)
     for (Square s = SQ_A2; s <= SQ_H7; ++s)
     {
