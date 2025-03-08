@@ -1584,12 +1584,24 @@ Value Search::Worker::search(
     {
         // Step 8. Futility pruning: child node
         // The depth condition is important for mate finding.
-        if (!ss->ttPv && depth < 14
-            && eval - futility_margin(depth, cutNode && !ss->ttHit, improving, opponentWorsening)
-                   - (ss - 1)->statScore / 326 + 37 - std::abs(correctionValue) / 132821
-                 >= beta
-            && eval >= beta && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval))
+        // from Crystal-Shashin begin
+        int crystalDepthStep8 =
+          9 - 2 * ((ss - 1)->mainLine || (ss - 1)->secondaryLine || (ttData.move && !ttCapture));
+        bool commonCrystalFutilityPruningChildConditions =
+          !ss->ttPv
+          && eval - futility_margin(depth, cutNode && !ss->ttHit, improving, opponentWorsening)
+                 - (ss - 1)->statScore / 326 + 37 - std::abs(correctionValue) / 132821
+               >= beta;
+        bool useCrystalFutilityPruningChild = g_shashinManager->useCrystalFutilityPruningChild();
+        if (!rootShashinState.staticState.isSacrificial && !rootShashinState.staticState.kingExposed
+            && commonCrystalFutilityPruningChildConditions
+            && ((useCrystalFutilityPruningChild && depth < crystalDepthStep8 && !kingDanger
+                 && !excludedMove && !gameCycle && !(thisThread->nmpGuard && nullParity))
+                || (!useCrystalFutilityPruningChild && eval >= beta && (!ttData.move || ttCapture)
+                    && !is_loss(beta) && !is_win(eval) && depth < 14)))
+        {
             return beta + (eval - beta) / 3;
+        }
 
         // Step 9. Null move search with verification search
         if (cutNode && (ss - 1)->currentMove != Move::null() && eval >= beta
