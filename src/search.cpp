@@ -398,7 +398,6 @@ void Search::Worker::ensure_network_replicated() {
 }
 
 void Search::Worker::start_searching() {
-
     // Non-main threads go directly to iterative_deepening()
     if (!is_mainthread())
     {
@@ -910,15 +909,22 @@ void Search::Worker::iterative_deepening() {
                 // at nodes > 10M (rather than depth N, which can be reached quickly)
                 if (mainThread && multiPV == 1 && (bestValue <= alpha || bestValue >= beta)
                     && nodes > 10000000)
+                {
                     main_manager()->pv(*this, threads, tt, rootDepth);
-
+                }
                 // In case of failing low/high increase aspiration window and re-search,
                 // otherwise exit the loop.
                 if (bestValue <= alpha)
                 {
                     beta  = (alpha + beta) / 2;
                     alpha = std::max(bestValue - delta, -VALUE_INFINITE);
-
+                    //from shashin begin
+                    // If the position is sacrificial, we extend the search windows
+                    if (rootShashinState.staticState.isSacrificial)
+                    {
+                        delta += delta / 2;  // It avoids aggressive cuts
+                    }
+                    //from shashin end
                     failedHighCnt = 0;
                     if (mainThread)
                         mainThread->stopOnPonderhit = false;
