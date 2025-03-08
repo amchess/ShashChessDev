@@ -81,8 +81,8 @@ class ShashinManager {
         return ((state.dynamicBase.currentRange == ShashinPosition::CAPABLANCA) && (!kingDanger));
     }
     inline bool isPassive() const {
-    return isInRanges(state.dynamicBase.currentRange, ShashinPosition::MIDDLE_HIGH_PETROSIAN,
-                        ShashinPosition::HIGH_PETROSIAN);
+        return isInRanges(state.dynamicBase.currentRange, ShashinPosition::MIDDLE_HIGH_PETROSIAN,
+                ShashinPosition::HIGH_PETROSIAN);
     }
     // Tactical zones
     inline bool isTactical() const { return isTal() || isPetrosian() || kingDanger; }
@@ -95,7 +95,7 @@ class ShashinManager {
     }
     inline bool isAggressive() const {
         return isInRanges(state.dynamicBase.currentRange, ShashinPosition::MIDDLE_LOW_TAL,
-                            ShashinPosition::MIDDLE_TAL);
+                ShashinPosition::MIDDLE_TAL);
     }
     //Utility methods
     inline bool isInRange(ShashinPosition position) const { return state.dynamicBase.currentRange == position; }
