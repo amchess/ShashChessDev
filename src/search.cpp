@@ -1270,12 +1270,12 @@ Value Search::Worker::search(
 
     if (rootShashinState.dynamicDerived.isStrategical)
     {
-        depthAdjustment = 2;  // ?? Prefer deeper stored values for long-term plans
+        depthAdjustment = 2;  // Prefer deeper stored values for long-term plans
     }
     else if (rootShashinState.dynamicDerived.isAggressive)
     {
-        depthAdjustment = -1;    // ?? Slightly more speculative lookups
-        ignoreTTBound   = true;  // ?? Avoid relying too much on stored TT bounds
+        depthAdjustment = -1;    // Slightly more speculative lookups
+        ignoreTTBound   = true;  // Avoid relying too much on stored TT bounds
     }
     // end Shashin influence on TT behavior
     // At this point, if excluded, skip straight to step 6, static eval. However,
@@ -1560,7 +1560,22 @@ Value Search::Worker::search(
     // Step 7. Razoring
     // If eval is really low, skip search entirely and return the qsearch value.
     // For PvNodes, we must have a guard against mates being returned.
-    if (!PvNode && eval < alpha - 446 - 303 * depth * depth)
+    // from shashin-crystal begin
+    // Apply Razoring for positions that meet the base condition, adjusted for Shashin zones
+    // Avoid Razoring in highly dynamic situations
+
+    baseRazoringMargin = 446 + 303 * depth * depth;
+    if (rootShashinState.dynamicDerived.isAggressive)
+        baseRazoringMargin -= 50;
+    else if (rootShashinState.dynamicDerived.isStrategical
+             || rootShashinState.dynamicDerived.isTacticalReactive)
+        baseRazoringMargin += 30;
+    if (!PvNode && eval < alpha - baseRazoringMargin
+        && !(rootShashinState.dynamicDerived.isAggressive
+             && rootShashinState.staticState.legalMoveCount >= 30)
+        && (g_shashinManager->isTacticalInitiative()
+            || rootShashinState.dynamicDerived.isTacticalReactive
+            || rootShashinState.dynamicDerived.isStrategical))
         return qsearch<NonPV>(pos, ss, alpha, beta);
 
     // Step 8. Futility pruning: child node
