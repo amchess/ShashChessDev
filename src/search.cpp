@@ -1264,13 +1264,36 @@ Value Search::Worker::search(
     ss->ttPv     = excludedMove ? ss->ttPv : PvNode || (ttHit && ttData.is_pv);
     ttCapture    = ttData.move && pos.capture_stage(ttData.move);
 
+    // Begin Shashin influence on TT behavior
+    int  depthAdjustment = 0;
+    bool ignoreTTBound   = false;
+
+    if (rootShashinState.dynamicDerived.isStrategical)
+    {
+        depthAdjustment = 2;  // ?? Prefer deeper stored values for long-term plans
+    }
+    else if (rootShashinState.dynamicDerived.isAggressive)
+    {
+        depthAdjustment = -1;    // ?? Slightly more speculative lookups
+        ignoreTTBound   = true;  // ?? Avoid relying too much on stored TT bounds
+    }
+    // end Shashin influence on TT behavior
     // At this point, if excluded, skip straight to step 6, static eval. However,
     // to save indentation, we list the condition in all code between here and there.
-
     // At non-PV nodes we check for an early TT cutoff
-    if (!PvNode && !excludedMove && ttData.depth > depth - (ttData.value <= beta)
-        && is_valid(ttData.value)  // Can happen when !ttHit or when access race in probe()
+    if (!PvNode
+        && !excludedMove
+        // shashin-crystal begin
+        && (!gameCycle
+            || (!rootShashinState.dynamicDerived.isStrategical
+                || rootShashinState.staticState.legalMoveCount < 30))
+        && (!(ss - 1)->mainLine || g_shashinManager->isTactical())
+        //shashin-crystal end
+        && ttData.depth
+             > depth - (ttData.value < beta) + depthAdjustment  // Adjust depth influence by Shashin
+        && is_valid(ttData.value)
         && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER))
+        && !ignoreTTBound  // Avoid early TT cutoffs in tactical positions
         && (cutNode == (ttData.value >= beta) || (depth > 9 || (rootDepth > 10 && depth > 5))))
     {
         // If ttMove is quiet, update move sorting heuristics on TT hit
@@ -1340,7 +1363,14 @@ Value Search::Worker::search(
             // to save indentation, we list the condition in all code between here and there.
 
             // At non-PV nodes we check for an early Global Learning Table cutoff
-            if (!PvNode && updatedLearning && learningMove->depth > depth - (expTTValue <= beta)
+            if (!PvNode &&
+                // shashin-crystal begin
+                (!gameCycle
+                 || (!rootShashinState.dynamicDerived.isStrategical
+                     || rootShashinState.staticState.legalMoveCount < 30))
+                && (!(ss - 1)->mainLine || g_shashinManager->isTactical()) &&
+                //shashin-crystal end
+                updatedLearning && learningMove->depth > depth - (expTTValue <= beta)
                 && is_valid(expTTValue)
                 && (cutNode == (expTTValue >= beta)
                     || (depth > 9
