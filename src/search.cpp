@@ -1117,15 +1117,24 @@ Value Search::Worker::search(
 
     // Limit the depth if extensions made it too large
     depth = std::min(depth, MAX_PLY - 1);
-
+    //from crystal-shashin begin
+    // Enhanced logic for draw repetitions
+    // Allow pruning in strategic or intermediate zones only at low depth
     // Check if we have an upcoming move that draws by repetition
     if (!rootNode && alpha < VALUE_DRAW && pos.upcoming_repetition(ss->ply))
     {
-        alpha = value_draw(this->nodes);
-        if (alpha >= beta)
-            return alpha;
+        if ((rootShashinState.dynamicDerived.isStrategical
+             || (g_shashinManager->isSimpleIntermediate()))
+            && ss->ply < std::min(8, depth))
+        {
+            alpha = value_draw(this->nodes);
+            if (alpha >= beta)
+            {
+                return alpha;  // Cut-off due to draw repetition
+            }
+        }
     }
-
+    //from crystal-shashin end
     assert(-VALUE_INFINITE <= alpha && alpha < beta && beta <= VALUE_INFINITE);
     assert(PvNode || (alpha == beta - 1));
     assert(0 < depth && depth < MAX_PLY);
