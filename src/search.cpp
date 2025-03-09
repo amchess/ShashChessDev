@@ -1584,12 +1584,25 @@ Value Search::Worker::search(
     {
         // Step 8. Futility pruning: child node
         // The depth condition is important for mate finding.
-        if (!ss->ttPv && depth < 14
-            && eval - futility_margin(depth, cutNode && !ss->ttHit, improving, opponentWorsening)
-                   - (ss - 1)->statScore / 326 + 37 - std::abs(correctionValue) / 132821
-                 >= beta
-            && eval >= beta && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval))
+        // from Crystal-Shashin begin
+        int crystalDepthStep8 =
+          9 - 2 * ((ss - 1)->mainLine || (ss - 1)->secondaryLine || (ttData.move && !ttCapture));
+        bool commonCrystalFutilityPruningChildConditions =
+          !ss->ttPv
+          && eval - futility_margin(depth, cutNode && !ss->ttHit, improving, opponentWorsening)
+                 - (ss - 1)->statScore / 326 + 37 - std::abs(correctionValue) / 132821
+               >= beta;
+        bool useCrystalFutilityPruningChild = g_shashinManager->useCrystalFutilityPruningChild();
+        if (!rootShashinState.staticState.isSacrificial && !rootShashinState.staticState.kingExposed
+            && commonCrystalFutilityPruningChildConditions
+            && ((useCrystalFutilityPruningChild && depth < crystalDepthStep8 && !kingDanger
+                 && !excludedMove && !gameCycle && !(thisThread->nmpGuard && nullParity))
+                || (!useCrystalFutilityPruningChild && eval >= beta && (!ttData.move || ttCapture)
+                    && !is_loss(beta) && !is_win(eval) && depth < 14)))
+        {
             return beta + (eval - beta) / 3;
+        }
+        //from Crystal-Shashin end
 
         // Step 9. Null move search with verification search
         if (cutNode && (ss - 1)->currentMove != Move::null() && eval >= beta
@@ -1761,7 +1774,19 @@ moves_loop:  // When in check, search starts here
         capture    = pos.capture_stage(move);
         movedPiece = pos.moved_piece(move);
         givesCheck = pos.gives_check(move);
-
+        // from Crystal-Shashin begin
+        isMate = false;
+        // This tracks all of our possible responses to our opponent's best moves outside of the PV.
+        // The reasoning here is that while we look for flaws in the PV, we must otherwise find an improvement
+        // in a secondary root move in order to change the PV. Such an improvement must occur on the path of
+        // our opponent's best moves or else it is meaningless.
+        ss->secondaryLine =
+          ((rootNode && moveCount > 1)
+           || (!ourMove && (ss - 1)->secondaryLine && !excludedMove && moveCount == 1)
+           || (ourMove && (ss - 1)->secondaryLine));
+        ss->mainLine = ((rootNode && moveCount == 1) || (!ourMove && (ss - 1)->mainLine)
+                        || (ourMove && (ss - 1)->mainLine && moveCount == 1 && !excludedMove));
+        // from Crystal-Shashin end
         // Calculate new depth for this move
         newDepth = depth - 1;
 
