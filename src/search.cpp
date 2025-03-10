@@ -1153,7 +1153,7 @@ Value Search::Worker::search(
     bool givesCheck, improving = false, priorCapture, opponentWorsening = false,
                      expTTHit = false;                        //shashin
     bool isMate, gameCycle;                                   // from Crystal-Shashin
-    bool capture, ttCapture, kingDanger, nullParity = false;  // from Crystal
+    bool capture, ttCapture, kingDanger, quietKingSafe=false,nullParity = false;  // from Crystal
     int  priorReduction = (ss - 1)->reduction;
     (ss - 1)->reduction = 0;
     Piece movedPiece;
@@ -1594,8 +1594,8 @@ Value Search::Worker::search(
         ourMove                             = !(ss->ply & 1);
         nullParity                          = (ourMove == thisThread->nmpSide);
         kingDanger                          = !ourMove && pos.king_danger(us);
-        if (!rootShashinState.staticState.isSacrificial && !rootShashinState.staticState.kingExposed
-            && commonCrystalFutilityPruningChildConditions
+        quietKingSafe              = !rootShashinState.staticState.isSacrificial && !rootShashinState.staticState.kingExposed;
+        if (quietKingSafe && commonCrystalFutilityPruningChildConditions
             && ((useCrystalFutilityPruningChild && depth < crystalDepthStep8 && !kingDanger
                  && !excludedMove && !gameCycle && !(thisThread->nmpGuard && nullParity))
                 || (!useCrystalFutilityPruningChild && eval >= beta && (!ttData.move || ttCapture)
@@ -1609,7 +1609,7 @@ Value Search::Worker::search(
         // If the position is critical (kingDanger or sacrificial), we reduce the null move search aggressivity.
         // Optimized the pruning logi based on the positional Shashin zones.
         int  nullThreshold = beta - 21 * depth + 455 - 60 * improving;
-        bool positionSafe  = !kingDanger && !rootShashinState.staticState.isSacrificial;
+        bool positionSafe  = !kingDanger && quietKingSafe;
         bool allowNullMove = (ss - 1)->currentMove != Move::null() && eval >= beta
                           && pos.non_pawn_material(us) && ss->ply >= thisThread->nmpMinPly
                           && !is_loss(beta);
