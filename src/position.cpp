@@ -2025,9 +2025,14 @@ bool Position::is_ok_piece(Piece p) const {
     return p >= W_PAWN && p <= B_KING;  // Oppure: return p != NO_PIECE;
 }
 bool Position::is_sacrifice(Move m) const {
-    Piece moved    = moved_piece(m);
+    Piece moved = moved_piece(m);
     Piece captured = captured_piece();
-    return is_ok_piece(moved) && PieceValue[moved] > (captured == NO_PIECE ? 0 : PieceValue[captured]);
+
+    // Aggiungi un controllo per assicurarti che 'moved' sia valido
+    if (!is_ok_piece(moved) ||!is_ok_piece(captured)) {
+        return false;
+    }
+    return PieceValue[moved] > (captured == NO_PIECE ? 0 : PieceValue[captured]);
 }
 Bitboard Position::pawn_attacks(Color c, Square s) const { return pawn_attacks_bb(c, s); }
 
@@ -2090,8 +2095,7 @@ bool Position::is_tempo_loss(Move m) const {
 bool Position::has_safe_waiting_moves() const {
     MoveList<LEGAL> moves(*this);
 
-    for (const auto& m : mo
-ves)
+    for (const auto& m : moves)
     {
         if (!capture_stage(m) && !gives_check(m) && !is_tempo_loss(m))
         {
