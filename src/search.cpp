@@ -1672,13 +1672,43 @@ Value Search::Worker::search(
         }
         // from Crystal-Shashin end
         improving |= ss->staticEval >= beta + 97;
-
         // Step 10. Internal iterative reductions
-        // For PV nodes without a ttMove as well as for deep enough cutNodes, we decrease depth.
-        // (* Scaler) Especially if they make IIR more aggressive.
-        if (((PvNode || cutNode) && depth >= 7 - 3 * PvNode) && !ttData.move)
-            depth--;
+        // We reduce the depth in some cases, taking into account the nature of the position.
+        if (!g_shashinManager->avoidStep10() && quietKingSafe)
+        {
+            // If we are in a PV without a move in TT or in a deep cutNode, reduce the depth.
+            if (((PvNode || cutNode) && depth >= 7 - 3 * PvNode) && !ttData.move)
+            {
+                // If the king is exposed or the position is sacrificial, reduce less.
+                if (!quietKingSafe)
+                    depth = std::max(1, depth - 1);
+                else
+                    depth--;  // Standard reduction
+            }
 
+            // In cutNodes with a move in TT and bound UPPER → standard reduction
+            if (cutNode && depth >= 7 && ttData.move && ttData.bound == BOUND_UPPER)
+            {
+                if (rootShashinState.dynamicDerived.isAggressive
+                    || rootShashinState.dynamicDerived.isTacticalReactive)
+                {
+                    depth = std::max(1, depth - 1);  // Less reduction in tactical positions
+                }
+                else if (rootShashinState.dynamicDerived.isStrategical)
+                {
+                    depth--;  // More reduction in strategic positions (avoid unnecessary deep searches)
+                }
+                else if (quietKingSafe)
+                {
+                    depth = std::max(1, depth - 1);  // If the king is exposed, less reduction
+                }
+                else
+                {
+                    depth -= 1;  // Standard reduction
+                }
+            }
+        }
+        // from Crystal-Shashin end
         // Step 11. ProbCut
         // If we have a good enough capture (or queen promotion) and a reduced search
         // returns a value much above beta, we can (almost) safely prune the previous move.
