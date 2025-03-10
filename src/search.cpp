@@ -1151,9 +1151,9 @@ Value Search::Worker::search(
     Value bestValue, value = VALUE_NONE, eval = VALUE_NONE, maxValue, expTTValue = VALUE_NONE,
                      probCutBeta = VALUE_NONE;  // from Kelly
     bool givesCheck, improving = false, priorCapture, opponentWorsening = false,
-                     expTTHit = false;                        //shashin
-    bool isMate, gameCycle;                                   // from Crystal-Shashin
-    bool capture, ttCapture, kingDanger, quietKingSafe=false,nullParity = false;  // from Crystal
+                     expTTHit = false;  //shashin
+    bool isMate, gameCycle;             // from Crystal-Shashin
+    bool capture, ttCapture, kingDanger, quietKingSafe = false, nullParity = false;  // from Crystal
     int  priorReduction = (ss - 1)->reduction;
     (ss - 1)->reduction = 0;
     Piece movedPiece;
@@ -1594,7 +1594,8 @@ Value Search::Worker::search(
         ourMove                             = !(ss->ply & 1);
         nullParity                          = (ourMove == thisThread->nmpSide);
         kingDanger                          = !ourMove && pos.king_danger(us);
-        quietKingSafe              = !rootShashinState.staticState.isSacrificial && !rootShashinState.staticState.kingExposed;
+        quietKingSafe =
+          !rootShashinState.staticState.isSacrificial && !rootShashinState.staticState.kingExposed;
         if (quietKingSafe && commonCrystalFutilityPruningChildConditions
             && ((useCrystalFutilityPruningChild && depth < crystalDepthStep8 && !kingDanger
                  && !excludedMove && !gameCycle && !(thisThread->nmpGuard && nullParity))
@@ -1603,27 +1604,38 @@ Value Search::Worker::search(
         {
             return beta + (eval - beta) / 3;
         }
-		//from Crystal-Shashin end
-		// Step 9. Null move search with verification search
-		// from Crystal Shashin begin
-		// If the position is critical (kingDanger or sacrificial), we reduce the null move search aggressivity.
-		// Optimized the pruning logic based on the positional Shashin zones.
-		int  nullThreshold        = beta - 21 * depth + 455 - 60 * improving;
+        //from Crystal-Shashin end
+        // Step 9. Null move search with verification search
+        // from Crystal Shashin begin
+        // If the position is critical (kingDanger or sacrificial), we reduce the null move search aggressivity.
+        // Optimized the pruning logic based on the positional Shashin zones.
+        int  nullThreshold        = beta - 21 * depth + 455 - 60 * improving;
         bool useNullMoveByShashin = g_shashinManager->useCrystalNullMoveSearch();
-        bool positionSafe  = !kingDanger && quietKingSafe;
-        bool allowNullMove = (ss - 1)->currentMove != Move::null() && eval >= beta
+        bool positionSafe         = !kingDanger && quietKingSafe;
+        bool allowNullMove        = (ss - 1)->currentMove != Move::null() && eval >= beta
                           && pos.non_pawn_material(us) && ss->ply >= thisThread->nmpMinPly
                           && !is_loss(beta);
-	    bool useShashinLogic = useNullMoveByShashin && !thisThread->nmpGuard && !gameCycle
-	                         && eval >= ss->staticEval && positionSafe
-	                         && (rootDepth < 11 || ourMove || MoveList<LEGAL>(pos).size() > 5);
+        bool useShashinLogic = useNullMoveByShashin && !thisThread->nmpGuard && !gameCycle
+                            && eval >= ss->staticEval && positionSafe
+                            && (rootDepth < 11 || ourMove || MoveList<LEGAL>(pos).size() > 5);
         if (cutNode && ss->staticEval >= nullThreshold && !excludedMove && !disableNMAndPC
             && positionSafe && (allowNullMove || useShashinLogic))
         {
             assert(eval - beta >= 0);
             thisThread->nmpSide = ourMove;  // from shashin Crystal
-            // Null move dynamic reduction based on depth and eval
-            Depth R = std::min(int(eval - beta) / 237, 6) + depth / 3 + 5;
+            // Optimized R reduction computationR ottimizzato
+            int nullReductionAdjustment = (rootShashinState.dynamicDerived.isStrategical ? 1 : 0)
+                                        - (rootShashinState.dynamicDerived.isAggressive
+                                               || rootShashinState.dynamicDerived.isTacticalReactive
+                                             ? 2
+                                             : 0)
+                                        - (!positionSafe ? 2 : 0);
+
+            Depth R =
+              std::clamp((eval - beta) / 237 + depth / 3 + 5 + nullReductionAdjustment, 3, 8);
+
+            if (!ourMove && (ss - 1)->secondaryLine && useNullMoveByShashin)
+                R = std::min(R, 8);
 
             ss->currentMove         = Move::null();
             ss->continuationHistory = &thisThread->continuationHistory[0][0][NO_PIECE][0];
@@ -1635,25 +1647,27 @@ Value Search::Worker::search(
             Value nullValue      = -search<NonPV>(pos, ss + 1, -beta, -beta + 1, depth - R, false);
             thisThread->nmpGuard = false;
             pos.undo_null_move();
-
-            // Do not return unproven mate or TB scores
-            if (nullValue >= beta && !is_win(nullValue))
+            if (nullValue >= beta && (!is_win(nullValue) || useNullMoveByShashin))
             {
-                if (thisThread->nmpMinPly || depth < 16)
-                    return nullValue;
+                if (!useNullMoveByShashin)
+                {
+                    if (thisThread->nmpMinPly || depth < 16)
+                        return nullValue;
+                    assert(!thisThread->nmpMinPly);  // Recursive verification is not allowed
+                    thisThread->nmpMinPly = ss->ply + 3 * (depth - R) / 4;
+                }
 
-                assert(!thisThread->nmpMinPly);  // Recursive verification is not allowed
-
-                // Do verification search at high depths, with null move pruning disabled
-                // until ply exceeds nmpMinPly.
-                thisThread->nmpMinPly = ss->ply + 3 * (depth - R) / 4;
                 thisThread->nmpGuardV = true;
                 Value v               = search<NonPV>(pos, ss, beta - 1, beta, depth - R, false);
                 thisThread->nmpGuardV = false;
-                thisThread->nmpMinPly = 0;
+
+                if (!useNullMoveByShashin)
+                    thisThread->nmpMinPly = 0;
 
                 if (v >= beta)
-                    return nullValue;
+                    return (!useNullMoveByShashin)
+                           ? nullValue
+                           : (is_win(v) ? v : std::min(nullValue, VALUE_MATE_IN_MAX_PLY));
             }
         }
         // from Crystal-Shashin end
