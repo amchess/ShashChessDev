@@ -1603,14 +1603,19 @@ Value Search::Worker::search(
             return beta + (eval - beta) / 3;
         }
         //from Crystal-Shashin end
-
         // Step 9. Null move search with verification search
-        if (cutNode && (ss - 1)->currentMove != Move::null() && eval >= beta
-            && ss->staticEval >= beta - 21 * depth + 455 - 60 * improving && !excludedMove
-            && pos.non_pawn_material(us) && ss->ply >= thisThread->nmpMinPly && !is_loss(beta))
+        // from Crystal Shashin begin
+        // If the position is critical (kingDanger or sacrificial), we reduce the null move search aggressivity.
+        // Optimized the pruning logi based on the positional Shashin zones.
+        int  nullThreshold = beta - 21 * depth + 455 - 60 * improving;
+        bool allowNullMove = (ss - 1)->currentMove != Move::null() && eval >= beta
+                          && pos.non_pawn_material(us) && ss->ply >= thisThread->nmpMinPly
+                          && !is_loss(beta);
+        if (cutNode && ss->staticEval >= nullThreshold && !excludedMove && !disableNMAndPC
+            && allowNullMove)
         {
             assert(eval - beta >= 0);
-
+            thisThread->nmpSide = ourMove;  // from shashin Crystal
             // Null move dynamic reduction based on depth and eval
             Depth R = std::min(int(eval - beta) / 237, 6) + depth / 3 + 5;
 
@@ -1620,9 +1625,9 @@ Value Search::Worker::search(
               &thisThread->continuationCorrectionHistory[NO_PIECE][0];
 
             pos.do_null_move(st, tt);
-
-            Value nullValue = -search<NonPV>(pos, ss + 1, -beta, -beta + 1, depth - R, false);
-
+            thisThread->nmpGuard = true;
+            Value nullValue      = -search<NonPV>(pos, ss + 1, -beta, -beta + 1, depth - R, false);
+            thisThread->nmpGuard = false;
             pos.undo_null_move();
 
             // Do not return unproven mate or TB scores
@@ -1636,9 +1641,9 @@ Value Search::Worker::search(
                 // Do verification search at high depths, with null move pruning disabled
                 // until ply exceeds nmpMinPly.
                 thisThread->nmpMinPly = ss->ply + 3 * (depth - R) / 4;
-
-                Value v = search<NonPV>(pos, ss, beta - 1, beta, depth - R, false);
-
+                thisThread->nmpGuardV = true;
+                Value v               = search<NonPV>(pos, ss, beta - 1, beta, depth - R, false);
+                thisThread->nmpGuardV = false;
                 thisThread->nmpMinPly = 0;
 
                 if (v >= beta)
