@@ -1710,19 +1710,29 @@ Value Search::Worker::search(
         }
         // from Crystal-Shashin end
         // Step 11. ProbCut
-        // If we have a good enough capture (or queen promotion) and a reduced search
-        // returns a value much above beta, we can (almost) safely prune the previous move.
-        probCutBeta = beta + 187 - 55 * improving;
-        if (depth >= 3
-            && !is_decisive(beta)
-            // If value from transposition table is lower than probCutBeta, don't attempt
-            // probCut there and in further interactions with transposition table cutoff
-            // depth is set to depth - 3 because probCut search has depth set to depth - 4
-            // but we also do a move before it. So effective depth is equal to depth - 3.
-            && !(is_valid(ttData.value) && ttData.value < probCutBeta))
+        //from shashin begin
+        // If we have a strong capture or promotion and the reduced search
+        // returns a value far above beta, we can (almost) safely prune the branch.
+
+        // Dynamic adjustment based on the position
+        int adjustment = 0;
+
+        if (rootShashinState.dynamicDerived.isAggressive
+            || rootShashinState.dynamicDerived.isTacticalReactive)
+            adjustment += 25;  // Less pruning in tactical positions
+        else if (rootShashinState.dynamicDerived.isStrategical)
+            adjustment -= 25;  // More pruning in strategic positions
+
+        probCutBeta = beta + 187 - 55 * improving + adjustment;
+
+        // Avoid ProbCut if the position is sacrificial or with an exposed king
+        bool isProbCutSafe = !disableNMAndPC && depth >= 3 && !is_decisive(beta)
+                          && !(is_valid(ttData.value) && ttData.value < probCutBeta)
+                          && !rootShashinState.staticState.isSacrificial
+                          && !rootShashinState.staticState.kingExposed;
+        if (isProbCutSafe)
         {
             assert(probCutBeta < VALUE_INFINITE && probCutBeta > beta);
-
             MovePicker mp(pos, ttData.move, probCutBeta - ss->staticEval,
                           &thisThread->captureHistory);
             Depth      probCutDepth = std::max(depth - 4, 0);
@@ -1731,16 +1741,12 @@ Value Search::Worker::search(
             {
                 assert(move.is_ok());
 
-                if (move == excludedMove)
-                    continue;
-
-                if (!pos.legal(move))
+                if (move == excludedMove || !pos.legal(move))
                     continue;
 
                 assert(pos.capture_stage(move));
 
                 movedPiece = pos.moved_piece(move);
-
                 pos.do_move(move, st, &tt);
                 thisThread->nodes.fetch_add(1, std::memory_order_relaxed);
 
@@ -1751,10 +1757,12 @@ Value Search::Worker::search(
                 ss->continuationCorrectionHistory =
                   &this->continuationCorrectionHistory[movedPiece][move.to_sq()];
 
-                // Perform a preliminary qsearch to verify that the move holds
-                value = -qsearch<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1);
+                // If the king is exposed, perform a deeper qsearch
+                if (rootShashinState.staticState.kingExposed)
+                    value = -qsearch<NonPV>(pos, ss + 1, -probCutBeta - 50, -probCutBeta + 1);
+                else
+                    value = -qsearch<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1);
 
-                // If the qsearch held, perform the regular search
                 if (value >= probCutBeta && probCutDepth > 0)
                     value = -search<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1,
                                            probCutDepth, !cutNode);
@@ -1763,7 +1771,7 @@ Value Search::Worker::search(
 
                 if (value >= probCutBeta)
                 {
-                    // Save ProbCut data into transposition table
+                    // Save the result in the transposition table
                     ttWriter.write(posKey, value_to_tt(value, ss->ply), ss->ttPv, BOUND_LOWER,
                                    probCutDepth + 1, move, unadjustedStaticEval, tt.generation());
 
