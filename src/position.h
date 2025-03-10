@@ -171,8 +171,7 @@ class Position {
     bool     is_open_file(Square s) const;
     Bitboard attacking_pieces(Color c, Square s) const;
     bool     is_sacrifice(Move m) const;
-    bool     is_ok(Square s) const;
-    bool     is_ok(Piece p) const;
+    bool     is_ok_piece(Piece p) const;
     //For fortresses by Shashin begin
     Bitboard pawn_attacks(Color c, Square s) const;
     Bitboard king_ring(Square ksq) const;

@@ -2021,15 +2021,14 @@ Bitboard Position::attacking_pieces(Color c, Square s) const {
     Bitboard atks = attackers_to(s);
     return atks ? (atks & pieces(c)) : 0ULL;
 }
-bool Position::is_ok(Square s) const { return s >= SQ_A1 && s <= SQ_H8; }
-bool Position::is_ok(Piece p) const {
+bool Position::is_ok_piece(Piece p) const {
     return p >= W_PAWN && p <= B_KING;  // Oppure: return p != NO_PIECE;
 }
 bool Position::is_sacrifice(Move m) const {
     Piece moved    = moved_piece(m);
     Piece captured = captured_piece();
 
-    return is_ok(moved) && PieceValue[moved] > (captured == NO_PIECE ? 0 : PieceValue[captured]);
+    return is_ok_piece(moved) && PieceValue[moved] > (captured == NO_PIECE ? 0 : PieceValue[captured]);
 }
 Bitboard Position::pawn_attacks(Color c, Square s) const { return pawn_attacks_bb(c, s); }
 
