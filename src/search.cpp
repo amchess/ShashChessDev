@@ -1098,7 +1098,7 @@ Value Search::Worker::search(
     const RootShashinState& rootShashinState = g_shashinManager->getState();
     if (g_shashinManager->isFortress(rootPos))
     {
-        // Reduce the search depth if in a fortress, because deep searches may be “overconfident”
+        // Reduce the search depth if in a fortress, because deep searches may be ï¿½overconfidentï¿½
         if (depth > 10)
             depth -= 4;
 
@@ -1153,11 +1153,11 @@ Value Search::Worker::search(
     bool givesCheck, improving = false, priorCapture, opponentWorsening = false,
                      expTTHit = false;                //shashin
     bool isMate, gameCycle;                           // from Crystal-Shashin
-    bool capture, ttCapture, kingDanger, nullParity;  // from Crystal
+    bool capture, ttCapture, kingDanger, nullParity=false;  // from Crystal
     int  priorReduction = (ss - 1)->reduction;
     (ss - 1)->reduction = 0;
     Piece movedPiece;
-    int   ourMove;  // from Crystal
+    bool   ourMove=false, nmpSide=false;  // from Crystal
 
     ValueList<Move, 32> capturesSearched;
     ValueList<Move, 32> quietsSearched;
@@ -1179,8 +1179,7 @@ Value Search::Worker::search(
     // from Crystal-shashin begin
     gameCycle = kingDanger = false;
     rootDepth              = thisThread->rootDepth;
-    ourMove                = !(ss->ply & 1);
-    nullParity             = (ourMove == thisThread->nmpSide);
+
     ss->secondaryLine      = false;
     ss->mainLine           = false;
     // from Crystal-shashin end
@@ -1455,7 +1454,6 @@ Value Search::Worker::search(
         }
     }
     //from shashin-crystal begin
-    kingDanger             = !ourMove && pos.king_danger(us);
     int baseRazoringMargin = 0;
     //from shashin-crystal end
     // Step 6. Static evaluation of the position
@@ -1593,6 +1591,9 @@ Value Search::Worker::search(
                  - (ss - 1)->statScore / 326 + 37 - std::abs(correctionValue) / 132821
                >= beta;
         bool useCrystalFutilityPruningChild = g_shashinManager->useCrystalFutilityPruningChild();
+        ourMove                = !(ss->ply & 1);
+        nullParity             = (ourMove == thisThread->nmpSide);
+        kingDanger             = !ourMove && pos.king_danger(us);
         if (!rootShashinState.staticState.isSacrificial && !rootShashinState.staticState.kingExposed
             && commonCrystalFutilityPruningChildConditions
             && ((useCrystalFutilityPruningChild && depth < crystalDepthStep8 && !kingDanger
@@ -1608,11 +1609,12 @@ Value Search::Worker::search(
         // If the position is critical (kingDanger or sacrificial), we reduce the null move search aggressivity.
         // Optimized the pruning logi based on the positional Shashin zones.
         int  nullThreshold = beta - 21 * depth + 455 - 60 * improving;
+        bool positionSafe  = !kingDanger && !rootShashinState.staticState.isSacrificial;
         bool allowNullMove = (ss - 1)->currentMove != Move::null() && eval >= beta
                           && pos.non_pawn_material(us) && ss->ply >= thisThread->nmpMinPly
                           && !is_loss(beta);
         if (cutNode && ss->staticEval >= nullThreshold && !excludedMove && !disableNMAndPC
-            && allowNullMove)
+            && allowNullMove && positionSafe)
         {
             assert(eval - beta >= 0);
             thisThread->nmpSide = ourMove;  // from shashin Crystal
@@ -1650,7 +1652,7 @@ Value Search::Worker::search(
                     return nullValue;
             }
         }
-
+        // from Crystal-Shashin end
         improving |= ss->staticEval >= beta + 97;
 
         // Step 10. Internal iterative reductions

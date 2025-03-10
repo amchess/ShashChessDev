@@ -84,8 +84,8 @@ struct Stack {
     int                         reduction;
     bool                        isTTMove;
     //from Crystal-shashin begin
-    bool secondaryLine;
-    bool mainLine;
+    bool secondaryLine=false;
+    bool mainLine=false;
     //from Crystal-shashin end
 };
 
@@ -286,7 +286,7 @@ class Worker {
     CorrectionHistory<Continuation> continuationCorrectionHistory;
     RootMoves                       rootMoves;            //mcts
     Depth                           completedDepth;       //mcts
-    bool                            nmpGuard, nmpGuardV;  //from Crystal-shashin
+    bool                            nmpGuard=false, nmpGuardV=false,nmpSide=false;  //from Crystal-shashin
     ShashinManager&                 getShashinManager();  //from crystal-Shashin
 
    private:
@@ -316,7 +316,7 @@ class Worker {
 
     size_t                pvIdx, pvLast;
     std::atomic<uint64_t> nodes, tbHits, bestMoveChanges;
-    int                   selDepth, nmpMinPly, nmpSide;  //from crystal-shashin
+    int                   selDepth, nmpMinPly;
     Value                 optimism[COLOR_NB];
 
     Position  rootPos;
