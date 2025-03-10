@@ -1603,18 +1603,22 @@ Value Search::Worker::search(
         {
             return beta + (eval - beta) / 3;
         }
-        //from Crystal-Shashin end
-        // Step 9. Null move search with verification search
-        // from Crystal Shashin begin
-        // If the position is critical (kingDanger or sacrificial), we reduce the null move search aggressivity.
-        // Optimized the pruning logi based on the positional Shashin zones.
-        int  nullThreshold = beta - 21 * depth + 455 - 60 * improving;
+		//from Crystal-Shashin end
+		// Step 9. Null move search with verification search
+		// from Crystal Shashin begin
+		// If the position is critical (kingDanger or sacrificial), we reduce the null move search aggressivity.
+		// Optimized the pruning logic based on the positional Shashin zones.
+		int  nullThreshold        = beta - 21 * depth + 455 - 60 * improving;
+        bool useNullMoveByShashin = g_shashinManager->useCrystalNullMoveSearch();
         bool positionSafe  = !kingDanger && quietKingSafe;
         bool allowNullMove = (ss - 1)->currentMove != Move::null() && eval >= beta
                           && pos.non_pawn_material(us) && ss->ply >= thisThread->nmpMinPly
                           && !is_loss(beta);
+	    bool useShashinLogic = useNullMoveByShashin && !thisThread->nmpGuard && !gameCycle
+	                         && eval >= ss->staticEval && positionSafe
+	                         && (rootDepth < 11 || ourMove || MoveList<LEGAL>(pos).size() > 5);
         if (cutNode && ss->staticEval >= nullThreshold && !excludedMove && !disableNMAndPC
-            && allowNullMove && positionSafe)
+            && positionSafe && (allowNullMove || useShashinLogic))
         {
             assert(eval - beta >= 0);
             thisThread->nmpSide = ourMove;  // from shashin Crystal
