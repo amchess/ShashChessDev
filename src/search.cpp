@@ -2208,9 +2208,13 @@ skipExtensionAndPruning:  // full threads search patch
 
             // Decrease/increase reduction for moves with a good/bad history
             r -= ss->statScore * 1407 / 16384;
-
             // Step 17. Late moves reduction / extension (LMR)
-            if (depth >= 2 && moveCount > 1)
+            // Shashin-Crystal begin
+            bool useMoveGenAndStep17CrystalLogic =
+              g_shashinManager->useMoveGenAndStep17CrystalLogic();
+            if (doLMRStep && moveCount > sibs && moveCount > 1
+                && ((depth >= 2 && !useMoveGenAndStep17CrystalLogic)
+                    || ((allowLMR && (!capture || lmrCapture)) && useMoveGenAndStep17CrystalLogic)))
             {
                 // In general we want to cap the LMR depth search at newDepth, but when
                 // reduction is negative, we allow this move a limited search extension
@@ -2218,23 +2222,42 @@ skipExtensionAndPruning:  // full threads search patch
                 // To prevent problems when the max value is less than the min value,
                 // std::clamp has been replaced by a more robust implementation.
 
+                // Base reduction calculation
+                int dynamicReduction = (r + moveCount * 7) / 1024;
 
-                Depth d = std::max(
-                  1, std::min(newDepth - r / 1024, newDepth + !allNode + (PvNode && !bestMove)));
+                // Tactical positions -> Reduce less (avoid excessive pruning)
+                if (rootShashinState.dynamicDerived.isAggressive
+                    || rootShashinState.dynamicDerived.isTacticalReactive)
+                    dynamicReduction = std::max(1, dynamicReduction - 2);  // Less pruning
+
+                // Strategic positions -> Reduce more (allow more pruning)
+                else if (rootShashinState.dynamicDerived.isStrategical)
+                    dynamicReduction = std::min(dynamicReduction + 1, 4);  // More pruning
+
+                // Passive positions (Petrosian style) -> Even stronger pruning
+                if (g_shashinManager->isPetrosian())
+                    dynamicReduction = std::min(dynamicReduction + 2, 5);  // Strong pruning
+
+                // Compute final reduction depth
+                // Final reduction calculation
+                Depth d = std::clamp(newDepth - dynamicReduction, 1,
+                                     newDepth + (!allNode ? 1 : 0) + (PvNode && !bestMove ? 1 : 0));
 
                 ss->reduction = newDepth - d;
-
                 value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
                 ss->reduction = 0;
 
-
+                // If the reduced search fails high, attempt full-depth search
                 // Do a full-depth search when reduced LMR search fails high
-                if (value > alpha && d < newDepth)
+                if (value > alpha + 12 && d < newDepth - 1)
                 {
-                    // Adjust full-depth search based on LMR results - if the result was
-                    // good enough search deeper, if it was bad enough search shallower.
-                    const bool doDeeperSearch    = value > (bestValue + 41 + 2 * newDepth);
-                    const bool doShallowerSearch = value < bestValue + 9;
+                    // Deepen if position is aggressive & search fails high
+                    const bool doDeeperSearch =
+                      g_shashinManager->isTal() && value > (bestValue + 40 + newDepth / 2);
+
+                    // Shallower search in Petrosian positions
+                    const bool doShallowerSearch =
+                      g_shashinManager->isPetrosian() && value < bestValue + 10;
 
                     newDepth += doDeeperSearch - doShallowerSearch;
 
@@ -2242,8 +2265,9 @@ skipExtensionAndPruning:  // full threads search patch
                         value =
                           -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, newDepth, !cutNode);
 
-                    // Post LMR continuation history updates
-                    int bonus = (value >= beta) * 2010;
+                    // Update continuation history: give a bonus if the move fails high
+                    // Post LMR continuation history updates (scaled bonus)
+                    int bonus = (value >= beta) * (1700 + newDepth * 9);
                     update_continuation_histories(ss, movedPiece, move.to_sq(), bonus);
                 }
             }
