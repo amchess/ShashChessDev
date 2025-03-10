@@ -2137,10 +2137,12 @@ moves_loop:  // When in check, search starts here
 skipExtensionAndPruning:  // full threads search patch
             // Step 16. Make the move
             pos.do_move(move, st, givesCheck, &tt);
+            bool doLMRStep = !(thisThread->fullSearch);  // Full threads patch
             thisThread->nodes.fetch_add(1, std::memory_order_relaxed);
 
             // Add extension to new depth
-            newDepth += extension;
+            if (extension > 0)
+                newDepth += extension;
 
             // Update the current move (this must be done after singular extension search)
             ss->currentMove = move;
@@ -2149,7 +2151,7 @@ skipExtensionAndPruning:  // full threads search patch
               &thisThread->continuationHistory[ss->inCheck][capture][movedPiece][move.to_sq()];
             ss->continuationCorrectionHistory =
               &thisThread->continuationCorrectionHistory[movedPiece][move.to_sq()];
-            uint64_t nodeCount = rootNode ? uint64_t(nodes) : 0;
+            nodeCount = rootNode ? uint64_t(nodes) : 0;
 
             // Decrease reduction for PvNodes (*Scaler)
             if (ss->ttPv)
@@ -2157,9 +2159,16 @@ skipExtensionAndPruning:  // full threads search patch
                    + (ttData.depth >= depth) * (971 + cutNode * 1159);
 
             // These reduction adjustments have no proven non-linear scaling
+            // Adjust reduction based on static (rootPosition) evaluation
+            if (rootShashinState.staticState.isSacrificial)
+                r -= 600;  // Less reduction in sacrificial positions (more depth)
+            if (rootShashinState.staticState.kingExposed)
+                r -= 350;  // Less reduction if king is unsafe
+            if (rootShashinState.dynamicDerived.isStrategical)
+                r += 600;  // More reduction in highly strategic positions
 
+            // Additional dynamic contributions
             r += 316 - moveCount * 32;
-
             r -= std::abs(correctionValue) / 31568;
 
             // Increase reduction for cut nodes
@@ -2176,8 +2185,16 @@ skipExtensionAndPruning:  // full threads search patch
 
             // For first picked move (ttMove) reduce reduction
             else if (move == ttData.move)
-                r -= 1982;
+                r -= 2000;
 
+            // Improve reduction logic for tactical vs strategic positions
+            if (rootShashinState.dynamicDerived.isAggressive
+                || rootShashinState.dynamicDerived.isTacticalReactive)
+                r = std::max(1, r - 500);  // 🔹 Reduce less in tactical positions
+            else if (rootShashinState.dynamicDerived.isStrategical)
+                r += 350;  // 🔹 Reduce more in strategic positions
+
+            // Compute statistical move score for history updates
             if (capture)
                 ss->statScore =
                   688 * int(PieceValue[pos.captured_piece()]) / 100
