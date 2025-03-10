@@ -84,8 +84,8 @@ struct Stack {
     int                         reduction;
     bool                        isTTMove;
     //from Crystal-shashin begin
-    bool secondaryLine=false;
-    bool mainLine=false;
+    bool secondaryLine = false;
+    bool mainLine      = false;
     //from Crystal-shashin end
 };
 
@@ -284,10 +284,10 @@ class Worker {
     CorrectionHistory<Minor>        minorPieceCorrectionHistory;
     CorrectionHistory<NonPawn>      nonPawnCorrectionHistory[COLOR_NB];
     CorrectionHistory<Continuation> continuationCorrectionHistory;
-    RootMoves                       rootMoves;            //mcts
-    Depth                           completedDepth;       //mcts
-    bool                            nmpGuard=false, nmpGuardV=false,nmpSide=false;  //from Crystal-shashin
-    ShashinManager&                 getShashinManager();  //from crystal-Shashin
+    RootMoves                       rootMoves;                             //mcts
+    Depth                           completedDepth;                        //mcts
+    bool            nmpGuard = false, nmpGuardV = false, nmpSide = false;  //from Crystal-shashin
+    ShashinManager& getShashinManager();                                   //from crystal-Shashin
 
    private:
     void iterative_deepening();

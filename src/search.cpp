@@ -1151,13 +1151,13 @@ Value Search::Worker::search(
     Value bestValue, value = VALUE_NONE, eval = VALUE_NONE, maxValue, expTTValue = VALUE_NONE,
                      probCutBeta = VALUE_NONE;  // from Kelly
     bool givesCheck, improving = false, priorCapture, opponentWorsening = false,
-                     expTTHit = false;                //shashin
-    bool isMate, gameCycle;                           // from Crystal-Shashin
-    bool capture, ttCapture, kingDanger, nullParity=false;  // from Crystal
+                     expTTHit = false;                        //shashin
+    bool isMate, gameCycle;                                   // from Crystal-Shashin
+    bool capture, ttCapture, kingDanger, nullParity = false;  // from Crystal
     int  priorReduction = (ss - 1)->reduction;
     (ss - 1)->reduction = 0;
     Piece movedPiece;
-    bool   ourMove=false, nmpSide=false;  // from Crystal
+    bool  ourMove = false, nmpSide = false;  // from Crystal
 
     ValueList<Move, 32> capturesSearched;
     ValueList<Move, 32> quietsSearched;
@@ -1180,8 +1180,8 @@ Value Search::Worker::search(
     gameCycle = kingDanger = false;
     rootDepth              = thisThread->rootDepth;
 
-    ss->secondaryLine      = false;
-    ss->mainLine           = false;
+    ss->secondaryLine = false;
+    ss->mainLine      = false;
     // from Crystal-shashin end
     // Full Threads patch begin
     if (thisThread->fullSearch)
@@ -1591,9 +1591,9 @@ Value Search::Worker::search(
                  - (ss - 1)->statScore / 326 + 37 - std::abs(correctionValue) / 132821
                >= beta;
         bool useCrystalFutilityPruningChild = g_shashinManager->useCrystalFutilityPruningChild();
-        ourMove                = !(ss->ply & 1);
-        nullParity             = (ourMove == thisThread->nmpSide);
-        kingDanger             = !ourMove && pos.king_danger(us);
+        ourMove                             = !(ss->ply & 1);
+        nullParity                          = (ourMove == thisThread->nmpSide);
+        kingDanger                          = !ourMove && pos.king_danger(us);
         if (!rootShashinState.staticState.isSacrificial && !rootShashinState.staticState.kingExposed
             && commonCrystalFutilityPruningChildConditions
             && ((useCrystalFutilityPruningChild && depth < crystalDepthStep8 && !kingDanger

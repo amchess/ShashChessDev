@@ -2025,11 +2025,12 @@ bool Position::is_ok_piece(Piece p) const {
     return p >= W_PAWN && p <= B_KING;  // Oppure: return p != NO_PIECE;
 }
 bool Position::is_sacrifice(Move m) const {
-    Piece moved = moved_piece(m);
+    Piece moved    = moved_piece(m);
     Piece captured = captured_piece();
 
     // Aggiungi un controllo per assicurarti che 'moved' sia valido
-    if (!is_ok_piece(moved) ||!is_ok_piece(captured)) {
+    if (!is_ok_piece(moved) || !is_ok_piece(captured))
+    {
         return false;
     }
     return PieceValue[moved] > (captured == NO_PIECE ? 0 : PieceValue[captured]);
