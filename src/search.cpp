@@ -1715,21 +1715,23 @@ Value Search::Worker::search(
         // returns a value far above beta, we can (almost) safely prune the branch.
 
         // Dynamic adjustment based on the position
-        int adjustment = 0;
-
-        if (rootShashinState.dynamicDerived.isAggressive
-            || rootShashinState.dynamicDerived.isTacticalReactive)
-            adjustment += 25;  // Less pruning in tactical positions
-        else if (rootShashinState.dynamicDerived.isStrategical)
-            adjustment -= 25;  // More pruning in strategic positions
+        int adjustment = std::clamp((rootShashinState.dynamicDerived.isAggressive
+                                     || rootShashinState.dynamicDerived.isTacticalReactive)
+                                      ? (15 + depth / 3)  // Meno pruning per posizioni tattiche
+                                      : (rootShashinState.dynamicDerived.isStrategical
+                                           ? -15
+                                           : 0),  // Più pruning per posizioni strategiche
+                                    -20, 20);
 
         probCutBeta = beta + 187 - 55 * improving + adjustment;
 
         // Avoid ProbCut if the position is sacrificial or with an exposed king
-        bool isProbCutSafe = !disableNMAndPC && depth >= 3 && !is_decisive(beta)
+        // Conditions to activate ProbCut
+        bool isProbCutSafe = depth >= 3 && !is_decisive(beta) && !disableNMAndPC
                           && !(is_valid(ttData.value) && ttData.value < probCutBeta)
                           && !rootShashinState.staticState.isSacrificial
                           && !rootShashinState.staticState.kingExposed;
+
         if (isProbCutSafe)
         {
             assert(probCutBeta < VALUE_INFINITE && probCutBeta > beta);
@@ -1757,11 +1759,10 @@ Value Search::Worker::search(
                 ss->continuationCorrectionHistory =
                   &this->continuationCorrectionHistory[movedPiece][move.to_sq()];
 
-                // If the king is exposed, perform a deeper qsearch
-                if (rootShashinState.staticState.kingExposed)
-                    value = -qsearch<NonPV>(pos, ss + 1, -probCutBeta - 50, -probCutBeta + 1);
-                else
-                    value = -qsearch<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1);
+                // Se il re è esposto, valutiamo con maggiore profondità nel qsearch
+                Value qsearchThreshold =
+                  rootShashinState.staticState.kingExposed ? probCutBeta - depth * 2 : probCutBeta;
+                value = -qsearch<NonPV>(pos, ss + 1, -qsearchThreshold, -probCutBeta + 1);
 
                 if (value >= probCutBeta && probCutDepth > 0)
                     value = -search<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1,
