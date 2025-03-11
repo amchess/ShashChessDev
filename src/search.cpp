@@ -2610,7 +2610,14 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                 unadjustedStaticEval = evaluate(pos);
             ss->staticEval = bestValue =
               to_corrected_static_eval(unadjustedStaticEval, correctionValue);
-
+            //from shahin begin
+            int penalty = 0;
+            if (rootShashinState.staticState.isSacrificial)
+                penalty = std::max(penalty, 30);
+            if (rootShashinState.staticState.kingExposed)
+                penalty = std::max(penalty, 20);
+            bestValue = std::max(bestValue, alpha - penalty);
+            //from shashin end
             // ttValue can be used as a better position evaluation
             if (is_valid(ttData.value) && !is_decisive(ttData.value)
                 && (ttData.bound & (ttData.value > bestValue ? BOUND_LOWER : BOUND_UPPER)))
