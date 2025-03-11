@@ -2389,9 +2389,28 @@ skipExtensionAndPruning:  // full threads search patch
                 }
                 else
                 {
-                    // Reduce other moves if we have found at least one score improvement
+                    //from crystal-shashin begin
+                    bool isSafeZone = beta < VALUE_MAX_EVAL / 16 && alpha > -VALUE_MAX_EVAL / 16;
+
+                    // Reduce other moves if we have found at least one score improvement (~2 Elo)
                     if (depth > 2 && depth < 15 && !is_decisive(value))
-                        depth -= 2;
+                    {
+                        bool useCrystalReduction = !g_shashinManager->isTillCategory(
+                          ShashinPosition::MIDDLE_HIGH_PETROSIAN, ShashinPosition::MIDDLE_HIGH_TAL);
+                        if (useCrystalReduction && !gameCycle && isSafeZone)
+                        {
+                            depth -= 1;  // Crystal logic for tactical zones (minimal reduction)
+                        }
+                        else if (rootShashinState.dynamicDerived.isStrategical && !gameCycle)
+                        {
+                            depth -= 2;  // Stockfish logic for strategic zones (deeper reduction)
+                        }
+                        else
+                        {
+                            depth -= 2;  // Default reduction for all other cases
+                        }
+                    }
+                    //from crystal-shashin end
 
                     assert(depth > 0);
                     alpha = value;  // Update alpha! Always alpha < beta
@@ -2505,7 +2524,6 @@ skipExtensionAndPruning:  // full threads search patch
 // and https://www.chessprogramming.org/Quiescence_Search
 template<NodeType nodeType>
 Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta) {
-
     static_assert(nodeType != Root);
     const RootShashinState& rootShashinState = g_shashinManager->getState();
     constexpr bool          PvNode           = nodeType == PV;
