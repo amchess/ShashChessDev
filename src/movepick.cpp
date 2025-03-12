@@ -135,10 +135,14 @@ void MovePicker::score() {
     }
 
     // Compute a scaling factor for the Shashin bonus.
-    double shashinScaling = std::min(1.0, static_cast<double>(pos.game_ply()) / 20.0);
-    double dynamicBonus   = std::log(1.0 + shashinScaling * 9.0) / std::log(10.0);
+    static double precomputedShashinScaling =
+      std::min(1.0, static_cast<double>(pos.game_ply()) / 20.0);
+    double dynamicBonus = std::log(1.0 + precomputedShashinScaling * 9.0) / std::log(10.0);
     // Read the fortress flag (set in initDynamicRootShashinState using the root position)
-    const bool fortress = MoveConfig::isFortress;
+    const bool fortress            = MoveConfig::isFortress;
+    const bool useMoveShashinLogic = MoveConfig::useMoveShashinLogic;
+    const bool isStrategical       = MoveConfig::isStrategical;
+    const bool isAggressive        = MoveConfig::isAggressive;
 
     // Iterate over each move in the list
     for (auto& m : *this)
@@ -149,19 +153,18 @@ void MovePicker::score() {
         Square to         = m.to_sq();
         int    baseValue = 0, shashinBonus = 0, fortressPenalty = 0;
 
-        if (MoveConfig::useMoveShashinLogic)
+        if (useMoveShashinLogic)
         {
-            if (MoveConfig::isStrategical)
-                shashinBonus = static_cast<int>(600 * dynamicBonus);
-            else if (MoveConfig::isAggressive)
-                shashinBonus = static_cast<int>(1200 * dynamicBonus);
+            shashinBonus = isStrategical ? static_cast<int>(600 * dynamicBonus)
+                         : isAggressive  ? static_cast<int>(1200 * dynamicBonus)
+                                         : 0;
         }
 
         if constexpr (Type == CAPTURES)
         {
             baseValue = 7 * int(PieceValue[pos.piece_on(m.to_sq())])
                       + (*captureHistory)[movedPiece][to][type_of(pos.piece_on(to))];
-            if (MoveConfig::isAggressive)
+            if (isAggressive)
                 baseValue += 5000;  // extra bonus for aggressive captures
         }
         else if constexpr (Type == QUIETS)
@@ -176,7 +179,7 @@ void MovePicker::score() {
                       + (*continuationHistory[4])[movedPiece][to] / 3
                       + (*continuationHistory[5])[movedPiece][to]
                       + bool(pos.check_squares(pt) & to) * 16384;
-            if (MoveConfig::isStrategical)
+            if (isStrategical)
                 baseValue += 2000;  // bonus for safe, positional moves
         }
         else
