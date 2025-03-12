@@ -1607,25 +1607,24 @@ Value Search::Worker::search(
         // The depth condition is important for mate finding.
         // from Crystal-Shashin begin
         int crystalDepthStep8 =
-          9 - 2 * ((ss - 1)->mainLine || (ss - 1)->secondaryLine || (ttData.move && !ttCapture));
-        bool commonCrystalFutilityPruningChildConditions =
+          7 - 2 * ((ss - 1)->mainLine || (ss - 1)->secondaryLine || (ttData.move && !ttCapture));
+        bool commonFutilityPruningChild =
           !ss->ttPv
           && eval - futility_margin(depth, cutNode && !ss->ttHit, improving, opponentWorsening)
-                 - (ss - 1)->statScore / 326 + 37 - std::abs(correctionValue) / 132821
+                 - (ss - 1)->statScore / 326 + 37
                >= beta;
-        bool useCrystalFutilityPruningChild = g_shashinManager->useCrystalFutilityPruningChild();
-        ourMove                             = !(ss->ply & 1);
-        nullParity                          = (ourMove == thisThread->nmpSide);
-        kingDanger                          = !ourMove && pos.king_danger(us);
+        bool useFutilityPruning = g_shashinManager->useCrystalFutilityPruningChild();
+        ourMove                 = !(ss->ply & 1);
+        nullParity              = (ourMove == thisThread->nmpSide);
+        kingDanger              = !ourMove && pos.king_danger(us);
         quietKingSafe =
           !rootShashinState.staticState.isSacrificial && !rootShashinState.staticState.kingExposed;
-        if (quietKingSafe && commonCrystalFutilityPruningChildConditions
-            && ((useCrystalFutilityPruningChild && depth < crystalDepthStep8 && !kingDanger
-                 && !excludedMove && !gameCycle && !(thisThread->nmpGuard && nullParity))
-                || (!useCrystalFutilityPruningChild && eval >= beta && (!ttData.move || ttCapture)
-                    && !is_loss(beta) && !is_win(eval) && depth < 14)))
+        if (quietKingSafe && commonFutilityPruningChild
+            && ((useFutilityPruning && depth < crystalDepthStep8 && !excludedMove && !gameCycle)
+                || (!useFutilityPruning && eval >= beta && (!ttData.move || ttCapture)
+                    && depth < 12)))
         {
-            return beta + (eval - beta) / 3;
+            return beta + (eval - beta) / 4;
         }
         //from Crystal-Shashin end
         // Step 9. Null move search with verification search
