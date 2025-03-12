@@ -8,7 +8,7 @@ extern bool useMoveShashinLogic;
 extern bool isStrategical;
 extern bool isAggressive;
 extern bool isFortress;
-} // namespace MoveConfig
-} // namespace ShashChess
+}  // namespace MoveConfig
+}  // namespace ShashChess
 
-#endif // MOVE_CONFIG_H
+#endif  // MOVE_CONFIG_H

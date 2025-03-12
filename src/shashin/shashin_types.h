@@ -50,27 +50,27 @@ struct ShashinConfig {
 };
 
 struct DynamicBaseState {
-    int currentDepth = 0;
+    int             currentDepth = 0;
     ShashinPosition currentRange = ShashinPosition::CAPABLANCA;
 };
 
 struct DynamicDerivedState {
-    bool isAggressive = false;
-    bool isStrategical =false;
+    bool isAggressive       = false;
+    bool isStrategical      = false;
     bool isTacticalReactive = false;
-    bool isHighTal = false;
+    bool isHighTal          = false;
 };
 
 struct StaticState {
     size_t legalMoveCount = 0;
-    bool isSacrificial = false;
-    bool kingExposed =false;
+    bool   isSacrificial  = false;
+    bool   kingExposed    = false;
 };
 
 struct alignas(64) RootShashinState {
-    DynamicBaseState dynamicBase;
+    DynamicBaseState    dynamicBase;
     DynamicDerivedState dynamicDerived;
-    StaticState staticState;
+    StaticState         staticState;
 };
 
 }  // namespace ShashChess
