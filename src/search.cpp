@@ -883,10 +883,35 @@ void Search::Worker::iterative_deepening() {
             int failedHighCnt = 0;
             while (true)
             {
-                // Adjust the effective depth searched, but ensure at least one
-                // effective increment for every four searchAgain steps (see issue #2717).
-                Depth adjustedDepth =
-                  std::max(1, rootDepth - failedHighCnt - 3 * (searchAgainCounter + 1) / 4);
+                // Adjust the effective depth searched, ensuring at least one effective increment
+                // for every four searchAgain steps (see issue #2717).
+                // Shashin-Crystal adjustments for search depth
+
+                Depth adjustedDepth = rootDepth;
+                int   searchPenalty = (searchAgainCounter + 1) / 4;
+
+                if (rootShashinState.dynamicDerived.isStrategical)
+                {
+                    int reductionFactor = (!g_shashinManager->isHighPieceDensityCapablancaPosition()
+                                           || rootShashinState.staticState.legalMoveCount < 25)
+                                          ? 3
+                                          : 2;
+
+                    reductionFactor -= rootShashinState.staticState.kingExposed ? 1 : 0;
+
+                    adjustedDepth =
+                      std::max(1, rootDepth - failedHighCnt - reductionFactor * searchPenalty)
+                      + rootShashinState.staticState.kingExposed;
+                }
+
+                if (rootShashinState.staticState.isSacrificial)
+                {
+                    adjustedDepth = std::max(adjustedDepth, rootDepth - 1);
+                }
+
+
+                // Update rootDelta and perform the search
+
                 rootDelta = beta - alpha;
                 bestValue = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
 
@@ -1118,20 +1143,18 @@ Value Search::Worker::search(
     // Limit the depth if extensions made it too large
     depth = std::min(depth, MAX_PLY - 1);
     //from crystal-shashin begin
-    // Enhanced logic for draw repetitions
-    // Allow pruning in strategic or intermediate zones only at low depth
-    // Check if we have an upcoming move that draws by repetition
+    // Enhanced logic for draw repetitions (Optimized)
     if (!rootNode && alpha < VALUE_DRAW && pos.upcoming_repetition(ss->ply))
     {
-        if ((rootShashinState.dynamicDerived.isStrategical
-             || (g_shashinManager->isSimpleIntermediate()))
-            && ss->ply < std::min(8, depth))
+        bool isLowDepth = (ss->ply < std::min(8, depth));
+        bool isStrategicOrIntermediate =
+          rootShashinState.dynamicDerived.isStrategical || g_shashinManager->isSimpleIntermediate();
+
+        if (isStrategicOrIntermediate && isLowDepth)
         {
             alpha = value_draw(this->nodes);
             if (alpha >= beta)
-            {
                 return alpha;  // Cut-off due to draw repetition
-            }
         }
     }
     //from crystal-shashin end
@@ -1623,7 +1646,7 @@ Value Search::Worker::search(
         {
             assert(eval - beta >= 0);
             thisThread->nmpSide = ourMove;  // from shashin Crystal
-            // Optimized R reduction computationR ottimizzato
+            // Optimized R reduction computation
             int nullReductionAdjustment = (rootShashinState.dynamicDerived.isStrategical ? 1 : 0)
                                         - (rootShashinState.dynamicDerived.isAggressive
                                                || rootShashinState.dynamicDerived.isTacticalReactive
