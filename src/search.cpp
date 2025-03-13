@@ -1654,7 +1654,7 @@ Value Search::Worker::search(
                                         - (!positionSafe ? 2 : 0);
 
             Depth R =
-              std::clamp((eval - beta) / 237 + depth / 3 + 5 + nullReductionAdjustment, 3, 8);
+              std::clamp((eval - beta) / 200 + depth / 2 + 6 + nullReductionAdjustment, 4, 9);
 
             if (!ourMove && (ss - 1)->secondaryLine && useNullMoveByShashin)
                 R = std::min(R, 8);
@@ -1669,9 +1669,11 @@ Value Search::Worker::search(
             Value nullValue      = -search<NonPV>(pos, ss + 1, -beta, -beta + 1, depth - R, false);
             thisThread->nmpGuard = false;
             pos.undo_null_move();
-            if (nullValue >= beta && (!is_win(nullValue) || useNullMoveByShashin))
+            if (nullValue >= beta && (!is_win(nullValue) || useShashinLogic))
             {
-                if (!useNullMoveByShashin)
+                if (nullValue >= beta + 45)  // Skip verification search if very strong
+                    return nullValue;
+                if (!useShashinLogic)
                 {
                     if (thisThread->nmpMinPly || depth < 16)
                         return nullValue;
@@ -1680,14 +1682,14 @@ Value Search::Worker::search(
                 }
 
                 thisThread->nmpGuardV = true;
-                Value v               = search<NonPV>(pos, ss, beta - 1, beta, depth - R, false);
+                Value v = search<NonPV>(pos, ss, beta - 1, beta, depth - R - 1, false);
                 thisThread->nmpGuardV = false;
 
-                if (!useNullMoveByShashin)
+                if (!useShashinLogic)
                     thisThread->nmpMinPly = 0;
 
                 if (v >= beta)
-                    return (!useNullMoveByShashin)
+                    return (!useShashinLogic)
                            ? nullValue
                            : (is_win(v) ? v : std::min(nullValue, VALUE_MATE_IN_MAX_PLY));
             }
