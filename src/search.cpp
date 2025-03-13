@@ -1123,13 +1123,13 @@ Value Search::Worker::search(
     const RootShashinState& rootShashinState = g_shashinManager->getState();
     if (g_shashinManager->isFortress(rootPos))
     {
-        // Reduce the search depth if in a fortress, because deep searches may be �overconfident�
+        // Reduce the search depth if in a fortress, because deep searches may be overconfident
         if (depth > 10)
-            depth -= 4;
+            depth -= 1;
 
         // Also, if no progress has been made (say, 30 moves without breakthroughs),
         // force a draw.
-        if (pos.no_progress_for(30))
+        if (pos.no_progress_for(40))
             return VALUE_DRAW;
     }
     //from Shashin fortress end

@@ -1993,25 +1993,18 @@ bool Position::king_danger(Color c) const {
 }
 int Position::king_safety_score(Color c) const {
     Square kingSq = square<KING>(c);
-    int    score  = 0;
-
     if (king_danger(c))
-        return -150;  // Se il re è in grave pericolo, restituisce subito un valore negativo
+        return -150;
 
-    if (is_open_file(kingSq))
-        score -= 50;
-
+    int      score     = is_open_file(kingSq) ? -50 : 0;
     Bitboard attackers = attacking_pieces(~c, kingSq);
 
     if (attackers)
     {
-        int strongAttackers = popcount(attackers & (pieces(~c, QUEEN) | pieces(~c, ROOK))) * 20;
-        int mediumAttackers = popcount(attackers & (pieces(~c, BISHOP) | pieces(~c, KNIGHT))) * 15;
-        int weakAttackers   = popcount(attackers & pieces(~c, PAWN)) * 5;
-
-        score -= strongAttackers + mediumAttackers + weakAttackers;
+        score -= popcount(attackers & (pieces(~c, QUEEN) | pieces(~c, ROOK))) * 20;
+        score -= popcount(attackers & (pieces(~c, BISHOP) | pieces(~c, KNIGHT))) * 15;
+        score -= popcount(attackers & pieces(~c, PAWN)) * 5;
     }
-
     return score;
 }
 
@@ -2045,15 +2038,10 @@ bool Position::has_pawn_breaks() const {
     for (Color c : {WHITE, BLACK})
     {
         Bitboard pawns = pieces(c, PAWN);
-
         while (pawns)
         {
-            Square   s       = pop_lsb(pawns);
-            Bitboard attacks = pawn_attacks(c, s) & pieces(~c);
-            Square   front   = s + pawn_push(c);  // Casa davanti al pedone
-
-            // Controlla catture, pedoni bloccati sulla 7ª traversa e avanzamenti liberi
-            if (attacks || !(rank_bb(relative_rank(c, RANK_7)) & s) || !(pieces() & front))
+            Square s = pop_lsb(pawns);
+            if (pawn_attacks(c, s) & pieces(~c) || !(pieces() & (s + pawn_push(c))))
                 return true;
         }
     }
@@ -2061,20 +2049,11 @@ bool Position::has_pawn_breaks() const {
 }
 
 bool Position::is_king_cutoff(Color strongSide) const {
-    Square kingSq   = square<KING>(strongSide);
-    Color  weakSide = ~strongSide;
-
-    // Chek if the king is blocked by its own pawns
-    if (pieces(strongSide, PAWN) & king_ring(kingSq))
-        return true;
-
-    // Check if the king is cut off horizontally or vertically
-    Bitboard barriers = blockers_for_king(weakSide);
-    if (barriers & rank_bb(rank_of(kingSq)) || barriers & file_bb(file_of(kingSq)))
-        return true;
-
-    return false;
+    Square kingSq = square<KING>(strongSide);
+    return (pieces(strongSide, PAWN) & king_ring(kingSq))
+        || (blockers_for_king(~strongSide) & (rank_bb(rank_of(kingSq)) | file_bb(file_of(kingSq))));
 }
+
 
 int Position::see(Move m) const {
     Square from = m.from_sq();
@@ -2095,15 +2074,12 @@ bool Position::is_tempo_loss(Move m) const {
 
 bool Position::has_safe_waiting_moves() const {
     MoveList<LEGAL> moves(*this);
-
     for (const auto& m : moves)
     {
-        if (!capture_stage(m) && !gives_check(m) && !is_tempo_loss(m))
-        {
-            return true;  // At least a safe wating move found
-        }
+        if (!capture_stage(m) && !gives_check(m) && see(m) >= 0)
+            return true;
     }
-    return false;  // No safe move → not a fortress
+    return false;
 }
 
 bool Position::is_king_nearby(Square sq) const {
@@ -2117,42 +2093,16 @@ bool Position::is_pawn_weakening_move(Square from, Square to) const {
     return pawnShield && !(pawn_attacks(side_to_move(), to) & pieces(side_to_move(), PAWN));
 }
 bool Position::is_fortress_breaking_move(const Move& m) const {
-    Square from = m.from_sq();
-    Square to   = m.to_sq();
-
-    Piece movedPiece    = piece_on(from);
-    Piece capturedPiece = piece_on(to);
-
-    // 1. Does the King move away from the fortress?
-    if (type_of(movedPiece) == KING && !is_king_nearby(to))
-        return true;
-
-    // 2. Does a pawn move break the structure?
-    if (type_of(movedPiece) == PAWN && is_pawn_weakening_move(from, to))
-        return true;
-
-    // 3. Was the captured piece a key part of the fortress?
-    if (capturedPiece != NO_PIECE && is_fortress_key_piece(capturedPiece))
-        return true;
-
-    return false;  // Otherwise, it doesn't break the fortress
+    Square from = m.from_sq(), to = m.to_sq();
+    Piece  moved = piece_on(from), captured = piece_on(to);
+    return (type_of(moved) == KING && !is_king_nearby(to))
+        || (type_of(moved) == PAWN && is_pawn_weakening_move(from, to))
+        || (captured != NO_PIECE && is_fortress_key_piece(captured));
 }
 
 bool Position::is_fortress_preserving_move(const Move& m) const {
-    Square from = m.from_sq();
-    Square to   = m.to_sq();
-
-    Piece movedPiece = piece_on(from);
-
-    // 1. Does the King stay near the fortress?
-    if (type_of(movedPiece) == KING && is_king_nearby(to))
-        return true;
-
-    // 2. Does the piece move while staying within the fortress area?
-    if (is_inside_fortress(to))
-        return true;
-
-    return false;  // Altrimenti, non è una mossa conservativa
+    return (type_of(piece_on(m.from_sq())) == KING && is_king_nearby(m.to_sq()))
+        || is_inside_fortress(m.to_sq());
 }
 
 // Check if the piece is crucial for the fortress

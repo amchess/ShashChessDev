@@ -218,6 +218,7 @@ const RootShashinState& ShashinManager::getState() const {
 }  // It returns a safe state copy
 
 // Fortress detection method
+// Fortress detection method
 bool ShashinManager::isFortress(const Position& pos) {
     if (!fortressCached)
     {
@@ -236,6 +237,7 @@ bool ShashinManager::isFortress(const Position& pos) {
     }
     return fortressResult;
 }
+
 // Computes the static evaluation of a position
 Value ShashinManager::static_value(const Eval::NNUE::Networks&   networks,
                                    Eval::NNUE::AccumulatorCaches refreshTable,
