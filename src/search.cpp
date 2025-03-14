@@ -2498,7 +2498,7 @@ skipExtensionAndPruning:  // full threads search patch
 
         bonusScale = std::max(bonusScale, 0);
 
-        const int scaledBonus = stat_bonus(depth) * bonusScale;
+        const int scaledBonus = std::min(160 * depth - 106, 1523) * bonusScale;
 
         update_continuation_histories(ss - 1, pos.piece_on(prevSq), prevSq,
                                       scaledBonus * 416 / 32768);
@@ -2517,7 +2517,7 @@ skipExtensionAndPruning:  // full threads search patch
         Piece capturedPiece = pos.captured_piece();
         assert(capturedPiece != NO_PIECE);
         thisThread->captureHistory[pos.piece_on(prevSq)][prevSq][type_of(capturedPiece)]
-          << stat_bonus(depth) * 2;
+          << std::min(330 * depth - 198, 3320);
     }
 
     if (PvNode)
@@ -2623,6 +2623,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     ttData.move  = ttHit ? ttData.move : Move::none();
     ttData.value = ttHit ? value_from_tt(ttData.value, ss->ply, pos.rule50_count()) : VALUE_NONE;
     pvHit        = ttHit && ttData.is_pv;
+
     // At non-PV nodes we check for an early TT cutoff
     //from Shashin-Crystal begin
     if (!PvNode && is_valid(ttData.value)  // Can happen when !ttHit or when access race in probe()
@@ -2827,8 +2828,8 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         return mated_in(ss->ply);  // Plies to mate from the root
     }
 
-    if (!is_decisive(bestValue) && bestValue >= beta)
-        bestValue = (3 * bestValue + beta) / 4;
+    if (!is_decisive(bestValue) && bestValue > beta)
+        bestValue = (bestValue + beta) / 2;
 
     // Save gathered info in transposition table. The static evaluation
     // is saved as it was before adjustment by correction history.
@@ -2944,8 +2945,8 @@ void update_all_stats(const Position&      pos,
     Piece                  moved_piece    = pos.moved_piece(bestMove);
     PieceType              captured;
 
-    int bonus = stat_bonus(depth) + 298 * isTTMove;
-    int malus = stat_malus(depth) - 32 * (moveCount - 1);
+    int bonus = std::min(162 * depth - 92, 1587) + 298 * isTTMove;
+    int malus = std::min(694 * depth - 230, 2503) - 32 * (moveCount - 1);
 
     if (!pos.capture_stage(bestMove))
     {
