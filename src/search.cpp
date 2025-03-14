@@ -1586,19 +1586,24 @@ Value Search::Worker::search(
     // Apply Razoring for positions that meet the base condition, adjusted for Shashin zones
     // Avoid Razoring in highly dynamic situations
 
+    // Step 7. Razoring Optimization
     baseRazoringMargin = 446 + 303 * depth * depth;
+    // Razoring optimization based on position's type
     if (rootShashinState.dynamicDerived.isAggressive)
-        baseRazoringMargin -= 50;
+        baseRazoringMargin -= 75;
     else if (rootShashinState.dynamicDerived.isStrategical
-             || rootShashinState.dynamicDerived.isTacticalReactive)
-        baseRazoringMargin += 30;
+            || rootShashinState.dynamicDerived.isTacticalReactive)
+        baseRazoringMargin += 40;
+
     if (!PvNode && eval < alpha - baseRazoringMargin
         && !(rootShashinState.dynamicDerived.isAggressive
-             && rootShashinState.staticState.legalMoveCount >= 30)
+            && rootShashinState.staticState.legalMoveCount >= 30)
         && (g_shashinManager->isTacticalInitiative()
             || rootShashinState.dynamicDerived.isTacticalReactive
             || rootShashinState.dynamicDerived.isStrategical))
+    {
         return qsearch<NonPV>(pos, ss, alpha, beta);
+    }    
     // from shashin-crystal end
     // Begin early pruning from Crystal by Shashin adapted
     if ((!PvNode && !is_decisive(eval) && !is_decisive(beta) && eval >= beta)
