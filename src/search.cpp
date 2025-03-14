@@ -1144,6 +1144,7 @@ Value Search::Worker::search(
     depth = std::min(depth, MAX_PLY - 1);
     //from crystal-shashin begin
     // Enhanced logic for draw repetitions (Optimized)
+    // Check if we have an upcoming move that draws by repetition
     if (!rootNode && alpha < VALUE_DRAW && pos.upcoming_repetition(ss->ply))
     {
         bool isLowDepth = (ss->ply < std::min(8, depth));
