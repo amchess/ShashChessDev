@@ -2262,7 +2262,12 @@ skipExtensionAndPruning:  // full threads search patch
 
                 // Passive positions (Petrosian style) -> Even stronger pruning
                 if (g_shashinManager->isPetrosian())
-                    dynamicReduction = std::min(dynamicReduction + 2, 5);  // Strong pruning
+                {
+                    if (value > alpha + 20)  // If the evaluation is improving, we reduce less
+                        dynamicReduction = std::min(dynamicReduction + 1, 4);
+                    else  // If the position isn't improving, stronger prune
+                        dynamicReduction = std::min(dynamicReduction + 2, 5);
+                }
 
                 // Compute final reduction depth
                 // Final reduction calculation
