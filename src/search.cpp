@@ -1478,7 +1478,8 @@ Value Search::Worker::search(
         }
     }
     //from shashin-crystal begin
-    int baseRazoringMargin = 0;
+    int  baseRazoringMargin = 0;
+    bool nonPawnMaterial    = pos.non_pawn_material(us);
     //from shashin-crystal end
     // Step 6. Static evaluation of the position
     Value      unadjustedStaticEval = VALUE_NONE;
@@ -1592,18 +1593,18 @@ Value Search::Worker::search(
     if (rootShashinState.dynamicDerived.isAggressive)
         baseRazoringMargin -= 75;
     else if (rootShashinState.dynamicDerived.isStrategical
-            || rootShashinState.dynamicDerived.isTacticalReactive)
+             || rootShashinState.dynamicDerived.isTacticalReactive)
         baseRazoringMargin += 40;
 
     if (!PvNode && eval < alpha - baseRazoringMargin
         && !(rootShashinState.dynamicDerived.isAggressive
-            && rootShashinState.staticState.legalMoveCount >= 30)
+             && rootShashinState.staticState.legalMoveCount >= 30)
         && (g_shashinManager->isTacticalInitiative()
             || rootShashinState.dynamicDerived.isTacticalReactive
             || rootShashinState.dynamicDerived.isStrategical))
     {
         return qsearch<NonPV>(pos, ss, alpha, beta);
-    }    
+    }
     // from shashin-crystal end
     // Begin early pruning from Crystal by Shashin adapted
     if ((!PvNode && !is_decisive(eval) && !is_decisive(beta) && eval >= beta)
@@ -1641,8 +1642,7 @@ Value Search::Worker::search(
         bool useNullMoveByShashin = g_shashinManager->useCrystalNullMoveSearch();
         bool positionSafe         = !kingDanger && quietKingSafe;
         bool allowNullMove        = (ss - 1)->currentMove != Move::null() && eval >= beta
-                          && pos.non_pawn_material(us) && ss->ply >= thisThread->nmpMinPly
-                          && !is_loss(beta);
+                          && nonPawnMaterial && ss->ply >= thisThread->nmpMinPly && !is_loss(beta);
         bool useShashinLogic = useNullMoveByShashin && !thisThread->nmpGuard && !gameCycle
                             && eval >= ss->staticEval && positionSafe
                             && (rootDepth < 11 || ourMove || MoveList<LEGAL>(pos).size() > 5);
@@ -1944,8 +1944,7 @@ moves_loop:  // When in check, search starts here
                 r += 1031;
 
             //shashin begin
-            bool nonPawnMaterial = false;
-            bool applyPruning    = false;
+            bool applyPruning = false;
             //shahsin end
             // full threads patch begin
             if (thisThread->fullSearch)
@@ -1957,8 +1956,6 @@ moves_loop:  // When in check, search starts here
             // Step 14. Pruning at shallow depth
             // Depth conditions are important for mate finding.
             //from crystal-shashin begin
-            nonPawnMaterial = pos.non_pawn_material(us);
-
             applyPruning = !is_loss(bestValue)
                         && ((doLMP && rootShashinState.dynamicDerived.isHighTal)
                             || (!rootNode && nonPawnMaterial
@@ -1986,14 +1983,16 @@ moves_loop:  // When in check, search starts here
                         && lmrDepth < (rootShashinState.dynamicDerived.isAggressive ? 6 : 7)
                         && !ss->inCheck)
                     {
-                        Value futilityValue = ss->staticEval + 242 + 238 * lmrDepth
-                                            + PieceValue[capturedPiece] + 95 * captHist / 700;
-
-                        // 📌 Evitiamo pruning se la posizione è sacrificiale o il re è esposto
-                        if (futilityValue <= alpha && !rootShashinState.staticState.isSacrificial
+                        if (!rootShashinState.staticState.isSacrificial
                             && !rootShashinState.staticState.kingExposed)
-                            continue;
+                        {
+                            Value futilityValue = ss->staticEval + 242 + 238 * lmrDepth
+                                                + PieceValue[capturedPiece] + 95 * captHist / 700;
+                            if (futilityValue <= alpha)
+                                continue;
+                        }
                     }
+
 
                     // SEE based pruning for captures and checks (~11 Elo)
                     int seeHist      = std::clamp(captHist / 36, -153 * depth, 134 * depth);
@@ -2010,11 +2009,12 @@ moves_loop:  // When in check, search starts here
                 }
                 else  // Quiet moves
                 {
-                    int history =
-                      (*contHist[0])[movedPiece][move.to_sq()]
-                      + (*contHist[1])[movedPiece][move.to_sq()]
-                      + thisThread
-                          ->pawnHistory[pawn_structure_index(pos)][movedPiece][move.to_sq()];
+                    int hist0 = (*contHist[0])[movedPiece][move.to_sq()];
+                    int hist1 = (*contHist[1])[movedPiece][move.to_sq()];
+                    int pawnHist =
+                      thisThread->pawnHistory[pawn_structure_index(pos)][movedPiece][move.to_sq()];
+
+                    int history = hist0 + hist1 + pawnHist;
 
                     // Continuation history-based pruning
                     if (history < -4107 * depth)
