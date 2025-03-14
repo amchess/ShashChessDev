@@ -1783,7 +1783,8 @@ Value Search::Worker::search(
                 ss->continuationCorrectionHistory =
                   &this->continuationCorrectionHistory[movedPiece][move.to_sq()];
 
-                // Se il re è esposto, valutiamo con maggiore profondità nel qsearch
+                /* If the king is exposed, we shrink the alpha-beta window by increasing alpha proportionally to the depth
+                   of the main search. This allows reducing the number of nodes explored when the king is under attack.*/
                 Value qsearchThreshold =
                   rootShashinState.staticState.kingExposed ? probCutBeta - depth * 2 : probCutBeta;
                 value = -qsearch<NonPV>(pos, ss + 1, -qsearchThreshold, -probCutBeta + 1);
