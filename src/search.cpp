@@ -48,7 +48,6 @@ Local assessments: Penalize or reward based on king's security, tactical complex
 #include "nnue/network.h"
 #include "nnue/nnue_accumulator.h"
 #include "nnue/nnue_common.h"
-#include "nnue/nnue_misc.h"
 #include "position.h"
 #include "syzygy/tbprobe.h"
 #include "thread.h"
@@ -159,12 +158,6 @@ void update_correction_history(const Position& pos,
         (*(ss - 2)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()]
           << bonus * 138 / 128;
 }
-
-// History and stats update bonus, based on depth
-int stat_bonus(Depth d) { return std::min(158 * d - 98, 1622); }
-
-// History and stats update malus, based on depth
-int stat_malus(Depth d) { return std::min(802 * d - 243, 2850); }
 
 // Add a small random component to draw evaluations to avoid 3-fold blindness
 Value value_draw(size_t nodes) { return VALUE_DRAW - 1 + Value(nodes & 0x2); }
@@ -398,6 +391,7 @@ void Search::Worker::ensure_network_replicated() {
 }
 
 void Search::Worker::start_searching() {
+
     // Non-main threads go directly to iterative_deepening()
     if (!is_mainthread())
     {
@@ -728,8 +722,10 @@ void Search::Worker::start_searching() {
 // repeatedly with increasing depth until the allocated thinking time has been
 // consumed, the user stops the search, or the maximum search depth is reached.
 void Search::Worker::iterative_deepening() {
+
     SearchManager* mainThread = (is_mainthread() ? main_manager() : nullptr);
-    Move           pv[MAX_PLY + 1];
+
+    Move pv[MAX_PLY + 1];
 
     Depth lastBestMoveDepth = 0;
     Value lastBestScore     = -VALUE_INFINITE;
@@ -1057,8 +1053,8 @@ void Search::Worker::iterative_deepening() {
                 && !mainThread->ponder)
                 threads.stop = true;
 
-            // Stop the search if we have exceeded the totalTime
-            if (elapsedTime > totalTime)
+            // Stop the search if we have exceeded the totalTime or maximum
+            if (elapsedTime > std::min(totalTime, double(mainThread->tm.maximum())))
             {
                 // If we are allowed to ponder do not stop the search now but
                 // keep pondering until the GUI sends "ponderhit" or "stop".
@@ -1214,6 +1210,7 @@ Value Search::Worker::search(
     // Check for the available remaining time
     if (is_mainthread())
         main_manager()->check_time(*thisThread);
+
     // Used to send selDepth info to GUI (selDepth counts from 1, ply from 0)
     if (PvNode && thisThread->selDepth < ss->ply + 1)
         thisThread->selDepth = ss->ply + 1;
@@ -1303,6 +1300,7 @@ Value Search::Worker::search(
     // end Shashin influence on TT behavior
     // At this point, if excluded, skip straight to step 6, static eval. However,
     // to save indentation, we list the condition in all code between here and there.
+
     // At non-PV nodes we check for an early TT cutoff
     if (!PvNode
         && !excludedMove
@@ -1324,12 +1322,14 @@ Value Search::Worker::search(
         {
             // Bonus for a quiet ttMove that fails high
             if (!ttCapture)
-                update_quiet_histories(pos, ss, *this, ttData.move, stat_bonus(depth) * 784 / 1024);
+                update_quiet_histories(pos, ss, *this, ttData.move,
+                                       std::min(117600 * depth - 71344, 1244992) / 1024);
 
             // Extra penalty for early quiet moves of the previous ply
             if (prevSq != SQ_NONE && (ss - 1)->moveCount <= 3 && !priorCapture)
                 update_continuation_histories(ss - 1, pos.piece_on(prevSq), prevSq,
-                                              -stat_malus(depth + 1) * 1018 / 1024);
+                                              -std::min(779788 * (depth + 1) - 271806, 2958308)
+                                                / 1024);
         }
 
         // Partial workaround for the graph history interaction problem
@@ -1494,7 +1494,6 @@ Value Search::Worker::search(
     else if (excludedMove)
     {
         // Providing the hint that this node's accumulator will be used often
-        Eval::NNUE::hint_common_parent_position(pos, networks[numaAccessToken], refreshTable);
         unadjustedStaticEval = eval = ss->staticEval;
     }
     else if (ss->ttHit)
@@ -1503,8 +1502,6 @@ Value Search::Worker::search(
         unadjustedStaticEval = ttData.eval;
         if (!is_valid(unadjustedStaticEval))
             unadjustedStaticEval = evaluate(pos);
-        else if (PvNode)
-            Eval::NNUE::hint_common_parent_position(pos, networks[numaAccessToken], refreshTable);
 
         ss->staticEval = eval = to_corrected_static_eval(unadjustedStaticEval, correctionValue);
 
