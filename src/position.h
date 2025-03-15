@@ -65,9 +65,9 @@ struct StateInfo {
     int        repetition;
 
     // Used by NNUE
+    DirtyPiece                                                             dirtyPiece;
     Eval::NNUE::Accumulator<Eval::NNUE::TransformedFeatureDimensionsBig>   accumulatorBig;
     Eval::NNUE::Accumulator<Eval::NNUE::TransformedFeatureDimensionsSmall> accumulatorSmall;
-    DirtyPiece                                                             dirtyPiece;
 };
 
 
@@ -94,6 +94,7 @@ class Position {
     Position&   set(const std::string& fenStr, bool isChess960, StateInfo* si);
     Position&   set(const std::string& code, Color c, StateInfo* si);
     std::string fen() const;
+
     // Position representation
     Bitboard pieces(PieceType pt = ALL_PIECES) const;
     template<typename... PieceTypes>

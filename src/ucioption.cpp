@@ -99,6 +99,7 @@ void OptionsMap::add(const std::string& name, const Option& option) {
     //combo management end
 }
 
+
 std::size_t OptionsMap::count(const std::string& name) const { return options_map.count(name); }
 
 Option::Option(const OptionsMap* map) :

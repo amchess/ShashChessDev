@@ -160,6 +160,7 @@ bool isSpeculativeMove(Square from, Square to, const Position& pos) {
 }
 template<Color Us, PieceType Pt>
 ExtMove* generate_moves(const Position& pos, ExtMove* moveList, Bitboard target) {
+
     static_assert(Pt != KING && Pt != PAWN, "Unsupported piece type in generate_moves()");
 
     Bitboard bb = pos.pieces(Us, Pt);

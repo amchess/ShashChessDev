@@ -54,9 +54,6 @@ struct Networks;
 struct AccumulatorCaches;
 
 std::string trace(Position& pos, const Networks& networks, AccumulatorCaches& caches);
-void        hint_common_parent_position(const Position&    pos,
-                                        const Networks&    networks,
-                                        AccumulatorCaches& caches);
 
 }  // namespace ShashChess::Eval::NNUE
 }  // namespace ShashChess
