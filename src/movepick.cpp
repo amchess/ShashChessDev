@@ -139,100 +139,59 @@ void MovePicker::score() {
                          | (pos.pieces(us, ROOK) & threatenedByMinor)
                          | (pos.pieces(us, KNIGHT, BISHOP) & threatenedByPawn);
     }
-    //fortress by Shashin begin
-    // Compute a scaling factor for the Shashin bonus.
-    static double precomputedShashinScaling =
-      std::min(1.0, static_cast<double>(pos.game_ply()) / 20.0);
-    double dynamicBonus = std::log(1.0 + precomputedShashinScaling * 9.0) / std::log(10.0);
-    // Read the fortress flag (set in initDynamicRootShashinState using the root position)
-    const bool fortress            = MoveConfig::isFortress;
-    const bool useMoveShashinLogic = MoveConfig::useMoveShashinLogic;
-    const bool isStrategical       = MoveConfig::isStrategical;
-    const bool isAggressive        = MoveConfig::isAggressive;
 
-    // Iterate over each move in the list
     for (auto& m : *this)
-    {
-        // Apply Shashin logic: Adjust bonus based on position type,
-        // using the dynamic (log-scaled) bonus factor.
-        Piece  movedPiece = pos.moved_piece(m);
-        Square to         = m.to_sq();
-        int    baseValue = 0, shashinBonus = 0, fortressPenalty = 0;
-
-        if (useMoveShashinLogic)
-        {
-            shashinBonus = isStrategical ? static_cast<int>(600 * dynamicBonus)
-                         : isAggressive  ? static_cast<int>(1200 * dynamicBonus)
-                                         : 0;
-        }
         if constexpr (Type == CAPTURES)
-        {
-            baseValue = 7 * int(PieceValue[pos.piece_on(to)])
-                      + (*captureHistory)[movedPiece][to][type_of(pos.piece_on(to))];
-            if (isAggressive)
-                baseValue += 5000;  // extra bonus for aggressive captures
-        }
+            m.value =
+              7 * int(PieceValue[pos.piece_on(m.to_sq())])
+              + (*captureHistory)[pos.moved_piece(m)][m.to_sq()][type_of(pos.piece_on(m.to_sq()))];
+
         else if constexpr (Type == QUIETS)
         {
-            PieceType pt   = type_of(movedPiece);
+            Piece     pc   = pos.moved_piece(m);
+            PieceType pt   = type_of(pc);
             Square    from = m.from_sq();
-            baseValue      = 2 * (*mainHistory)[pos.side_to_move()][m.from_to()]
-                      + 2 * (*pawnHistory)[pawn_structure_index(pos)][movedPiece][to]
-                      + (*continuationHistory[0])[movedPiece][to]
-                      + (*continuationHistory[1])[movedPiece][to]
-                      + (*continuationHistory[2])[movedPiece][to]
-                      + (*continuationHistory[3])[movedPiece][to]
-                      + (*continuationHistory[4])[movedPiece][to] / 3
-                      + (*continuationHistory[5])[movedPiece][to]
-                      + (pos.check_squares(pt) & to ? 16384 : 0);  // bonus for checks
-            // Bonus per fuggire dalla cattura
-            if (threatenedPieces & from)
-            {
-                if (pt == QUEEN && !(to & threatenedByRook))
-                    baseValue += 51700;
-                else if (pt == ROOK && !(to & threatenedByMinor))
-                    baseValue += 25600;
-                else if (!(to & threatenedByPawn))
-                    baseValue += 14450;
-            }
+            Square    to   = m.to_sq();
 
-            // Malus per mettere il pezzo in presa
-            if (pt == QUEEN && (to & threatenedByRook))
-                baseValue -= 49000;
-            else if (pt == ROOK && (to & threatenedByMinor))
-                baseValue -= 24335;
+            // histories
+            m.value = 2 * (*mainHistory)[pos.side_to_move()][m.from_to()];
+            m.value += 2 * (*pawnHistory)[pawn_structure_index(pos)][pc][to];
+            m.value += (*continuationHistory[0])[pc][to];
+            m.value += (*continuationHistory[1])[pc][to];
+            m.value += (*continuationHistory[2])[pc][to];
+            m.value += (*continuationHistory[3])[pc][to];
+            m.value += (*continuationHistory[4])[pc][to] / 3;
+            m.value += (*continuationHistory[5])[pc][to];
 
-            // Bonus per le prime profondità basato sulla history table
+            // bonus for checks
+            m.value += bool(pos.check_squares(pt) & to) * 16384;
+
+            // bonus for escaping from capture
+            m.value += threatenedPieces & from ? (pt == QUEEN && !(to & threatenedByRook)   ? 51700
+                                                  : pt == ROOK && !(to & threatenedByMinor) ? 25600
+                                                  : !(to & threatenedByPawn)                ? 14450
+                                                                                            : 0)
+                                               : 0;
+
+            // malus for putting piece en prise
+            m.value -= (pt == QUEEN ? bool(to & threatenedByRook) * 49000
+                        : pt == ROOK && bool(to & threatenedByMinor) ? 24335
+                                                                     : 0);
+
             if (ply < LOW_PLY_HISTORY_SIZE)
-                baseValue += 8 * (*lowPlyHistory)[ply][m.from_to()] / (1 + 2 * ply);
-            if (isStrategical)
-                baseValue += 2000;  // bonus for safe, positional moves
-        }
-        else
-        {  // EVASIONS
-            if (pos.capture_stage(m))
-                baseValue = PieceValue[pos.piece_on(m.to_sq())] + (1 << 28);
-            else
-                baseValue = (*mainHistory)[pos.side_to_move()][m.from_to()]
-                          + (*continuationHistory[0])[pos.moved_piece(m)][to]
-                          + (*pawnHistory)[pawn_structure_index(pos)][pos.moved_piece(m)][to];
-        }
+                m.value += 8 * (*lowPlyHistory)[ply][m.from_to()] / (1 + 2 * ply);
+	      }
 
-        // If in a fortress, penalize moves that break the defensive setup
-        // and give a slight bonus for moves that preserve it.
-        if (fortress)
+        else  // Type == EVASIONS
         {
-            if (pos.is_fortress_breaking_move(m))
-                fortressPenalty = 10000;
-            if (pos.is_fortress_preserving_move(m))
-                baseValue += 500;
+            if (pos.capture_stage(m))
+                m.value = PieceValue[pos.piece_on(m.to_sq())] + (1 << 28);
+            else
+                m.value = (*mainHistory)[pos.side_to_move()][m.from_to()]
+                        + (*continuationHistory[0])[pos.moved_piece(m)][m.to_sq()]
+                        + (*pawnHistory)[pawn_structure_index(pos)][pos.moved_piece(m)][m.to_sq()];
         }
-
-        // Compute the final move value
-        m.value = baseValue + shashinBonus - fortressPenalty;
-    }
 }
-//From Shashin end
 
 // Returns the next move satisfying a predicate function.
 // This never returns the TT move, as it was emitted before.
