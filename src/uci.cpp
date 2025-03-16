@@ -604,6 +604,7 @@ int UCIEngine::to_cp(Value v, const Position& pos) {
     return std::round(100 * int(v) / a);
 }
 
+//in wdl package for wdl model
 std::string UCIEngine::square(Square s) {
     return std::string{char('a' + file_of(s)), char('1' + rank_of(s))};
 }

@@ -20,12 +20,14 @@
 
 #include <cassert>
 #include <limits>
-#include <cmath>
+#include <cmath>  //for ShashChess
 
 #include "bitboard.h"
 #include "misc.h"
+//for ShashChess
 
 namespace ShashChess {
+
 namespace {
 
 enum Stages {
@@ -59,7 +61,6 @@ enum Stages {
 void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
 
     for (ExtMove *sortedEnd = begin, *p = begin + 1; p < end; ++p)
-    {
         if (p->value >= limit)
         {
             ExtMove tmp = *p, *q;
@@ -68,7 +69,6 @@ void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
                 *q = *(q - 1);
             *q = tmp;
         }
-    }
 }
 
 }  // namespace
@@ -99,7 +99,7 @@ MovePicker::MovePicker(const Position&              p,
     ply(pl) {
 
     stage = (pos.checkers() ? EVASION_TT : (depth > 0 ? MAIN_TT : QSEARCH_TT))
-          + !(ttm && pos.pseudo_legal(ttm));
+          + !(ttm && pos.pseudo_legal(ttm));  //faster than Stockfish
 }
 
 // MovePicker constructor for ProbCut: we generate captures with Static Exchange
@@ -110,6 +110,7 @@ MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceTo
     ttMove(ttm),
     threshold(th) {
     assert(!pos.checkers());
+
     stage = PROBCUT_TT
           + !(ttm && pos.capture_stage(ttm) && pos.pseudo_legal(ttm) && pos.see_ge(ttm, threshold));
 }
@@ -117,24 +118,28 @@ MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceTo
 // Assigns a numerical value to each move in a list, used for sorting.
 // Captures are ordered by Most Valuable Victim (MVV), preferring captures
 // with a good history. Quiets moves are ordered using the history tables.
-//from shashin begin
 template<GenType Type>
 void MovePicker::score() {
+
     static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
-    Bitboard threatenedByPawn, threatenedByMinor, threatenedByRook, threatenedPieces;
+    Bitboard threatenedByPawn, threatenedByMinor, threatenedByRook,
+      threatenedPieces;  //used variables for ShashChess
     if constexpr (Type == QUIETS)
     {
-        Color us         = pos.side_to_move();
+        Color us = pos.side_to_move();
+
         threatenedByPawn = pos.attacks_by<PAWN>(~us);
         threatenedByMinor =
           pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<BISHOP>(~us) | threatenedByPawn;
         threatenedByRook = pos.attacks_by<ROOK>(~us) | threatenedByMinor;
+
+        // Pieces threatened by pieces of lesser material value
         threatenedPieces = (pos.pieces(us, QUEEN) & threatenedByRook)
                          | (pos.pieces(us, ROOK) & threatenedByMinor)
                          | (pos.pieces(us, KNIGHT, BISHOP) & threatenedByPawn);
     }
-
+    //fortress by Shashin begin
     // Compute a scaling factor for the Shashin bonus.
     static double precomputedShashinScaling =
       std::min(1.0, static_cast<double>(pos.game_ply()) / 20.0);
@@ -160,18 +165,18 @@ void MovePicker::score() {
                          : isAggressive  ? static_cast<int>(1200 * dynamicBonus)
                                          : 0;
         }
-
         if constexpr (Type == CAPTURES)
         {
-            baseValue = 7 * int(PieceValue[pos.piece_on(m.to_sq())])
+            baseValue = 7 * int(PieceValue[pos.piece_on(to)])
                       + (*captureHistory)[movedPiece][to][type_of(pos.piece_on(to))];
             if (isAggressive)
                 baseValue += 5000;  // extra bonus for aggressive captures
         }
         else if constexpr (Type == QUIETS)
         {
-            PieceType pt = type_of(movedPiece);
-            baseValue    = 2 * (*mainHistory)[pos.side_to_move()][m.from_to()]
+            PieceType pt   = type_of(movedPiece);
+            Square    from = m.from_sq();
+            baseValue      = 2 * (*mainHistory)[pos.side_to_move()][m.from_to()]
                       + 2 * (*pawnHistory)[pawn_structure_index(pos)][movedPiece][to]
                       + (*continuationHistory[0])[movedPiece][to]
                       + (*continuationHistory[1])[movedPiece][to]
@@ -179,7 +184,27 @@ void MovePicker::score() {
                       + (*continuationHistory[3])[movedPiece][to]
                       + (*continuationHistory[4])[movedPiece][to] / 3
                       + (*continuationHistory[5])[movedPiece][to]
-                      + bool(pos.check_squares(pt) & to) * 16384;
+                      + (pos.check_squares(pt) & to ? 16384 : 0);  // bonus for checks
+            // Bonus per fuggire dalla cattura
+            if (threatenedPieces & from)
+            {
+                if (pt == QUEEN && !(to & threatenedByRook))
+                    baseValue += 51700;
+                else if (pt == ROOK && !(to & threatenedByMinor))
+                    baseValue += 25600;
+                else if (!(to & threatenedByPawn))
+                    baseValue += 14450;
+            }
+
+            // Malus per mettere il pezzo in presa
+            if (pt == QUEEN && (to & threatenedByRook))
+                baseValue -= 49000;
+            else if (pt == ROOK && (to & threatenedByMinor))
+                baseValue -= 24335;
+
+            // Bonus per le prime profondità basato sulla history table
+            if (ply < LOW_PLY_HISTORY_SIZE)
+                baseValue += 8 * (*lowPlyHistory)[ply][m.from_to()] / (1 + 2 * ply);
             if (isStrategical)
                 baseValue += 2000;  // bonus for safe, positional moves
         }
@@ -213,9 +238,11 @@ void MovePicker::score() {
 // This never returns the TT move, as it was emitted before.
 template<typename Pred>
 Move MovePicker::select(Pred filter) {
+
     for (; cur < endMoves; ++cur)
         if (*cur != ttMove && filter())
             return *cur++;
+
     return Move::none();
 }
 
@@ -223,11 +250,13 @@ Move MovePicker::select(Pred filter) {
 // new pseudo-legal move on every call until there are no more moves left,
 // picking the move with the highest score from a list of generated moves.
 Move MovePicker::next_move() {
+
     auto quiet_threshold = [](Depth d) { return -3560 * d; };
 
 top:
     switch (stage)
     {
+
     case MAIN_TT :
     case EVASION_TT :
     case QSEARCH_TT :
@@ -240,6 +269,7 @@ top:
     case QCAPTURE_INIT :
         cur = endBadCaptures = moves;
         endMoves             = generate<CAPTURES>(pos, cur);
+
         score<CAPTURES>();
         partial_insertion_sort(cur, endMoves, std::numeric_limits<int>::min());
         ++stage;
@@ -252,6 +282,7 @@ top:
                                                           : (*endBadCaptures++ = *cur, false);
             }))
             return *(cur - 1);
+
         ++stage;
         [[fallthrough]];
 
@@ -260,9 +291,11 @@ top:
         {
             cur      = endBadCaptures;
             endMoves = beginBadQuiets = endBadQuiets = generate<QUIETS>(pos, cur);
+
             score<QUIETS>();
             partial_insertion_sort(cur, endMoves, quiet_threshold(depth));
         }
+
         ++stage;
         [[fallthrough]];
 
@@ -279,6 +312,7 @@ top:
         // Prepare the pointers to loop over the bad captures
         cur      = moves;
         endMoves = endBadCaptures;
+
         ++stage;
         [[fallthrough]];
 
@@ -289,17 +323,20 @@ top:
         // Prepare the pointers to loop over the bad quiets
         cur      = beginBadQuiets;
         endMoves = endBadQuiets;
+
         ++stage;
         [[fallthrough]];
 
     case BAD_QUIET :
         if (!skipQuiets)
             return select([]() { return true; });
+
         return Move::none();
 
     case EVASION_INIT :
         cur      = moves;
         endMoves = generate<EVASIONS>(pos, cur);
+
         score<EVASIONS>();
         partial_insertion_sort(cur, endMoves, std::numeric_limits<int>::min());
         ++stage;

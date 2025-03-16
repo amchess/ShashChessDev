@@ -63,6 +63,7 @@ Engine::Engine(std::optional<std::string> path) :
         NN::NetworkSmall({EvalFileDefaultNameSmall, "None", ""}, NN::EmbeddedNNUEType::SMALL))) {
     pos.set(StartFEN, false, &states->back());
 
+
     options.add(  //
       "Debug Log File", Option("", [](const Option& o) {
           start_logger(o);
@@ -294,17 +295,18 @@ void Engine::stop() { threads.stop = true; }
 void Engine::search_clear() {
     wait_for_search_finished();
 
-    MCTS.clear();
+    MCTS.clear();  //mcts
     tt.clear(threads);
     threads.clear();
 
     // @TODO wont work with multiple instances
     Tablebases::init(options["SyzygyPath"]);  // Free mapped files
-
+                                              //for wdl use begin
     if (!WDLModel::is_initialized())
     {
         WDLModel::init();
     }
+    //for wdl use end
 }
 
 void Engine::set_on_update_no_moves(std::function<void(const Engine::InfoShort&)>&& f) {

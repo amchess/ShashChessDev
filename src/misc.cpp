@@ -31,8 +31,7 @@
 #include <limits>
 #include <mutex>
 #include <sstream>
-#include <string_view>
-#include <system_error>
+//not used string_view: improved from Stockfish
 //from ShashChess begin
 #include <algorithm>
 #include <stdarg.h>
@@ -479,6 +478,7 @@ CommandLine::CommandLine(int _argc, char** _argv) :
 
 std::string CommandLine::get_binary_directory(std::string argv0, std::string workingDirectory) {
     std::string pathSeparator;
+
 #ifdef _WIN32
     pathSeparator = "\\";
     #ifdef _MSC_VER

@@ -24,7 +24,11 @@ MCTS: Intelligently activate or avoid it.
 Local assessments: Penalize or reward based on king's security, tactical complexity, etc.
 */
 #include "search.h"
-#include <random>  //variety
+//variety begin
+#include <random>
+#include <chrono>
+#include <cstdint>
+//variety end
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -129,6 +133,32 @@ int correction_value(const Worker& w, const Position& pos, const Stack* const ss
                  : 0;
 
     return 6995 * pcv + 6593 * micv + 7753 * (wnpcv + bnpcv) + 6049 * cntcv;
+}
+
+int risk_tolerance(const Position& pos, Value v) {
+    // Returns (some constant of) second derivative of sigmoid.
+    static constexpr auto sigmoid_d2 = [](int x, int y) {
+        return -345600 * x / (x * x + 3 * y * y);
+    };
+
+    int material = pos.count<PAWN>() + 3 * pos.count<KNIGHT>() + 3 * pos.count<BISHOP>()
+                 + 5 * pos.count<ROOK>() + 9 * pos.count<QUEEN>();
+
+    int m = std::clamp(material, 17, 78);
+
+    // a and b are the crude approximation of the wdl model.
+    // The win rate is: 1/(1+exp((a-v)/b))
+    // The loss rate is 1/(1+exp((v+a)/b))
+    int a = ((-m * 3220 / 256 + 2361) * m / 256 - 586) * m / 256 + 421;
+    int b = ((m * 7761 / 256 - 2674) * m / 256 + 314) * m / 256 + 51;
+
+
+    // The risk utility is therefore d/dv^2 (1/(1+exp(-(v-a)/b)) -1/(1+exp(-(-v-a)/b)))
+    // -115200x/(x^2+3) = -345600(ab) / (a^2+3b^2) (multiplied by some constant) (second degree pade approximant)
+    int winning_risk = sigmoid_d2(v - a, b);
+    int losing_risk  = -sigmoid_d2(-v - a, b);
+
+    return (winning_risk + losing_risk) * 60 / b;
 }
 
 // Add correctionHistory value to raw staticEval and guarantee evaluation
@@ -670,9 +700,9 @@ void Search::Worker::start_searching() {
 
     // Send again PV info if we have a new best thread
     if (bestThread != this)
-    {
+    {  //Kelly
         main_manager()->pv(*bestThread, threads, tt, bestThread->completedDepth);
-    }
+    }  //Kelly
 
     std::string ponder;
 
@@ -930,9 +960,9 @@ void Search::Worker::iterative_deepening() {
                 // at nodes > 10M (rather than depth N, which can be reached quickly)
                 if (mainThread && multiPV == 1 && (bestValue <= alpha || bestValue >= beta)
                     && nodes > 10000000)
-                {
+                {  //no warning
                     main_manager()->pv(*this, threads, tt, rootDepth);
-                }
+                }  //no warning
                 // In case of failing low/high increase aspiration window and re-search,
                 // otherwise exit the loop.
                 if (bestValue <= alpha)
@@ -974,9 +1004,9 @@ void Search::Worker::iterative_deepening() {
                 // we suppress this output and below pick a proven score/PV for this
                 // thread (from the previous iteration).
                 && !(threads.abortedSearch && is_loss(rootMoves[0].uciScore)))
-            {
+            {  //no warning
                 main_manager()->pv(*this, threads, tt, rootDepth);
-            }
+            }  //no warning
             if (threads.stop)
                 break;
         }
@@ -1315,7 +1345,7 @@ Value Search::Worker::search(
         && is_valid(ttData.value)
         && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER))
         && !ignoreTTBound  // Avoid early TT cutoffs in tactical positions
-        && (cutNode == (ttData.value >= beta) || (depth > 9 || (rootDepth > 10 && depth > 5))))
+        && (cutNode == (ttData.value >= beta) || depth > 5))
     {
         // If ttMove is quiet, update move sorting heuristics on TT hit
         if (ttData.move && ttData.value >= beta)
@@ -1386,34 +1416,32 @@ Value Search::Worker::search(
             // to save indentation, we list the condition in all code between here and there.
 
             // At non-PV nodes we check for an early Global Learning Table cutoff
-            if (!PvNode &&
+            if (!PvNode && !excludedMove &&
                 // shashin-crystal begin
                 (!gameCycle
                  || (!rootShashinState.dynamicDerived.isStrategical
                      || rootShashinState.staticState.legalMoveCount < 30))
                 && (!(ss - 1)->mainLine || g_shashinManager->isTactical()) &&
                 //shashin-crystal end
-                updatedLearning && learningMove->depth > depth - (expTTValue <= beta)
-                && is_valid(expTTValue)
-                && (cutNode == (expTTValue >= beta)
-                    || (depth > 9
-                        || (rootDepth > 10
-                            && depth
-                                 > 5))))  // Possible in case of Global Learning Table access race
+                updatedLearning
+                && learningMove->depth > depth - (expTTValue < beta)
+                                           + depthAdjustment  // Adjust depth influence by Shashin
+                && is_valid(expTTValue) && (cutNode == (expTTValue >= beta) || depth > 5))
             {
                 // If expTTMove is quiet, update move sorting heuristics on Global learning table hit
                 if (expTTMove && expTTValue >= beta)
                 {
                     // Bonus for a quiet ttMove that fails high
                     if (!expTTCapture)
-                        update_quiet_histories(pos, ss, *this, expTTMove,
-                                               stat_bonus(depth) * 746 / 1024);
+                        update_quiet_histories(pos, ss, *this, ttData.move,
+                                               std::min(117600 * depth - 71344, 1244992) / 1024);
 
                     // Extra penalty for early quiet moves of
                     // the previous ply
-                    if (prevSq != SQ_NONE && (ss - 1)->moveCount <= 2 && !priorCapture)
-                        update_continuation_histories(ss - 1, pos.piece_on(prevSq), prevSq,
-                                                      -stat_malus(depth + 1) * 1018 / 1024);
+                    if (prevSq != SQ_NONE && (ss - 1)->moveCount <= 3 && !priorCapture)
+                        update_continuation_histories(
+                          ss - 1, pos.piece_on(prevSq), prevSq,
+                          -std::min(779788 * (depth + 1) - 271806, 2958308) / 1024);
                 }
 
                 // Partial workaround for the graph history interaction problem
@@ -2199,6 +2227,9 @@ skipExtensionAndPruning:  // full threads search patch
             // Additional dynamic contributions
             r += 316 - moveCount * 32;
             r -= std::abs(correctionValue) / 31568;
+
+            if (PvNode && !is_decisive(bestValue))
+                r -= risk_tolerance(pos, bestValue);
 
             // Increase reduction for cut nodes
             if (cutNode)

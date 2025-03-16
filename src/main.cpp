@@ -21,6 +21,7 @@
 #include "bitboard.h"
 #include "misc.h"
 #include "position.h"
+//wdl model
 #include "uci.h"
 #include "tune.h"
 #include "wdl/win_probability.h"
@@ -31,7 +32,7 @@ int main(int argc, char* argv[]) {
 
     std::cout << engine_info() << std::endl;
 
-    WDLModel::init();
+    WDLModel::init();  //wdl model
 
     Bitboards::init();
     Position::init();
