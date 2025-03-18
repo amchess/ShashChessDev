@@ -144,8 +144,20 @@ ExtMove* generate_pawn_moves(const Position& pos, ExtMove* moveList, Bitboard ta
 
     return moveList;
 }
-
-
+//from shashin for fortresses begin
+bool isSpeculativeMove(Square from, Square to, const Position& pos) {
+    // We avoid moves moving defensive pieces far from the king
+    if (type_of(pos.piece_on(from)) == ROOK || type_of(pos.piece_on(from)) == KNIGHT)
+    {
+        return !pos.is_king_nearby(to);
+    }
+    // We avoid pawn moves breaking the structure
+    if (type_of(pos.piece_on(from)) == PAWN)
+    {
+        return pos.is_pawn_weakening_move(from, to);
+    }
+    return false;
+}
 template<Color Us, PieceType Pt>
 ExtMove* generate_moves(const Position& pos, ExtMove* moveList, Bitboard target) {
 
@@ -153,17 +165,48 @@ ExtMove* generate_moves(const Position& pos, ExtMove* moveList, Bitboard target)
 
     Bitboard bb = pos.pieces(Us, Pt);
 
+    // Logical variables for Shashin-Crystal e moves control
+    const Square   ksq               = pos.square<KING>(Us);
+    const Bitboard blockers_for_king = pos.blockers_for_king(Us);
+    const bool     useCrystalLogic   = MoveConfig::useMoveShashinLogic;
+    const bool     isFortress        = MoveConfig::isFortress;
+
+    bool hasMoves = false;  // it controls if at least a move has been generated
+
     while (bb)
     {
         Square   from = pop_lsb(bb);
         Bitboard b    = attacks_bb<Pt>(from, pos.pieces()) & target;
 
         while (b)
-            *moveList++ = Move(from, pop_lsb(b));
+        {
+            Square to = pop_lsb(b);
+
+            // If we're in a forress, we avoid speculative moves
+            if (isFortress && isSpeculativeMove(from, to, pos))
+                continue;
+
+            // Crystal logic is applied here in an unified mode
+            if (!useCrystalLogic || !(blockers_for_king & from) || aligned(from, to, ksq))
+            {
+                *moveList++ = Move(from, to);
+                hasMoves    = true;  // found at least a valid move
+            }
+        }
+    }
+
+    // Safety control: stalemate/mate
+    if (!hasMoves)
+    {
+        if (pos.checkers())  // If the king is under check and no move ? checkmate
+            return moveList;
+        else  // If the isn't under check and no move ? stalemante
+            return moveList;
     }
 
     return moveList;
 }
+//from shashin for fortresses end
 
 
 template<Color Us, GenType Type>
@@ -192,8 +235,15 @@ ExtMove* generate_all(const Position& pos, ExtMove* moveList) {
     Bitboard b = attacks_bb<KING>(ksq) & (Type == EVASIONS ? ~pos.pieces(Us) : target);
 
     while (b)
-        *moveList++ = Move(ksq, pop_lsb(b));
+    //from shashin begin
+    {
+        Square to = pop_lsb(b);
 
+        // Add crystal logic only if active
+        if (!MoveConfig::useMoveShashinLogic || (pos.attackers_to(to) & pos.pieces(~Us)) == 0)
+            *moveList++ = Move(ksq, to);
+    }
+    //from shashin end
     if ((Type == QUIETS || Type == NON_EVASIONS) && pos.can_castle(Us & ANY_CASTLING))
         for (CastlingRights cr : {Us & KING_SIDE, Us & QUEEN_SIDE})
             if (!pos.castling_impeded(cr) && pos.can_castle(cr))
