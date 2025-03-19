@@ -950,10 +950,10 @@ template<NodeType nodeType>
 Value Search::Worker::search(
   Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, bool cutNode) {
 
-    constexpr bool PvNode   = nodeType != NonPV;
-    constexpr bool rootNode = nodeType == Root;
-    const bool     allNode  = !(PvNode || cutNode);
-    const RootShashinState& rootShashinState = g_shashinManager->getState();//for ShashChess
+    constexpr bool          PvNode           = nodeType != NonPV;
+    constexpr bool          rootNode         = nodeType == Root;
+    const bool              allNode          = !(PvNode || cutNode);
+    const RootShashinState& rootShashinState = g_shashinManager->getState();  //for ShashChess
     // Dive into quiescence search when the depth reaches zero
     if (depth <= 0)
     {
@@ -1157,8 +1157,7 @@ Value Search::Worker::search(
                      || rootShashinState.staticState.legalMoveCount < 30))
                 && (!(ss - 1)->mainLine || g_shashinManager->isTactical()) &&
                 //shashin-crystal end
-                updatedLearning
-                && learningMove->depth > depth - (expTTValue < beta)                                           
+                updatedLearning && learningMove->depth > depth - (expTTValue < beta)
                 && is_valid(expTTValue) && (cutNode == (expTTValue >= beta) || depth > 5))
             {
                 // If expTTMove is quiet, update move sorting heuristics on Global learning table hit
