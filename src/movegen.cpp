@@ -145,18 +145,9 @@ ExtMove* generate_pawn_moves(const Position& pos, ExtMove* moveList, Bitboard ta
     return moveList;
 }
 //from shashin for fortresses begin
-bool isSpeculativeMove(Square from, Square to, const Position& pos) {
-    // We avoid moves moving defensive pieces far from the king
-    if (type_of(pos.piece_on(from)) == ROOK || type_of(pos.piece_on(from)) == KNIGHT)
-    {
-        return !pos.is_king_nearby(to);
-    }
-    // We avoid pawn moves breaking the structure
-    if (type_of(pos.piece_on(from)) == PAWN)
-    {
-        return pos.is_pawn_weakening_move(from, to);
-    }
-    return false;
+inline bool isSpeculativeMove(Square from, Square to, const Position& pos) {
+    PieceType pt = type_of(pos.piece_on(from));
+    return (pt == ROOK || pt == KNIGHT) ? !pos.is_king_nearby(to) : (pt == PAWN && pos.is_pawn_weakening_move(from, to));
 }
 template<Color Us, PieceType Pt>
 ExtMove* generate_moves(const Position& pos, ExtMove* moveList, Bitboard target) {
