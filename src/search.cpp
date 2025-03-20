@@ -954,6 +954,20 @@ Value Search::Worker::search(
     constexpr bool          rootNode         = nodeType == Root;
     const bool              allNode          = !(PvNode || cutNode);
     const RootShashinState& rootShashinState = g_shashinManager->getState();  //for ShashChess
+    //From Shashin fortress begin
+    // Determine if we are in a fortress (note: use the root position!)
+    if (g_shashinManager->isFortress(rootPos))
+    {
+        // Reduce the search depth if in a fortress, because deep searches may be overconfident
+        if (depth > 10)
+            depth -= 1;
+
+        // Also, if no progress has been made (say, 30 moves without breakthroughs),
+        // force a draw.
+        if (pos.no_progress_for(40))
+            return VALUE_DRAW;
+    }
+    //from Shashin fortress end
     // Dive into quiescence search when the depth reaches zero
     if (depth <= 0)
     {
