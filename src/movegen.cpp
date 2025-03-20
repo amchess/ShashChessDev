@@ -147,7 +147,8 @@ ExtMove* generate_pawn_moves(const Position& pos, ExtMove* moveList, Bitboard ta
 //from shashin for fortresses begin
 inline bool isSpeculativeMove(Square from, Square to, const Position& pos) {
     PieceType pt = type_of(pos.piece_on(from));
-    return (pt == ROOK || pt == KNIGHT) ? !pos.is_king_nearby(to) : (pt == PAWN && pos.is_pawn_weakening_move(from, to));
+    return (pt == ROOK || pt == KNIGHT) ? !pos.is_king_nearby(to)
+                                        : (pt == PAWN && pos.is_pawn_weakening_move(from, to));
 }
 template<Color Us, PieceType Pt>
 ExtMove* generate_moves(const Position& pos, ExtMove* moveList, Bitboard target) {
