@@ -182,11 +182,11 @@ constexpr Value KnightValue = 781;
 constexpr Value BishopValue = 825;
 constexpr Value RookValue   = 1276;
 constexpr Value QueenValue  = 2538;
-//from Crystal begin
+//from Crystal-Shashin begin
 constexpr Value PawnConversionFactor = 356;
 constexpr Value VALUE_TB_WIN         = 51 * PawnConversionFactor;
 constexpr Value VALUE_MAX_EVAL       = VALUE_TB_WIN - 8 * PawnConversionFactor;
-//from Cystal end
+//from Crystal-Shashin end
 // clang-format off
 enum PieceType {
     NO_PIECE_TYPE, PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING,
