@@ -307,7 +307,6 @@ class Worker {
         assert(threadIdx == 0);
         return static_cast<SearchManager*>(manager.get());
     }
-
     TimePoint elapsed() const;
     TimePoint elapsed_time() const;
 
