@@ -1,9 +1,14 @@
 #ifndef SHASHIN_TYPES_H
 #define SHASHIN_TYPES_H
 
+#include <cstddef>
 #include <cstdint>
+#include "../types.h"
 
 namespace ShashChess {
+
+constexpr Depth MIN_DEPTH_FOR_QS_CUTOFF = 6;  // it avoids cutoff at shallow depth
+constexpr Depth ADJUSTED_QS_DEPTH = DEPTH_QS + 2;  // it increases the threshold to reduce aggressive cutoff
 
 enum class ShashinPosition : int16_t {
     HIGH_PETROSIAN           = 0x0001,
