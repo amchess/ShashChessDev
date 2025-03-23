@@ -78,20 +78,20 @@ class ShashinManager {
     //inline methods
     // Strategic zones: Only Capablanca is purely strategic
     inline bool isStrategical() const {
-        return ((state.dynamicBase.currentRange == ShashinPosition::CAPABLANCA) && (!kingDanger));
+        return ((state.dynamicBase.currentRange == ShashinPosition::CAPABLANCA) && (!state.staticState.kingDanger));
     }
     inline bool isPassive() const {
         return isInRanges(state.dynamicBase.currentRange, ShashinPosition::MIDDLE_HIGH_PETROSIAN,
                           ShashinPosition::HIGH_PETROSIAN);
     }
     // Tactical zones
-    inline bool isTactical() const { return isTal() || isPetrosian() || kingDanger; }
+    inline bool isTactical() const { return isTal() || isPetrosian() || state.staticState.kingDanger; }
     inline bool isPetrosian() const {
         return isShashinStyle({ShashinPosition::LOW_PETROSIAN, ShashinPosition::MIDDLE_PETROSIAN,
                                ShashinPosition::HIGH_PETROSIAN});
     }
     inline bool isHighPieceDensity() const {
-        const int pieceCount = allPiecesCount;
+        const int pieceCount = state.staticState.allPiecesCount;
         return pieceCount > 14;
     }
     inline bool isAggressive() const {
@@ -102,14 +102,11 @@ class ShashinManager {
     inline bool isInRange(ShashinPosition position) const {
         return state.dynamicBase.currentRange == position;
     }
-
    private:
     RootShashinState state;
-    bool             highMaterial = false, kingDanger = false, pawnsNearPromotion = false;
-    int              allPiecesCount = 0, kingSafetyScore = 0;
-    ;
     mutable bool fortressCached = false;
     mutable bool fortressResult = false;
 };
+
 }  // namespace ShashChess
 #endif  // SHASHIN_MANAGER_H

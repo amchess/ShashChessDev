@@ -24,13 +24,13 @@ ShashinPosition ShashinManager::getResilientShashinRange(ShashinPosition range, 
     return range;
 }
 bool ShashinManager::useMoveGenAndStep17CrystalLogic() const {
-
-    if (isStrategical() && highMaterial && state.staticState.legalMoveCount >= 30)
+    StaticState staticState = state.staticState;
+    if (isStrategical() && staticState.highMaterial && staticState.legalMoveCount >= 30)
     {
         return true;
     }
     // Tal logic: attacking with low complexity and king danger
-    if (isAggressive() && state.staticState.legalMoveCount < 30 && kingDanger)
+    if (isAggressive() && staticState.legalMoveCount < 30 && staticState.kingDanger)
     {
         return true;
     }
@@ -59,25 +59,28 @@ bool ShashinManager::isTillCategory(ShashinPosition lowerBound, ShashinPosition 
 }
 //isTill end
 bool ShashinManager::useCrystalFutilityPruningParent() const {
-    return isTalTacticalHighMiddle() && isSimpleIntermediate() && !kingDanger
+    StaticState staticState = state.staticState;
+    return isTalTacticalHighMiddle() && isSimpleIntermediate() && !staticState.kingDanger
         && !isHighPieceDensity()
         && state.dynamicBase.currentDepth < 12;  // Applica il pruning solo a profondità più basse
 }
 bool ShashinManager::useCrystalFutilityPruningChild() const {
-    return (isAggressive() && state.staticState.legalMoveCount >= 20)
-        || (isTacticalReactive() && (state.staticState.legalMoveCount < 20 || highMaterial))
-        || (isStrategical() && state.staticState.legalMoveCount >= 30);
+    StaticState staticState = state.staticState;
+    return (isAggressive() && staticState.legalMoveCount >= 20)
+        || (isTacticalReactive() && (staticState.legalMoveCount < 20 || staticState.highMaterial))
+        || (isStrategical() && staticState.legalMoveCount >= 30);
 }
 bool ShashinManager::useCrystalNullMoveSearch() const {
-
-    return isInRange(ShashinPosition::HIGH_TAL) || (isAggressive() && highMaterial)
-        || (isPassive() && state.staticState.legalMoveCount < 15);
+    StaticState staticState = state.staticState;
+    return isInRange(ShashinPosition::HIGH_TAL) || (isAggressive() && staticState.highMaterial)
+        || (isPassive() && staticState.legalMoveCount < 15);
 }
 // Simple intermediate positions: within bounds and low move count
 bool ShashinManager::isSimpleIntermediate() const {
+    StaticState staticState = state.staticState;
     return isTillCategory(ShashinPosition::MIDDLE_PETROSIAN, ShashinPosition::MIDDLE_TAL)
-        && state.staticState.legalMoveCount <= 20 && !kingDanger && !isHighPieceDensity()
-        && state.dynamicBase.currentDepth < 8;
+        && state.staticState.legalMoveCount <= 20 && !staticState.kingDanger
+        && !isHighPieceDensity() && state.dynamicBase.currentDepth < 8;
 }
 //for mcts begin
 bool ShashinManager::isMCTSApplicableByValue() const {
@@ -96,8 +99,10 @@ bool ShashinManager::isMCTSExplorationApplicable() const {
 }
 //for mcts end
 bool ShashinManager::isComplexPosition() const {
-    size_t legalMoveCount = state.staticState.legalMoveCount;
-    return (legalMoveCount >= 25 && highMaterial) || kingDanger || pawnsNearPromotion;
+    StaticState staticState    = state.staticState;
+    size_t      legalMoveCount = staticState.legalMoveCount;
+    return (legalMoveCount >= 25 && staticState.highMaterial) || staticState.kingDanger
+        || staticState.pawnsNearPromotion;
 }
 bool ShashinManager::isHighPieceDensityCapablancaPosition() const {
     return isInRange(ShashinPosition::CAPABLANCA) && isHighPieceDensity();
@@ -105,28 +110,31 @@ bool ShashinManager::isHighPieceDensityCapablancaPosition() const {
 // Determines whether to allow Crystal's ProbCut logic (~4 Elo improvement)
 // This logic prunes the search tree earlier when the position is non-critical.
 bool ShashinManager::allowCrystalProbCut() const {
-
+    StaticState staticState = state.staticState;
     return (isTalTacticalHighMiddle() && state.staticState.legalMoveCount < 30)
-        || (isStrategical() && highMaterial);
+        || (isStrategical() && staticState.highMaterial);
 }
 bool ShashinManager::isTacticalReduction() const {
-    return (isAggressive() && (highMaterial || !isHighPieceDensity()));
+    StaticState staticState = state.staticState;
+    return (isAggressive() && (staticState.highMaterial || !isHighPieceDensity()));
 }
 // Determines whether to skip Step 10: Internal Iterative Reductions (~9 Elo)
 // This method adjusts the logic based on Shashin's position classification
 // and the complexity of the current position.
 bool ShashinManager::avoidStep10() const {
-
+    StaticState staticState = state.staticState;
     return (isPassive() && state.staticState.legalMoveCount < 20)
-        ||                                  // Skip for passive zones with low activity
-           isStrategical() ||               // Skip for strategic zones
-           (isAggressive() && kingDanger);  // Skip for aggressive zones with king danger
+        ||                     // Skip for passive zones with low activity
+           isStrategical() ||  // Skip for strategic zones
+           (isAggressive()
+            && staticState.kingDanger);  // Skip for aggressive zones with king danger
 }
 bool ShashinManager::isTalTacticalHighMiddle() const {
     return isInRange(ShashinPosition::HIGH_TAL) || isInRange(ShashinPosition::MIDDLE_HIGH_TAL);
 }
 bool ShashinManager::isKingExposed() const {
-    return kingSafetyScore < -30;  // Arbitrary threeshold to define in danger king
+    return state.staticState.kingSafetyScore
+         < -30;  // Arbitrary threeshold to define in danger king
 }
 bool ShashinManager::isLowActivity() const { return state.staticState.legalMoveCount < 20; }
 bool ShashinManager::useEarlyPruning() const {
@@ -183,22 +191,12 @@ void ShashinManager::updateRootShashinState(Value score, const Position& rootPos
     if (depth <= state.dynamicBase.currentDepth && depth != 0)
         return;
 
-    ShashinPosition newRange = getShashinRange(score, rootPos);
-    if (newRange == state.dynamicBase.currentRange && depth == state.dynamicBase.currentDepth)
-        return;
-
     setDynamicBaseState(score, rootPos, depth);
     setDynamicDerivedState();
 
-    bool newUseMoveShashinLogic = useMoveGenAndStep17CrystalLogic();
-    if (MoveConfig::useMoveShashinLogic != newUseMoveShashinLogic
-        || MoveConfig::isStrategical != state.dynamicDerived.isStrategical
-        || MoveConfig::isAggressive != state.dynamicDerived.isAggressive)
-    {
-        MoveConfig::useMoveShashinLogic = newUseMoveShashinLogic;
-        MoveConfig::isStrategical       = state.dynamicDerived.isStrategical;
-        MoveConfig::isAggressive        = state.dynamicDerived.isAggressive;
-    }
+    MoveConfig::useMoveShashinLogic = useMoveGenAndStep17CrystalLogic();
+    MoveConfig::isStrategical       = state.dynamicDerived.isStrategical;
+    MoveConfig::isAggressive        = state.dynamicDerived.isAggressive;
 }
 void ShashinManager::setDynamicDerivedState() {
     auto& derived              = state.dynamicDerived;  // Alias per ridurre la scrittura ripetitiva
@@ -287,15 +285,17 @@ Value ShashinManager::static_value(const Eval::NNUE::Networks&   networks,
 
 // Extracts key position characteristics for classification
 void ShashinManager::setStaticState(const Position& rootPos) {
-    state.staticState.legalMoveCount = MoveList<LEGAL>(rootPos).size();
-    state.staticState.isSacrificial  = isSacrificialPosition(rootPos);
-    state.staticState.kingExposed    = isKingExposed();
-    MoveConfig::isFortress           = isFortress(rootPos);
-    highMaterial       = rootPos.non_pawn_material(WHITE) + rootPos.non_pawn_material(BLACK) > 2400;
-    kingDanger         = rootPos.king_danger(WHITE) || rootPos.king_danger(BLACK);
-    pawnsNearPromotion = isPawnNearPromotion(rootPos);
-    allPiecesCount     = rootPos.count<ALL_PIECES>();
-    kingSafetyScore    = rootPos.king_safety_score(rootPos.side_to_move());
+    StaticState& staticState   = state.staticState;
+    staticState.legalMoveCount = MoveList<LEGAL>(rootPos).size();
+    staticState.isSacrificial  = isSacrificialPosition(rootPos);
+    staticState.kingExposed    = isKingExposed();
+    staticState.highMaterial =
+      rootPos.non_pawn_material(WHITE) + rootPos.non_pawn_material(BLACK) > 2400;
+    staticState.kingDanger         = rootPos.king_danger(WHITE) || rootPos.king_danger(BLACK);
+    staticState.pawnsNearPromotion = isPawnNearPromotion(rootPos);
+    staticState.allPiecesCount     = rootPos.count<ALL_PIECES>();
+    staticState.kingSafetyScore    = rootPos.king_safety_score(rootPos.side_to_move());
+    MoveConfig::isFortress         = isFortress(rootPos);
 }
 
 // Determines if the position is highly sacrificial

@@ -70,6 +70,11 @@ struct StaticState {
     size_t legalMoveCount = 0;
     bool   isSacrificial  = false;
     bool   kingExposed    = false;
+    bool   highMaterial   = false;
+    bool   kingDanger     = false;
+    bool   pawnsNearPromotion = false;
+    int    allPiecesCount = 0;
+    int    kingSafetyScore = 0;    
 };
 
 struct alignas(64) RootShashinState {
