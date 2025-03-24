@@ -2116,13 +2116,24 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                 unadjustedStaticEval = evaluate(pos);
             ss->staticEval = bestValue =
               to_corrected_static_eval(unadjustedStaticEval, correctionValue);
-            //from Shashin begin
+            // from Shashin begin
             int penalty = 0;
+
+            // Penalità ridotta per posizioni di sacrificio
             if (rootShashinState.staticState.isSacrificial)
-                penalty += 10 + rootShashinState.staticState.legalMoveCount / 3;
+                penalty +=
+                  std::min(8, static_cast<int>(rootShashinState.staticState.legalMoveCount / 4));
+
+            // Penalità più contenuta per re esposto
             if (rootShashinState.staticState.kingExposed)
-                penalty += 5 + std::abs(rootShashinState.staticState.kingSafetyScore) / 10;
-            //from Shashin end
+                penalty += std::min(4, std::abs(rootShashinState.staticState.kingSafetyScore) / 15);
+
+            // Tetto massimo più rilassato
+            penalty = std::min(penalty, 20);
+
+            // Riduzione finale sulla valutazione
+            bestValue = std::max(bestValue, alpha - penalty);
+            // from Shashin end
             // ttValue can be used as a better position evaluation
             if (is_valid(ttData.value) && !is_decisive(ttData.value)
                 && (ttData.bound & (ttData.value > bestValue ? BOUND_LOWER : BOUND_UPPER)))
