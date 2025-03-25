@@ -2118,24 +2118,14 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
               to_corrected_static_eval(unadjustedStaticEval, correctionValue);
             // from Shashin begin
             int penalty = 0;
-
-            // Penalità ridotta per posizioni sacrificiali
             if (rootShashinState.staticState.isSacrificial)
                 penalty +=
-                  std::min(6, static_cast<int>(rootShashinState.staticState.legalMoveCount / 5));
-
-            // Penalità più bassa per re esposto
+                  std::min(10, static_cast<int>(rootShashinState.staticState.legalMoveCount / 3));
             if (rootShashinState.staticState.kingExposed)
-                penalty += std::min(3, std::abs(rootShashinState.staticState.kingSafetyScore) / 20);
+                penalty += std::min(6, std::abs(rootShashinState.staticState.kingSafetyScore) / 12);
 
-            // Se bestValue è vicino ad alpha, ridurre la penalità ulteriormente
-            if (bestValue > alpha - 10)
-                penalty /= 2;
+            penalty = std::min(penalty, 18);  // Un tetto massimo più flessibile
 
-            // Tetto massimo leggermente aumentato rispetto alla patch attuale
-            penalty = std::min(penalty, 12);
-
-            // Riduzione finale sulla valutazione
             bestValue = std::max(bestValue, alpha - penalty);
             // from Shashin end
 
