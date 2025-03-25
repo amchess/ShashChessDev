@@ -2119,36 +2119,21 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             // from Shashin begin
             int penalty = 0;
 
-            // Penalità ridotta per sacrifici, con limite massimo di 8
+            // Penalità dinamica basata sul numero di mosse legali e sicurezza del re
             if (rootShashinState.staticState.isSacrificial)
             {
                 penalty +=
-                  std::min(8, static_cast<int>(rootShashinState.staticState.legalMoveCount / 4));
+                  std::min(10, static_cast<int>(rootShashinState.staticState.legalMoveCount / 3));
             }
-
-            // Penalità per re esposto, più proporzionale al kingSafetyScore ma limitata a 7
             if (rootShashinState.staticState.kingExposed)
             {
-                penalty += std::min(7, std::abs(rootShashinState.staticState.kingSafetyScore) / 15);
+                penalty += std::min(6, std::abs(rootShashinState.staticState.kingSafetyScore) / 12);
             }
 
-            // Penalità ridotta in posizioni affollate (alta densità di pezzi)
-            if (rootShashinState.staticState.allPiecesCount > 20)
-            {
-                penalty = std::max(0, penalty - 3);
-            }
+            // Tetto massimo della penalità per evitare eccessive riduzioni
+            penalty = std::min(penalty, 25);
 
-            // Se ci sono sacrifici ma alta attività, limitiamo la penalità
-            if (rootShashinState.staticState.isSacrificial
-                && rootShashinState.staticState.legalMoveCount > 30)
-            {
-                penalty = std::max(0, penalty - 4);
-            }
-
-            // Imposta un tetto massimo alla penalità per non sacrificare precisione
-            penalty = std::min(penalty, 15);
-
-            // Riduzione finale sulla valutazione
+            // Applicazione della penalità al valore della posizione
             bestValue = std::max(bestValue, alpha - penalty);
             // from Shashin end
 
