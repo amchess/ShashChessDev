@@ -2119,26 +2119,25 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             // from Shashin begin
             int penalty = 0;
 
-            // Penalità adattiva su posizioni di sacrificio
+            // Penalità più contenuta per posizioni di sacrificio, basata su mosse legali
             if (rootShashinState.staticState.isSacrificial)
             {
-                penalty +=
-                  std::min(8, static_cast<int>(rootShashinState.staticState.legalMoveCount / 4));
+                penalty += std::min(8, static_cast<int>(rootShashinState.staticState.legalMoveCount / 4));
             }
 
-            // Penalità ridotta per re esposto, con scala più graduale
+            // Penalità più significativa per re esposto, aumentando l'influenza della sicurezza del re
             if (rootShashinState.staticState.kingExposed)
             {
-                penalty += std::min(4, std::abs(rootShashinState.staticState.kingSafetyScore) / 15);
+                penalty += std::min(10, std::abs(rootShashinState.staticState.kingSafetyScore) / 10);
             }
 
-            // Limite massimo più permissivo per evitare pruning aggressivo
+            // Evitiamo penalità troppo alte
             penalty = std::min(penalty, 18);
 
-            // Applicazione della penalità in modo meno invasivo
-            bestValue = std::max(bestValue, alpha - (penalty / 2));
+            // Penalità applicata solo se bestValue è vicino ad alpha
+            if (bestValue < alpha + 30)
+                bestValue = std::max(bestValue, alpha - penalty);
             // from Shashin end
-
             // Imposta un tetto massimo alla penalità per non sacrificare precisione
             penalty = std::min(penalty, 15);
 
