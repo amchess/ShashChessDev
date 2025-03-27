@@ -2118,30 +2118,24 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
               to_corrected_static_eval(unadjustedStaticEval, correctionValue);
             // from Shashin begin
             int penalty = 0;
+            int searchDepth = ss->ply; // Consideriamo la profondità di ricerca
 
-            // Penalità più contenuta per posizioni di sacrificio, basata su mosse legali
+            // Penalità adattiva per sacrificio
             if (rootShashinState.staticState.isSacrificial)
-            {
-                penalty += std::min(8, static_cast<int>(rootShashinState.staticState.legalMoveCount / 4));
-            }
+                penalty += std::min(10 + searchDepth / 4, static_cast<int>(rootShashinState.staticState.legalMoveCount / 4));
 
-            // Penalità più significativa per re esposto, aumentando l'influenza della sicurezza del re
+            // Penalità adattiva per re esposto
             if (rootShashinState.staticState.kingExposed)
-            {
-                penalty += std::min(10, std::abs(rootShashinState.staticState.kingSafetyScore) / 10);
-            }
+                penalty += std::min(6 + searchDepth / 6, std::abs(rootShashinState.staticState.kingSafetyScore) / 12);
 
-            // Evitiamo penalità troppo alte
+            // Se bestValue è vicino ad alpha, ridurre la penalità per evitare riduzioni troppo severe
+            if (bestValue > alpha - 15)
+                penalty /= 2;
+
+            // Imposta un limite massimo alla penalità
             penalty = std::min(penalty, 18);
 
-            // Penalità applicata solo se bestValue è vicino ad alpha
-            if (bestValue < alpha + 30)
-                bestValue = std::max(bestValue, alpha - penalty);
-            // from Shashin end
-            // Imposta un tetto massimo alla penalità per non sacrificare precisione
-            penalty = std::min(penalty, 15);
-
-            // Riduzione finale sulla valutazione
+            // Applicazione della penalità alla valutazione finale
             bestValue = std::max(bestValue, alpha - penalty);
             // from Shashin end
 
