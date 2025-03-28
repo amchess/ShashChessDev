@@ -191,12 +191,20 @@ void ShashinManager::updateRootShashinState(Value score, const Position& rootPos
     if (depth <= state.dynamicBase.currentDepth && depth != 0)
         return;
 
+    ShashinPosition newRange = getShashinRange(score, rootPos);
+    if (std::tie(newRange, depth) == std::tie(state.dynamicBase.currentRange, state.dynamicBase.currentDepth))
+        return;
+
     setDynamicBaseState(score, rootPos, depth);
     setDynamicDerivedState();
 
-    MoveConfig::useMoveShashinLogic = useMoveGenAndStep17CrystalLogic();
-    MoveConfig::isStrategical       = state.dynamicDerived.isStrategical;
-    MoveConfig::isAggressive        = state.dynamicDerived.isAggressive;
+    bool newUseMoveShashinLogic = useMoveGenAndStep17CrystalLogic();
+    auto newState = std::tie(newUseMoveShashinLogic, state.dynamicDerived.isStrategical, state.dynamicDerived.isAggressive);
+    auto currentState = std::tie(MoveConfig::useMoveShashinLogic, MoveConfig::isStrategical, MoveConfig::isAggressive);
+
+    if (newState != currentState) {
+        std::tie(MoveConfig::useMoveShashinLogic, MoveConfig::isStrategical, MoveConfig::isAggressive) = newState;
+    }
 }
 void ShashinManager::setDynamicDerivedState() {
     auto& derived              = state.dynamicDerived;  // Alias per ridurre la scrittura ripetitiva
@@ -285,17 +293,21 @@ Value ShashinManager::static_value(const Eval::NNUE::Networks&   networks,
 
 // Extracts key position characteristics for classification
 void ShashinManager::setStaticState(const Position& rootPos) {
-    StaticState& staticState   = state.staticState;
-    staticState.legalMoveCount = MoveList<LEGAL>(rootPos).size();
-    staticState.isSacrificial  = isSacrificialPosition(rootPos);
-    staticState.kingExposed    = isKingExposed();
-    staticState.highMaterial =
-      rootPos.non_pawn_material(WHITE) + rootPos.non_pawn_material(BLACK) > 2400;
-    staticState.kingDanger         = rootPos.king_danger(WHITE) || rootPos.king_danger(BLACK);
-    staticState.pawnsNearPromotion = isPawnNearPromotion(rootPos);
-    staticState.allPiecesCount     = rootPos.count<ALL_PIECES>();
-    staticState.kingSafetyScore    = rootPos.king_safety_score(rootPos.side_to_move());
-    MoveConfig::isFortress         = isFortress(rootPos);
+    StaticState& staticState = state.staticState;
+
+    staticState.legalMoveCount      = MoveList<LEGAL>(rootPos).size();
+    staticState.isSacrificial       = isSacrificialPosition(rootPos);
+    staticState.kingExposed         = isKingExposed();
+    
+    int nonPawnMaterial             = rootPos.non_pawn_material(WHITE) + rootPos.non_pawn_material(BLACK);
+    staticState.highMaterial        = (nonPawnMaterial > 2400);
+    
+    staticState.kingDanger          = rootPos.king_danger(WHITE) || rootPos.king_danger(BLACK);
+    staticState.pawnsNearPromotion  = isPawnNearPromotion(rootPos);
+    staticState.allPiecesCount      = rootPos.count<ALL_PIECES>();
+    staticState.kingSafetyScore     = rootPos.king_safety_score(rootPos.side_to_move());
+
+    MoveConfig::isFortress          = isFortress(rootPos);
 }
 
 // Determines if the position is highly sacrificial
