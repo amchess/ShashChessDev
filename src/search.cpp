@@ -2082,10 +2082,16 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     pvHit        = ttHit && ttData.is_pv;
 
     // At non-PV nodes we check for an early TT cutoff
-    if (!PvNode && ttData.depth >= DEPTH_QS
-        && is_valid(ttData.value)  // Can happen when !ttHit or when access race in probe()
-        && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER)))
+    //from Shashin-Crystal begin
+    if (!PvNode && ttHit && is_valid(ttData.value)
+        && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER))
+        && (ttData.depth >= ADJUSTED_QS_DEPTH) && (ttData.depth > MIN_DEPTH_FOR_QS_CUTOFF)
+        && !rootShashinState.dynamicDerived.isStrategical
+        && rootShashinState.staticState.legalMoveCount < 30
+        && (!rootShashinState.staticState.kingExposed || ttData.depth > DEPTH_QS + 4)
+        && std::abs(ttData.value) > VALUE_DRAW + 80 && ttData.depth > DEPTH_QS + 3)
         return ttData.value;
+    //from Shashin-Crystal end
 
     // Step 4. Static evaluation of the position
     Value      unadjustedStaticEval = VALUE_NONE;
