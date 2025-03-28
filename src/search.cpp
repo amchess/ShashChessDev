@@ -2082,24 +2082,10 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     pvHit        = ttHit && ttData.is_pv;
 
     // At non-PV nodes we check for an early TT cutoff
-    //from Shashin-Crystal begin
-    if (!PvNode && ttHit && is_valid(ttData.value)
-        && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER))
-        && (ttData.depth >= ADJUSTED_QS_DEPTH) && (ttData.depth > MIN_DEPTH_FOR_QS_CUTOFF)
-        && !rootShashinState.dynamicDerived.isStrategical
-        && rootShashinState.staticState.legalMoveCount
-             < 30  // 🔹 Aumentato da 25 a 30 per evitare cutoff prematuri
-        && (!rootShashinState.staticState.kingExposed
-            || ttData.depth
-                 > DEPTH_QS
-                     + 4)  // 🔹 Evita cutoff se il re è esposto, a meno che la profondità sia alta
-        && std::abs(ttData.value)
-             > VALUE_DRAW + 80  // 🔹 Era +50, ora +80 per escludere più posizioni equilibrate
-        && ttData.depth > DEPTH_QS + 3)  // 🔹 Era +2, ora +3 per evitare cutoff troppo superficiali
+    if (!PvNode && ttData.depth >= DEPTH_QS
+        && is_valid(ttData.value)  // Can happen when !ttHit or when access race in probe()
+        && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER)))
         return ttData.value;
-    //from Shashin-Crystal end
-
-    //from Shashin-Crystal end
 
     // Step 4. Static evaluation of the position
     Value      unadjustedStaticEval = VALUE_NONE;
@@ -2116,28 +2102,6 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                 unadjustedStaticEval = evaluate(pos);
             ss->staticEval = bestValue =
               to_corrected_static_eval(unadjustedStaticEval, correctionValue);
-            // from Shashin begin
-            int penalty = 0;
-            int searchDepth = ss->ply; // Consideriamo la profondità di ricerca
-
-            // Penalità adattiva per sacrificio
-            if (rootShashinState.staticState.isSacrificial)
-                penalty += std::min(10 + searchDepth / 4, static_cast<int>(rootShashinState.staticState.legalMoveCount / 4));
-
-            // Penalità adattiva per re esposto
-            if (rootShashinState.staticState.kingExposed)
-                penalty += std::min(6 + searchDepth / 6, std::abs(rootShashinState.staticState.kingSafetyScore) / 12);
-
-            // Se bestValue è vicino ad alpha, ridurre la penalità per evitare riduzioni troppo severe
-            if (bestValue > alpha - 15)
-                penalty /= 2;
-
-            // Imposta un limite massimo alla penalità
-            penalty = std::min(penalty, 18);
-
-            // Applicazione della penalità alla valutazione finale
-            bestValue = std::max(bestValue, alpha - penalty);
-            // from Shashin end
 
             // ttValue can be used as a better position evaluation
             if (is_valid(ttData.value) && !is_decisive(ttData.value)
