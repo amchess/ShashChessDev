@@ -2089,11 +2089,10 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         && !rootShashinState.dynamicDerived.isStrategical
         && rootShashinState.staticState.legalMoveCount < 35
         && (!rootShashinState.staticState.kingExposed || ttData.depth > DEPTH_QS + 4)
-        && std::abs(ttData.value) > VALUE_DRAW + 60 && (!rootShashinState.staticState.kingExposed || ttData.depth > DEPTH_QS + 3)
-    )
+        && std::abs(ttData.value) > VALUE_DRAW + 60
+        && (!rootShashinState.staticState.kingExposed || ttData.depth > DEPTH_QS + 3))
         return ttData.value;
     //from Shashin-Crystal end
-
     // Step 4. Static evaluation of the position
     Value      unadjustedStaticEval = VALUE_NONE;
     const auto correctionValue      = correction_value(*thisThread, pos, ss);
@@ -2110,21 +2109,46 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             ss->staticEval = bestValue =
               to_corrected_static_eval(unadjustedStaticEval, correctionValue);
 
-            // ttValue can be used as a better position evaluation
+            // from Shashin begin
+            int penalty     = 0;
+            int searchDepth = ss->ply;  // profondità attuale della ricerca
+
+            // Penalità per posizioni sacrificiali: riduciamo la costante e la normalizzazione
+            if (rootShashinState.staticState.isSacrificial)
+                penalty +=
+                  std::min(4, static_cast<int>(rootShashinState.staticState.legalMoveCount / 8));
+
+            // Penalità per re esposto: costante ridotta e divisione più elevata per abbassare il valore
+            if (rootShashinState.staticState.kingExposed)
+                penalty += std::min(3, std::abs(rootShashinState.staticState.kingSafetyScore) / 20);
+
+            // Limitiamo la penalità massima a 12 (invece di 20)
+            penalty = std::min(penalty, 12);
+
+            // Se la valutazione bestValue è vicina ad alpha, riduciamo la penalità di poco (per esempio, del 10%)
+            if (bestValue > alpha - 15)
+                penalty = penalty * 90 / 100;  // Riduzione del 10%
+
+            // Applichiamo la penalità alla valutazione finale, scegliendo il massimo tra bestValue e (alpha - penalty)
+            bestValue = std::max(bestValue, alpha - penalty);
+            // from Shashin end
+
+
+            // ttValue può essere usato come migliore valutazione della posizione
             if (is_valid(ttData.value) && !is_decisive(ttData.value)
                 && (ttData.bound & (ttData.value > bestValue ? BOUND_LOWER : BOUND_UPPER)))
                 bestValue = ttData.value;
         }
         else
         {
-            // In case of null move search, use previous static eval with opposite sign
+            // In caso di null move search, usa la valutazione statica precedente con segno opposto
             unadjustedStaticEval =
               (ss - 1)->currentMove != Move::null() ? evaluate(pos) : -(ss - 1)->staticEval;
             ss->staticEval = bestValue =
               to_corrected_static_eval(unadjustedStaticEval, correctionValue);
         }
 
-        // Stand pat. Return immediately if static value is at least beta
+        // Stand pat. Ritorna subito se il valore statico è almeno beta
         if (bestValue >= beta)
         {
             if (!is_decisive(bestValue))
