@@ -1045,9 +1045,38 @@ Value Search::Worker::search(
     // Used to send selDepth info to GUI (selDepth counts from 1, ply from 0)
     if (PvNode && thisThread->selDepth < ss->ply + 1)
         thisThread->selDepth = ss->ply + 1;
+    // shashin-crystal begin
+    // Determine if the position justifies the use of excluded moves
+    bool allowExcludedMove = false;
 
+    // Scenario 1: Strategically complex position
+    if (rootShashinState.dynamicDerived.isStrategical && g_shashinManager->isComplexPosition())
+    {
+        allowExcludedMove = true;
+    }
+
+    // Scenario 2: Defensive position with low activity
+    if (g_shashinManager->isTacticalDefensive() && g_shashinManager->isLowActivity())
+    {
+        allowExcludedMove = true;
+    }
+
+    // If either condition is true, enable excludedMove
+    if (allowExcludedMove)
+    {
+        excludedMove = ss->excludedMove;
+    }
+    // shashin-crystal end
     if (!rootNode)
     {
+        // from Crystal-Shashin begin
+        // Check if we have an upcoming move which draws by repetition, or
+        // if the opponent had an alternative move earlier to this position.
+        if (pos.upcoming_repetition(ss->ply) && !excludedMove)
+        {
+            gameCycle = true;
+        }
+        // from Crystal-Shashin end
         // Step 2. Check for aborted search and immediate draw
         if (threads.stop.load(std::memory_order_relaxed) || pos.is_draw(ss->ply)
             || ss->ply >= MAX_PLY)
