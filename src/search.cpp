@@ -462,10 +462,170 @@ void Search::Worker::start_searching() {
           {0, {rootPos.checkers() ? -VALUE_MATE : VALUE_DRAW, rootPos}});
     }
     else
+    // Books management begin
     {
-        threads.start_searching();  // start non-main threads
-        iterative_deepening();      // main thread start searching
+
+        bool think = true;
+        if (!(limits.infinite || limits.mate || limits.depth || limits.nodes || limits.perft)
+            && !main_manager()->ponder)
+        {
+            //Probe the configured books
+            bookMove = bookMan.probe(rootPos, options);
+            //Probe experience book begin
+            if (bookMove == Move::none() && (bool) options["Experience Book"]
+                && rootPos.game_ply() / 2 < (int) options["Experience Book Max Moves"])
+            {
+                Depth expBookMinDepth = (Depth) options["Experience Book Min Depth"];
+                std::vector<LearningMove*> learningMoves = LD.probe(rootPos.key());
+                if (!learningMoves.empty())
+                {
+                    LD.sortLearningMoves(learningMoves);
+                    std::vector<LearningMove*> bestMoves;
+                    Depth                      bestDepth = learningMoves[0]->depth;
+                    if (bestDepth >= expBookMinDepth)
+                    {
+                        int   bestPerformance = learningMoves[0]->performance;
+                        Value bestScore       = learningMoves[0]->score;
+                        if (bestPerformance >= 50)
+                        {
+                            for (const auto& move : learningMoves)
+                            {
+                                if (move->depth == bestDepth && move->performance == bestPerformance
+                                    && move->score == bestScore)
+                                {
+                                    bestMoves.push_back(move);
+                                }
+                                else
+                                {
+                                    break;
+                                }
+                            }
+                            if (!bestMoves.empty())
+                            {
+                                std::random_device              rd;
+                                std::mt19937                    gen(rd());
+                                std::uniform_int_distribution<> distr(0, bestMoves.size() - 1);
+                                bookMove = bestMoves[distr(gen)]->move;
+                            }
+                        }
+                    }
+                }
+            }
+            //Probe experience book end
+            if (bookMove != Move::none()
+                && std::find(rootMoves.begin(), rootMoves.end(), bookMove) != rootMoves.end())
+            {
+                think = false;
+
+                for (auto&& th : threads)
+                    std::swap(th->worker->rootMoves[0],
+                              *std::find(th->worker->rootMoves.begin(), th->worker->rootMoves.end(),
+                                         bookMove));
+            }
+        }
+// Live Book begin
+#ifdef USE_LIVEBOOK
+        if (think && !bookMove)
+        {
+            if (!limits.infinite && !limits.mate)
+            {
+                livebook_depth_count = rootPos.game_ply();
+
+                std::vector<Livebook::BaseLivebook*> livebooks;
+
+                // If there are no more than 7 units on the board and there aren't the Syzygy Tbs, use the endgame livebooks
+                const std::string& syzygyPath = static_cast<std::string>(options["SyzygyPath"]);
+
+                int totalUnits = rootPos.count<ALL_PIECES>();
+
+                if ((totalUnits <= 7)
+                    && (syzygyPath.empty()
+                        || ((!syzygyPath.empty())
+                            && ((int(options["SyzygyProbeLimit"]) < totalUnits)))))
+                {
+                    livebooks = endgame_livebooks;
+                }
+                // If we are in the first max_book_depth plies, use the opening livebooks
+                else if (livebook_depth_count < max_book_depth)
+                {
+                    livebooks = opening_livebooks;
+                }
+
+                for (const auto livebook : livebooks)
+                {
+                    if (std::vector<std::pair<std::string, Analysis>> output =
+                          livebook->lookup(rootPos);
+                        !output.empty())
+                    {
+                        std::string     uci;
+                        const Analysis* best = nullptr;
+
+                        // Iterate through the vector of moves and their corresponding analysis
+                        for (auto& [move, analysis] : output)
+                        {
+                            if (best == nullptr || analysis > *best)
+                            {
+                                best = &analysis;
+                                uci  = move;
+                            }
+                        }
+
+                        if (best != nullptr)
+                        {
+                            bookMove = UCIEngine::to_move(rootPos, uci);
+
+                            if (bookMove)
+                            {
+                                livebook_depth_count++;
+                            }
+                        }
+
+                        break;
+                    }
+                }
+            }
+
+
+            if (bookMove && std::count(rootMoves.begin(), rootMoves.end(), bookMove))
+            {
+                think = false;
+
+                auto best_thread = threads.get_best_thread()->worker.get();
+                std::swap(best_thread->rootMoves[0],
+                          *std::find(best_thread->rootMoves.begin(), best_thread->rootMoves.end(),
+                                     bookMove));
+
+                /*
+                for (auto th : threads)
+                {
+                    std::swap(th->worker->rootMoves[0],
+                              *std::find(th->worker->rootMoves.begin(), th->worker->rootMoves.end(),
+                                         bookMove));
+                }
+                */
+            }
+            else
+            {
+                bookMove = Move::none();
+            }
+        }
+#endif
+        // Live Book end
+
+        //from Book and live book management begin
+        if (!bookMove && think)
+        {
+            //Initialize `mctsThreads` threads only once before any thread have begun searching
+            mctsThreads        = size_t(int(options["MCTSThreads"]));
+            mctsMultiStrategy  = size_t(int(options["MCTS Multi Strategy"]));
+            mctsMultiMinVisits = double(int(options["MCTS Multi MinVisits"]));
+
+            threads.start_searching();  // start non-main threads
+            iterative_deepening();      // main thread start searching
+        }
+        //from Book and live book management end
     }
+    // Books management end
 
     // When we reach the maximum depth, we can arrive here without a raise of
     // threads.stop. However, if we are pondering or in an infinite search,
@@ -2017,7 +2177,6 @@ skipExtensionAndPruning:  // full threads search patch
 // and https://www.chessprogramming.org/Quiescence_Search
 template<NodeType nodeType>
 Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta) {
-
     static_assert(nodeType != Root);
     const RootShashinState& rootShashinState = g_shashinManager->getState();
     constexpr bool          PvNode           = nodeType == PV;
