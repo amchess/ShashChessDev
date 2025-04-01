@@ -1937,19 +1937,15 @@ skipExtensionAndPruning:  // full threads search patch
             // Tactical positions -> Reduce less (avoid excessive pruning)
             if (rootShashinState.dynamicDerived.isAggressive
                 || rootShashinState.dynamicDerived.isTacticalReactive)
-                dynamicReduction = std::max(1, dynamicReduction - 1);  // Less pruning
-
-            // Strategic positions -> Reduce more (allow more pruning)
-            else if (rootShashinState.dynamicDerived.isStrategical)
-                dynamicReduction = std::min(dynamicReduction + 1, 4);  // More pruning
+                dynamicReduction = std::max(1, dynamicReduction - 2);  // Less pruning
 
             // Passive positions (Petrosian style) -> Even stronger pruning
             if (g_shashinManager->isPetrosian())
             {
-                if (value > alpha + 20)  // If the evaluation is improving, we reduce less
+                if (value > alpha + 15)  // If evaluation is improving, reduce less
                     dynamicReduction = std::min(dynamicReduction + 1, 4);
-                else  // If the position isn't improving, stronger prune
-                    dynamicReduction = std::min(dynamicReduction + 1, 5);
+                else if (value < alpha - 10)  // If evaluation is worsening, prune aggressively
+                    dynamicReduction = std::min(dynamicReduction + 3, 6);
             }
 
             // Compute final reduction depth
@@ -1967,11 +1963,11 @@ skipExtensionAndPruning:  // full threads search patch
             {
                 // Deepen if position is aggressive & search fails high
                 const bool doDeeperSearch =
-                  g_shashinManager->isTal() && value > (bestValue + 35 + newDepth / 2);
+                  g_shashinManager->isTal() && value > (bestValue + 30 + newDepth / 2);
 
                 // Shallower search in Petrosian positions
                 const bool doShallowerSearch =
-                  g_shashinManager->isPetrosian() && value < bestValue + 7;
+                  g_shashinManager->isPetrosian() && value < bestValue + 5;
 
                 newDepth += doDeeperSearch - doShallowerSearch;
 
