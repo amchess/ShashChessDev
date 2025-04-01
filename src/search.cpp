@@ -1959,7 +1959,7 @@ skipExtensionAndPruning:  // full threads search patch
 
             // If the reduced search fails high, attempt full-depth search
             // Do a full-depth search when reduced LMR search fails high
-            if (value > alpha + 12 && d < newDepth - 1)
+            if (value > alpha + 10 && d < newDepth - 1)
             {
                 // Deepen if position is aggressive & search fails high
                 const bool doDeeperSearch =
