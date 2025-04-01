@@ -1937,7 +1937,7 @@ skipExtensionAndPruning:  // full threads search patch
             // Tactical positions -> Reduce less (avoid excessive pruning)
             if (rootShashinState.dynamicDerived.isAggressive
                 || rootShashinState.dynamicDerived.isTacticalReactive)
-                dynamicReduction = std::max(1, dynamicReduction - 2);  // Less pruning
+                dynamicReduction = std::max(1, dynamicReduction - 1);  // Less pruning
 
             // Strategic positions -> Reduce more (allow more pruning)
             else if (rootShashinState.dynamicDerived.isStrategical)
@@ -1949,7 +1949,7 @@ skipExtensionAndPruning:  // full threads search patch
                 if (value > alpha + 20)  // If the evaluation is improving, we reduce less
                     dynamicReduction = std::min(dynamicReduction + 1, 4);
                 else  // If the position isn't improving, stronger prune
-                    dynamicReduction = std::min(dynamicReduction + 2, 5);
+                    dynamicReduction = std::min(dynamicReduction + 1, 5);
             }
 
             // Compute final reduction depth
@@ -1967,11 +1967,11 @@ skipExtensionAndPruning:  // full threads search patch
             {
                 // Deepen if position is aggressive & search fails high
                 const bool doDeeperSearch =
-                  g_shashinManager->isTal() && value > (bestValue + 40 + newDepth / 2);
+                  g_shashinManager->isTal() && value > (bestValue + 35 + newDepth / 2);
 
                 // Shallower search in Petrosian positions
                 const bool doShallowerSearch =
-                  g_shashinManager->isPetrosian() && value < bestValue + 10;
+                  g_shashinManager->isPetrosian() && value < bestValue + 7;
 
                 newDepth += doDeeperSearch - doShallowerSearch;
 
