@@ -1939,10 +1939,6 @@ skipExtensionAndPruning:  // full threads search patch
                 || rootShashinState.dynamicDerived.isTacticalReactive)
                 dynamicReduction = std::max(1, dynamicReduction - 1);  // Less pruning
 
-            int gap = bestValue - alpha;
-            if (gap < 20)
-                dynamicReduction = std::max(1, dynamicReduction - 1);
-
             // Passive positions (Petrosian style) -> Even stronger pruning
             if (g_shashinManager->isPetrosian())
             {
