@@ -1937,7 +1937,11 @@ skipExtensionAndPruning:  // full threads search patch
             // Tactical positions -> Reduce less (avoid excessive pruning)
             if (rootShashinState.dynamicDerived.isAggressive
                 || rootShashinState.dynamicDerived.isTacticalReactive)
-                dynamicReduction = std::max(1, dynamicReduction - 2);  // Less pruning
+                dynamicReduction = std::max(1, dynamicReduction - 1);  // Less pruning
+
+            int gap = bestValue - alpha;
+            if (gap < 20)
+                dynamicReduction = std::max(1, dynamicReduction - 1);
 
             // Passive positions (Petrosian style) -> Even stronger pruning
             if (g_shashinManager->isPetrosian())
@@ -1959,7 +1963,7 @@ skipExtensionAndPruning:  // full threads search patch
 
             // If the reduced search fails high, attempt full-depth search
             // Do a full-depth search when reduced LMR search fails high
-            if (value > alpha + 13 && d < newDepth - 1)
+            if (value > alpha + 12 && d < newDepth - 1)
             {
                 // Deepen if position is aggressive & search fails high
                 const bool doDeeperSearch =
