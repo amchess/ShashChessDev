@@ -1930,36 +1930,57 @@ skipExtensionAndPruning:  // full threads search patch
             // beyond the first move depth.
             // To prevent problems when the max value is less than the min value,
             // std::clamp has been replaced by a more robust implementation.
-            Depth d       = std::max(1, std::min(newDepth - r / 1024, newDepth + (!allNode ? 1 : 0)
-                                                                        + (PvNode && !bestMove ? 1 : 0)));
-            ss->reduction = newDepth - d;
 
+            // Base reduction calculation
+            int baseMultiplier   = useCrystalLMR ? 6 : 7;
+            int dynamicReduction = (r + moveCount * baseMultiplier) / 1024;
+            // Tactical positions -> Reduce less (avoid excessive pruning)
+            if (rootShashinState.dynamicDerived.isAggressive
+                || rootShashinState.dynamicDerived.isTacticalReactive)
+                dynamicReduction = std::max(1, dynamicReduction - 2);
+
+            // Passive positions (Petrosian style) -> Even stronger pruning
+            if (g_shashinManager->isPetrosian())
+            {
+                if (value > alpha + 15)  // If evaluation is improving, reduce less
+                    dynamicReduction = std::min(dynamicReduction + 1, 4);
+                else if (value < alpha - 10)  // If evaluation is worsening, prune aggressively
+                    dynamicReduction = std::min(dynamicReduction + 3, 6);
+            }
+
+            // Compute final reduction depth
+            // Final reduction calculation
+            Depth d = std::clamp(newDepth - dynamicReduction, 1,
+                                 newDepth + (!allNode ? 1 : 0) + (PvNode && !bestMove ? 1 : 0));
+
+            ss->reduction = newDepth - d;
             value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
             ss->reduction = 0;
 
-
+            // If the reduced search fails high, attempt full-depth search
             // Do a full-depth search when reduced LMR search fails high
-            if (value > alpha && d < newDepth)
+            if (value > alpha + 12 && d < newDepth - 1)
             {
-                // Adjust full-depth search based on LMR results - if the result was
-                // good enough search deeper, if it was bad enough search shallower.
-                const bool doDeeperSearch    = value > (bestValue + 41 + 2 * newDepth);
-                const bool doShallowerSearch = value < bestValue + 9;
+                // Deepen if position is aggressive & search fails high
+                const bool doDeeperSearch =
+                  g_shashinManager->isTal() && value > (bestValue + 30 + newDepth / 2);
+
+                // Shallower search in Petrosian positions
+                const bool doShallowerSearch =
+                  g_shashinManager->isPetrosian() && value < bestValue + 5;
 
                 newDepth += doDeeperSearch - doShallowerSearch;
 
                 if (newDepth > d)
                     value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, newDepth, !cutNode);
 
-                // Post LMR continuation history updates
-                int bonus = (value >= beta) * 2010;
+                // Update continuation history: give a bonus if the move fails high
+                // Post LMR continuation history updates (scaled bonus)
+                int bonus = (value >= beta) * (1700 + newDepth * 9);
                 update_continuation_histories(ss, movedPiece, move.to_sq(), bonus);
             }
-            else if (value > alpha && value < bestValue + 9)
-                newDepth--;
         }
-        // Shashin-Crystal end
-
+        //shashin-crystal end
 
         // Step 18. Full-depth search when LMR is skipped
         else if (!PvNode || moveCount > 1)
