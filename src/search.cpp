@@ -1536,7 +1536,7 @@ Value Search::Worker::search(
     kingDanger = !ourMove && pos.king_danger(us);
     quietKingSafe =
       !rootShashinState.staticState.isSacrificial && !rootShashinState.staticState.kingExposed;
-    nullThreshold        = beta - 21 * depth + 455 - 60 * (improving ? 1 : 0);
+    nullThreshold        = beta - 21 * depth + 475 - 60 * (improving ? 1 : 0);
     useNullMoveByShashin = g_shashinManager->useCrystalNullMoveSearch();
     positionSafe =
       !kingDanger && quietKingSafe;  // King is not in danger and safe during quiet moves
@@ -1562,7 +1562,7 @@ Value Search::Worker::search(
             nullReductionAdjustment -= 2;
 
         // Compute R based on eval-beta, depth, and adjustment
-        Depth R = std::clamp((eval - beta) / 200 + depth / 2 + 6 + nullReductionAdjustment, 4, 9);
+        Depth R = std::clamp((eval - beta) / 200 + depth / 2 + 7 + nullReductionAdjustment, 5, 9);
         if (!ourMove && (ss - 1)->secondaryLine && useNullMoveByShashin)
             R = std::min(R, 8);
 
@@ -1580,7 +1580,7 @@ Value Search::Worker::search(
         if (nullValue >= beta && (!is_win(nullValue) || useShashinLogic))
         {
             // If the advantage is clearly high, immediately return the null move
-            if (nullValue >= beta + 45)
+            if (nullValue >= beta + 55)
                 return nullValue;
             // Otherwise, if not using Shashin logic, perform the verification search
             if (!useShashinLogic)
