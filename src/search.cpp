@@ -1536,7 +1536,7 @@ Value Search::Worker::search(
     kingDanger = !ourMove && pos.king_danger(us);
     quietKingSafe =
       !rootShashinState.staticState.isSacrificial && !rootShashinState.staticState.kingExposed;
-    nullThreshold        = beta - 21 * depth + 465 - 60 * (improving ? 1 : 0);
+    nullThreshold        = beta - 21 * depth + 470 - 48 * (improving ? 1 : 0);
     useNullMoveByShashin = g_shashinManager->useCrystalNullMoveSearch();
     positionSafe =
       !kingDanger && quietKingSafe;  // King is not in danger and safe during quiet moves
@@ -1551,18 +1551,17 @@ Value Search::Worker::search(
     {
         assert(eval - beta >= 0);
         thisThread->nmpSide = ourMove;  // Null move signal for Shashin
-        // Calculate a dynamic adjustment for the R reduction
+                                        // Calculate a dynamic adjustment for the R reduction
         int nullReductionAdjustment = 0;
         if (rootShashinState.dynamicDerived.isStrategical)
             nullReductionAdjustment += 1;
-        if (rootShashinState.dynamicDerived.isAggressive
-            || rootShashinState.dynamicDerived.isTacticalReactive)
-            nullReductionAdjustment -= 2;
-        if (!positionSafe)
-            nullReductionAdjustment -= 2;
+        if (rootShashinState.dynamicDerived.isAggressive)
+            nullReductionAdjustment -= 1;
+        if (rootShashinState.dynamicDerived.isTacticalReactive)
+            nullReductionAdjustment -= 1;
 
         // Compute R based on eval-beta, depth, and adjustment
-        Depth R = std::clamp((eval - beta) / 200 + depth / 2 + 6 + nullReductionAdjustment, 4, 8);
+        Depth R = std::clamp((eval - beta) / 190 + depth / 2 + 5 + nullReductionAdjustment, 3, 9);
         if (!ourMove && (ss - 1)->secondaryLine && useNullMoveByShashin)
             R = std::min(R, 8);
 
