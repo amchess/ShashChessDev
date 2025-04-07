@@ -1555,12 +1555,15 @@ Value Search::Worker::search(
         int nullReductionAdjustment = 0;
         if (rootShashinState.dynamicDerived.isStrategical)
             nullReductionAdjustment += 1;
-        if (rootShashinState.dynamicDerived.isAggressive
-            || rootShashinState.dynamicDerived.isTacticalReactive)
+        if (rootShashinState.dynamicDerived.isAggressive)
+            nullReductionAdjustment -= 1;
+        if (rootShashinState.dynamicDerived.isTacticalReactive)
+            nullReductionAdjustment -= 2;
+        if (!positionSafe)
             nullReductionAdjustment -= 1;
 
         // Compute R based on eval-beta, depth, and adjustment
-        Depth R = std::clamp((eval - beta) / 200 + depth / 2 + 5 + nullReductionAdjustment, 4, 8);
+        Depth R = std::clamp((eval - beta) / 190 + depth / 2 + 6 + nullReductionAdjustment, 4, 9);
         if (!ourMove && (ss - 1)->secondaryLine && useNullMoveByShashin)
             R = std::min(R, 8);
 
