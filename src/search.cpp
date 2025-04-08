@@ -1530,16 +1530,14 @@ Value Search::Worker::search(
         return beta + (eval - beta) / 3;
 
     // Step 9. Null move search with verification search – Shashin-Crystal version
-    // If the position is critical (e.g., exposed king or sacrificial position),
-    // reduce the aggressiveness of the null move.
+    // If the position is critical (e.g., exposed King or sacrificial position), reduce null move aggressiveness.
     ourMove    = !(ss->ply & 1);
     kingDanger = !ourMove && pos.king_danger(us);
     quietKingSafe =
       !rootShashinState.staticState.isSacrificial && !rootShashinState.staticState.kingExposed;
-    nullThreshold        = beta - 21 * depth + 470 - 48 * (improving ? 1 : 0);
+    nullThreshold        = beta - 21 * depth + 465 - 60 * (improving ? 1 : 0);
     useNullMoveByShashin = g_shashinManager->useCrystalNullMoveSearch();
-    positionSafe =
-      !kingDanger && quietKingSafe;  // King is not in danger and safe during quiet moves
+    positionSafe         = !kingDanger && quietKingSafe;  // King is safe during quiet moves
     allowNullMove = ((ss - 1)->currentMove != Move::null()) && (eval >= beta) && nonPawnMaterial
                  && (ss->ply >= thisThread->nmpMinPly) && !is_loss(beta);
     useShashinLogic = useNullMoveByShashin && !thisThread->nmpGuard && !gameCycle
@@ -1551,19 +1549,22 @@ Value Search::Worker::search(
     {
         assert(eval - beta >= 0);
         thisThread->nmpSide = ourMove;  // Null move signal for Shashin
-        // Calculate a dynamic adjustment for the R reduction
+
+        // Calculate dynamic adjustment for null reduction
         int nullReductionAdjustment = 0;
+        // Increase reduction for strategical positions (higher R desired)
         if (rootShashinState.dynamicDerived.isStrategical)
-            nullReductionAdjustment += 1;
-        if (rootShashinState.dynamicDerived.isAggressive)
             nullReductionAdjustment -= 1;
-        if (rootShashinState.dynamicDerived.isTacticalReactive)
-            nullReductionAdjustment -= 2;
+        // Decrease reduction for aggressive/tactically reactive positions (lower R desired)
+        if (rootShashinState.dynamicDerived.isAggressive
+            || rootShashinState.dynamicDerived.isTacticalReactive)
+            nullReductionAdjustment += 1;
+        // Additional reduction increase if position isn't safe
         if (!positionSafe)
             nullReductionAdjustment -= 1;
 
-        // Compute R based on eval-beta, depth, and adjustment
-        Depth R = std::clamp((eval - beta) / 190 + depth / 2 + 6 + nullReductionAdjustment, 4, 9);
+        // Compute R based on (eval - beta), depth, and adjustments
+        Depth R = std::clamp((eval - beta) / 200 + depth / 2 + 5 + nullReductionAdjustment, 4, 9);
         if (!ourMove && (ss - 1)->secondaryLine && useNullMoveByShashin)
             R = std::min(R, 8);
 
@@ -1577,18 +1578,18 @@ Value Search::Worker::search(
         thisThread->nmpGuard = false;
         pos.undo_null_move();
 
-        // If the null move gives a strong advantage (above beta) and isn't an unverified mate move...
+        // If null move gives strong advantage (above beta) and isn't an unverified mate...
         if (nullValue >= beta && (!is_win(nullValue) || useShashinLogic))
         {
-            // If the advantage is clearly high, immediately return the null move
+            // Immediate return for clear advantages
             if (nullValue >= beta + 50)
                 return nullValue;
-            // Otherwise, if not using Shashin logic, perform the verification search
+            // Non-Shashin logic: perform verification search
             if (!useShashinLogic)
             {
                 if (thisThread->nmpMinPly || depth < 16)
                     return nullValue;
-                assert(!thisThread->nmpMinPly);  // Recursive verification not allowed
+                assert(!thisThread->nmpMinPly);  // Prevent recursive verification
                 thisThread->nmpMinPly = ss->ply + 3 * (depth - R) / 4;
             }
             thisThread->nmpGuardV = true;
@@ -1602,7 +1603,7 @@ Value Search::Worker::search(
                        : (is_win(v) ? v : std::min(nullValue, VALUE_MATE_IN_MAX_PLY));
         }
     }
-    // from Crystal-Shashin end
+    // End of Crystal-Shashin logic
 
     improving |= ss->staticEval >= beta + 97;
 
