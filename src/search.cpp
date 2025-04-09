@@ -1561,9 +1561,9 @@ Value Search::Worker::search(
             nullReductionAdjustment -= 1;
 
         // Compute R based on (eval - beta), depth, and adjustments
-        Depth R = std::min(int(eval - beta) / 237, 6) + depth / 3 + 5 + nullReductionAdjustment;
-        R = std::clamp(R, 4, 9);        
-        if (!ourMove && (ss - 1)->secondaryLine && useShashinLogic)
+        int   baseR = std::min(int(eval - beta) / 237, 6) + depth / 3 + 5;
+        Depth R     = std::clamp(baseR + nullReductionAdjustment, 4, 9);
+        if (!ourMove && (ss - 1)->secondaryLine && useNullMoveByShashin)
             R = std::min(R, 8);
 
         ss->currentMove                   = Move::null();
@@ -1577,24 +1577,24 @@ Value Search::Worker::search(
         pos.undo_null_move();
 
         // Do not return unproven mate or TB scores
-        if (nullValue >= beta && !is_win(nullValue))
+        if (nullValue >= beta && !is_win(nullValue) || useShashinLogic)
         {
-            if (thisThread->nmpMinPly || depth < 16)
-                return nullValue;
+                if (thisThread->nmpMinPly || depth < 16)
+                    return nullValue;
 
-            assert(!thisThread->nmpMinPly);  // Recursive verification is not allowed
+                assert(!thisThread->nmpMinPly);  // Recursive verification is not allowed
 
-            // Do verification search at high depths, with null move pruning disabled
-            // until ply exceeds nmpMinPly.
-            thisThread->nmpMinPly = ss->ply + 3 * (depth - R) / 4;
-            thisThread->nmpGuardV = true;
-            Value v               = search<NonPV>(pos, ss, beta - 1, beta, depth - R, false);
-            thisThread->nmpGuardV = false;
-            thisThread->nmpMinPly = 0;
+                // Do verification search at high depths, with null move pruning disabled
+                // until ply exceeds nmpMinPly.
+                thisThread->nmpMinPly = ss->ply + 3 * (depth - R) / 4;
+                thisThread->nmpGuardV = true;
+                Value v               = search<NonPV>(pos, ss, beta - 1, beta, depth - R, false);
+                thisThread->nmpGuardV = false;
+                thisThread->nmpMinPly = 0;
 
-            if (v >= beta)
-                return nullValue;
-        }
+                if (v >= beta)
+                    return nullValue;
+            }
     }
     // End of Crystal-Shashin logic
 
