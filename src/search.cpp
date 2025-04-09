@@ -1412,8 +1412,7 @@ Value Search::Worker::search(
         }
     }
     //from shashin-crystal begin
-    int  baseRazoringMargin = 0;
-    bool nonPawnMaterial    = pos.non_pawn_material(us);
+    int baseRazoringMargin = 0;
     //from shashin-crystal end
     // Step 6. Static evaluation of the position
     Value      unadjustedStaticEval = VALUE_NONE;
@@ -1491,24 +1490,19 @@ Value Search::Worker::search(
     }
     //from Shashin begin to review
     int  nullThreshold;
-    bool useNullMoveByShashin, positionSafe, allowNullMove, useShashinLogic;
+    bool useNullMoveByShashin, positionSafe, allowNullMoveOnlyFromStockfish, useShashinLogic;
     //from Shashin end to review
     // full threads patch begin
     if (thisThread->fullSearch)
         goto moves_loop;  // full threads patch
     // full threads patch end
-    // from Kelly begin
-    if (!expectedPVNode)
-    {
-        // Set up the improving flag, which is true if current static evaluation is
-        // bigger than the previous static evaluation at our turn (if we were in
-        // check at our previous move we go back until we weren't in check) and is
-        // false otherwise. The improving flag is used in various pruning heuristics.
-        improving = ss->staticEval > (ss - 2)->staticEval;
-    }
-    // from Kelly end
-    opponentWorsening = ss->staticEval > -(ss - 1)->staticEval;
+    // Set up the improving flag, which is true if current static evaluation is
+    // bigger than the previous static evaluation at our turn (if we were in
+    // check at our previous move we go back until we weren't in check) and is
+    // false otherwise. The improving flag is used in various pruning heuristics.
+    improving = ss->staticEval > (ss - 2)->staticEval;
 
+    opponentWorsening = ss->staticEval > -(ss - 1)->staticEval;
 
     if (priorReduction >= 3 && !opponentWorsening)
         depth++;
@@ -1520,6 +1514,7 @@ Value Search::Worker::search(
     // For PvNodes, we must have a guard against mates being returned.
     if (!PvNode && eval < alpha - 446 - 303 * depth * depth)
         return qsearch<NonPV>(pos, ss, alpha, beta);
+
     // Step 8. Futility pruning: child node
     // The depth condition is important for mate finding.
     if (!ss->ttPv && depth < 14
@@ -1531,41 +1526,44 @@ Value Search::Worker::search(
 
     // Step 9. Null move search with verification search – Shashin-Crystal version
     // If the position is critical (e.g., exposed King or sacrificial position), reduce null move aggressiveness.
+    //only from stockfish begin
+    nullThreshold                  = beta - 21 * depth + 455 - 60 * improving;
+    allowNullMoveOnlyFromStockfish = ((ss - 1)->currentMove != Move::null())
+                                  && (ss->ply >= thisThread->nmpMinPly) && !is_loss(beta);
+    //only from Stockfish end
+    //only from crystal-shashin begin
     ourMove    = !(ss->ply & 1);
     kingDanger = !ourMove && pos.king_danger(us);
     quietKingSafe =
       !rootShashinState.staticState.isSacrificial && !rootShashinState.staticState.kingExposed;
-    nullThreshold        = beta - 21 * depth + 465 - 60 * (improving ? 1 : 0);
     useNullMoveByShashin = g_shashinManager->useCrystalNullMoveSearch();
     positionSafe         = !kingDanger && quietKingSafe;  // King is safe during quiet moves
-    allowNullMove = ((ss - 1)->currentMove != Move::null()) && (eval >= beta) && nonPawnMaterial
-                 && (ss->ply >= thisThread->nmpMinPly) && !is_loss(beta);
-    useShashinLogic = useNullMoveByShashin && !thisThread->nmpGuard && !gameCycle
+    useShashinLogic      = useNullMoveByShashin && !thisThread->nmpGuard && !gameCycle
                    && (eval >= ss->staticEval) && positionSafe
                    && (rootDepth < 11 || ourMove || (MoveList<LEGAL>(pos).size() > 5));
-
-    if (cutNode && ss->staticEval >= nullThreshold && !excludedMove && !disableNMAndPC
-        && positionSafe && (allowNullMove || useShashinLogic))
+    //only from Crystal-Shashin end
+    if (cutNode && !disableNMAndPC && ss->staticEval >= nullThreshold && !excludedMove
+        && pos.non_pawn_material(us) && eval >= beta
+        && (useShashinLogic || allowNullMoveOnlyFromStockfish))
     {
         assert(eval - beta >= 0);
         thisThread->nmpSide = ourMove;  // Null move signal for Shashin
 
         // Calculate dynamic adjustment for null reduction
         int nullReductionAdjustment = 0;
-        // Increase reduction for strategical positions (higher R desired)
-        if (rootShashinState.dynamicDerived.isStrategical)
-            nullReductionAdjustment -= 1;
-        // Decrease reduction for aggressive/tactically reactive positions (lower R desired)
-        if (rootShashinState.dynamicDerived.isAggressive
-            || rootShashinState.dynamicDerived.isTacticalReactive)
+
+        if (positionSafe)
             nullReductionAdjustment += 1;
-        // Additional reduction increase if position isn't safe
-        if (!positionSafe)
+
+        if (useShashinLogic
+            && (rootShashinState.dynamicDerived.isAggressive
+                || rootShashinState.dynamicDerived.isTacticalReactive))
             nullReductionAdjustment -= 1;
 
         // Compute R based on (eval - beta), depth, and adjustments
-        Depth R = std::clamp((eval - beta) / 200 + depth / 2 + 5 + nullReductionAdjustment, 4, 9);
-        if (!ourMove && (ss - 1)->secondaryLine && useNullMoveByShashin)
+        Depth R = std::min(int(eval - beta) / 237, 6) + depth / 3 + 5 + nullReductionAdjustment;
+        R = std::clamp(R, 4, 9);        
+        if (!ourMove && (ss - 1)->secondaryLine && useShashinLogic)
             R = std::min(R, 8);
 
         ss->currentMove                   = Move::null();
@@ -1578,32 +1576,28 @@ Value Search::Worker::search(
         thisThread->nmpGuard = false;
         pos.undo_null_move();
 
-        // If null move gives strong advantage (above beta) and isn't an unverified mate...
-        if (nullValue >= beta && (!is_win(nullValue) || useShashinLogic))
+        // Do not return unproven mate or TB scores
+        if (nullValue >= beta && !is_win(nullValue))
         {
-            // Immediate return for clear advantages
-            if (nullValue >= beta + 50)
+            if (thisThread->nmpMinPly || depth < 16)
                 return nullValue;
-            // Non-Shashin logic: perform verification search
-            if (!useShashinLogic)
-            {
-                if (thisThread->nmpMinPly || depth < 16)
-                    return nullValue;
-                assert(!thisThread->nmpMinPly);  // Prevent recursive verification
-                thisThread->nmpMinPly = ss->ply + 3 * (depth - R) / 4;
-            }
+
+            assert(!thisThread->nmpMinPly);  // Recursive verification is not allowed
+
+            // Do verification search at high depths, with null move pruning disabled
+            // until ply exceeds nmpMinPly.
+            thisThread->nmpMinPly = ss->ply + 3 * (depth - R) / 4;
             thisThread->nmpGuardV = true;
-            Value v               = search<NonPV>(pos, ss, beta - 1, beta, depth - R - 1, false);
+            Value v               = search<NonPV>(pos, ss, beta - 1, beta, depth - R, false);
             thisThread->nmpGuardV = false;
-            if (!useShashinLogic)
-                thisThread->nmpMinPly = 0;
+            thisThread->nmpMinPly = 0;
+
             if (v >= beta)
-                return (!useShashinLogic)
-                       ? nullValue
-                       : (is_win(v) ? v : std::min(nullValue, VALUE_MATE_IN_MAX_PLY));
+                return nullValue;
         }
     }
     // End of Crystal-Shashin logic
+
 
     improving |= ss->staticEval >= beta + 97;
 
