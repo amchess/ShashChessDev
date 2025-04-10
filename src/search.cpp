@@ -1551,7 +1551,7 @@ Value Search::Worker::search(
 
         int   baseR = std::min(int(eval - beta) / 237, 6) + depth / 3 + 5;
         Depth R     = baseR;
-        if (useShashinLogic)
+        if (useNullMoveByShashin)
         {
             // Calculate dynamic adjustment for null reduction
             int nullReductionAdjustment = 0;
