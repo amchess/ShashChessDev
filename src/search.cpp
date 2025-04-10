@@ -1549,22 +1549,24 @@ Value Search::Worker::search(
         assert(eval - beta >= 0);
         thisThread->nmpSide = ourMove;  // Null move signal for Shashin
 
-        // Calculate dynamic adjustment for null reduction
-        int nullReductionAdjustment = 0;
-
-        if (positionSafe)
-            nullReductionAdjustment += 1;
-
-        if (useShashinLogic
-            && (rootShashinState.dynamicDerived.isAggressive
-                || rootShashinState.dynamicDerived.isTacticalReactive))
-            nullReductionAdjustment -= 1;
-
-        // Compute R based on (eval - beta), depth, and adjustments
         int   baseR = std::min(int(eval - beta) / 237, 6) + depth / 3 + 5;
-        Depth R     = std::clamp(baseR + nullReductionAdjustment, 4, 9);
-        if (!ourMove && (ss - 1)->secondaryLine && useNullMoveByShashin)
-            R = std::min(R, 8);
+        Depth R     = baseR;
+        if (useShashinLogic)
+        {
+            // Calculate dynamic adjustment for null reduction
+            int nullReductionAdjustment = 0;
+
+            if (positionSafe)
+                nullReductionAdjustment += 1;
+
+            if (rootShashinState.dynamicDerived.isAggressive
+                || rootShashinState.dynamicDerived.isTacticalReactive)
+                nullReductionAdjustment -= 1;
+
+            R = std::clamp(baseR + nullReductionAdjustment, 4, 9);
+            if (!ourMove && (ss - 1)->secondaryLine && useNullMoveByShashin)
+                R = std::min(R, 8);
+        }
 
         ss->currentMove                   = Move::null();
         ss->continuationHistory           = &thisThread->continuationHistory[0][0][NO_PIECE][0];
