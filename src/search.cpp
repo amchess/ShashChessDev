@@ -1561,7 +1561,7 @@ Value Search::Worker::search(
         if (allowNullMoveOnlyFromCrystal)
         {
             if (!ourMove && (ss - 1)->secondaryLine)
-                R = std::min(R, 8);
+                R = std::min(R, 7);
         }
         ss->currentMove                   = Move::null();
         ss->continuationHistory           = &thisThread->continuationHistory[0][0][NO_PIECE][0];
