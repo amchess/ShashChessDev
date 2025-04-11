@@ -84,10 +84,10 @@ bool ShashinManager::useCrystalFutilityPruningChild() const {
         || (isStrategical() && staticState.legalMoveCount >= 30);
 }
 
-bool ShashinManager::useCrystalNullMoveSearch() const {
+bool ShashinManager::useNullMoveByShashinForStockfish() const {
     const auto& staticState = state.staticState;
-    return isInRange(ShashinPosition::HIGH_TAL) || (isAggressive() && staticState.highMaterial)
-        || (isPassive() && staticState.legalMoveCount < 15);
+    return (!isInRange(ShashinPosition::HIGH_TAL) && (!isAggressive() || !staticState.highMaterial)
+        && (!isPassive() || staticState.legalMoveCount >= 15));
 }
 
 bool ShashinManager::isSimpleIntermediate() const {
