@@ -1513,8 +1513,28 @@ Value Search::Worker::search(
     // Step 7. Razoring
     // If eval is really low, skip search entirely and return the qsearch value.
     // For PvNodes, we must have a guard against mates being returned.
-    if (!PvNode && eval < alpha - 446 - 303 * depth * depth)
+    // from shashin-crystal begin
+    // Apply Razoring for positions that meet the base condition, adjusted for Shashin zones
+    // Avoid Razoring in highly dynamic situations
+    // Step 7. Razoring Optimization
+    baseRazoringMargin = 446 + 303 * depth * depth;
+    // Razoring optimization based on position's type
+    if (rootShashinState.dynamicDerived.isAggressive)
+        baseRazoringMargin -= 75;
+    else if (rootShashinState.dynamicDerived.isStrategical
+             || rootShashinState.dynamicDerived.isTacticalReactive)
+        baseRazoringMargin += 40;
+
+    if (!PvNode && eval < alpha - baseRazoringMargin
+        && !(rootShashinState.dynamicDerived.isAggressive
+             && rootShashinState.staticState.legalMoveCount >= 30)
+        && (g_shashinManager->isTacticalInitiative()
+            || rootShashinState.dynamicDerived.isTacticalReactive
+            || rootShashinState.dynamicDerived.isStrategical))
+    {
         return qsearch<NonPV>(pos, ss, alpha, beta);
+    }
+    // from shashin-crystal end
 
     // Step 8. Futility pruning: child node
     // The depth condition is important for mate finding.
