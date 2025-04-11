@@ -87,7 +87,7 @@ bool ShashinManager::useCrystalFutilityPruningChild() const {
 bool ShashinManager::useNullMoveByShashinForStockfish() const {
     const auto& staticState = state.staticState;
     return (!isInRange(ShashinPosition::HIGH_TAL) && (!isAggressive() || !staticState.highMaterial)
-        && (!isPassive() || staticState.legalMoveCount >= 15));
+            && (!isPassive() || staticState.legalMoveCount >= 15));
 }
 
 bool ShashinManager::isSimpleIntermediate() const {

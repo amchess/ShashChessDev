@@ -1490,7 +1490,8 @@ Value Search::Worker::search(
     }
     //from Shashin begin to review
     int  nullThreshold;
-    bool commonNullMoveConditions, useNullMoveByShashinForStockfish, positionSafe, allowNullMoveOnlyFromStockfish, allowNullMoveOnlyFromCrystal;
+    bool commonNullMoveConditions, useNullMoveByShashinForStockfish, positionSafe,
+      allowNullMoveOnlyFromStockfish, allowNullMoveOnlyFromCrystal;
     //from Shashin end to review
     // full threads patch begin
     if (thisThread->fullSearch)
@@ -1527,48 +1528,38 @@ Value Search::Worker::search(
     // Step 9. Null move search with verification search – Shashin-Crystal version
     // If the position is critical (e.g., exposed King or sacrificial position), reduce null move aggressiveness.
     //common null move conditions begin
-    nullThreshold                  = beta - 21 * depth + 455 - 60 * improving;
-	commonNullMoveConditions=cutNode && !disableNMAndPC && ss->staticEval >= nullThreshold && !excludedMove
-        && pos.non_pawn_material(us) && eval >= beta;
+    nullThreshold            = beta - 21 * depth + 455 - 60 * improving;
+    commonNullMoveConditions = cutNode && !disableNMAndPC && ss->staticEval >= nullThreshold
+                            && !excludedMove && pos.non_pawn_material(us) && eval >= beta;
     //common null move conditions end
-	//only from Stockfish begin
-	allowNullMoveOnlyFromStockfish = ((ss - 1)->currentMove != Move::null())
+    //only from Stockfish begin
+    allowNullMoveOnlyFromStockfish = ((ss - 1)->currentMove != Move::null())
                                   && (ss->ply >= thisThread->nmpMinPly) && !is_loss(beta);
-    
-	//only from Stockfish end
+
+    //only from Stockfish end
     //only from crystal begin
     ourMove    = !(ss->ply & 1);
     kingDanger = !ourMove && pos.king_danger(us);
     quietKingSafe =
       !rootShashinState.staticState.isSacrificial && !rootShashinState.staticState.kingExposed;
-    positionSafe         = !kingDanger && quietKingSafe;  // King is safe during quiet moves
-    allowNullMoveOnlyFromCrystal = !thisThread->nmpGuard && !gameCycle
-                   && (eval >= ss->staticEval) && positionSafe
-                   && (rootDepth < 11 || ourMove || (MoveList<LEGAL>(pos).size() > 5)); 
-	//only from crystal end
-	useNullMoveByShashinForStockfish = g_shashinManager->useNullMoveByShashinForStockfish();
+    positionSafe                 = !kingDanger && quietKingSafe;  // King is safe during quiet moves
+    allowNullMoveOnlyFromCrystal = !thisThread->nmpGuard && !gameCycle && (eval >= ss->staticEval)
+                                && positionSafe
+                                && (rootDepth < 11 || ourMove || (MoveList<LEGAL>(pos).size() > 5));
+    //only from crystal end
+    useNullMoveByShashinForStockfish = g_shashinManager->useNullMoveByShashinForStockfish();
 
     if (commonNullMoveConditions
-        && (allowNullMoveOnlyFromCrystal || (allowNullMoveOnlyFromStockfish && useNullMoveByShashinForStockfish )))
+        && (allowNullMoveOnlyFromCrystal
+            || (allowNullMoveOnlyFromStockfish && useNullMoveByShashinForStockfish)))
     {
         assert(eval - beta >= 0);
         thisThread->nmpSide = ourMove;  // Null move signal for Shashin
 
         int   baseR = std::min(int(eval - beta) / 237, 6) + depth / 3 + 5;
         Depth R     = baseR;
-        if (allowNullMoveOnlyFromCrystal || useNullMoveByShashinForStockfish)
+        if (allowNullMoveOnlyFromCrystal)
         {
-            // Calculate dynamic adjustment for null reduction
-            int nullReductionAdjustment = 0;
-
-            if (positionSafe)
-                nullReductionAdjustment += 1;
-
-            if (rootShashinState.dynamicDerived.isAggressive
-                || rootShashinState.dynamicDerived.isTacticalReactive)
-                nullReductionAdjustment -= 1;
-
-            R = std::clamp(baseR + nullReductionAdjustment, 4, 9);
             if (!ourMove && (ss - 1)->secondaryLine)
                 R = std::min(R, 8);
         }
