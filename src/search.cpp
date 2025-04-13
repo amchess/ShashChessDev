@@ -1823,13 +1823,11 @@ moves_loop:  // When in check, search starts here
 
             if (applyPruning)
             {
-                // Skip quiet moves if moveCount exceeds FutilityMoveCount threshold
+                // Skip quiet moves if movecount exceeds our FutilityMoveCount threshold
                 if (moveCount >= futility_move_count(improving, depth))
-                {
                     mp.skip_quiet_moves();
-                }
 
-                // Adjusted logic for aggressive/passive zones
+                // Reduced depth of the next LMR search
                 int lmrDepth = newDepth - r / 1024;
 
                 if (capture || givesCheck)
@@ -1839,77 +1837,49 @@ moves_loop:  // When in check, search starts here
                       thisThread->captureHistory[movedPiece][move.to_sq()][type_of(capturedPiece)];
 
                     // Futility pruning for captures
-                    if (!givesCheck
-                        && lmrDepth < (rootShashinState.dynamicDerived.isAggressive ? 6 : 7)
-                        && !ss->inCheck)
+                    if (!givesCheck && lmrDepth < 7 && !ss->inCheck)
                     {
-                        if (!rootShashinState.staticState.isSacrificial
-                            && !rootShashinState.staticState.kingExposed)
-                        {
-                            Value futilityValue = ss->staticEval + 242 + 238 * lmrDepth
-                                                + PieceValue[capturedPiece] + 95 * captHist / 700;
-                            if (futilityValue <= alpha)
-                                continue;
-                        }
+                        Value futilityValue = ss->staticEval + 242 + 238 * lmrDepth
+                                            + PieceValue[capturedPiece] + 95 * captHist / 700;
+                        if (futilityValue <= alpha)
+                            continue;
                     }
 
-
-                    // SEE based pruning for captures and checks (~11 Elo)
-                    int seeHist      = std::clamp(captHist / 36, -153 * depth, 134 * depth);
-                    int seeThreshold = -157 * depth - seeHist;
-
-                    // Adjust SEE threshold based on zones
-                    if (rootShashinState.dynamicDerived.isAggressive)
-                        seeThreshold += 15 * depth;
-                    else if (g_shashinManager->isPassive())
-                        seeThreshold -= 10 * depth;
-
-                    if (!pos.see_ge(move, seeThreshold))
+                    // SEE based pruning for captures and checks
+                    int seeHist = std::clamp(captHist / 36, -153 * depth, 134 * depth);
+                    if (!pos.see_ge(move, -157 * depth - seeHist))
                         continue;
                 }
-                else  // Quiet moves
+                else
                 {
-                    int hist0 = (*contHist[0])[movedPiece][move.to_sq()];
-                    int hist1 = (*contHist[1])[movedPiece][move.to_sq()];
-                    int pawnHist =
-                      thisThread->pawnHistory[pawn_structure_index(pos)][movedPiece][move.to_sq()];
+                    int history =
+                      (*contHist[0])[movedPiece][move.to_sq()]
+                      + (*contHist[1])[movedPiece][move.to_sq()]
+                      + thisThread
+                          ->pawnHistory[pawn_structure_index(pos)][movedPiece][move.to_sq()];
 
-                    int history = hist0 + hist1 + pawnHist;
-
-                    // Continuation history-based pruning
+                    // Continuation history based pruning
                     if (history < -4107 * depth)
                         continue;
 
                     history += 68 * thisThread->mainHistory[us][move.from_to()] / 32;
+
                     lmrDepth += history / 3576;
 
                     Value futilityValue = ss->staticEval + (bestMove ? 49 : 143) + 116 * lmrDepth;
+
                     if (bestValue < ss->staticEval - 150 && lmrDepth < 7)
                         futilityValue += 108;
 
                     // Futility pruning: parent node
-                    if (!ss->inCheck && futilityValue <= alpha)
+                    // (*Scaler): Generally, more frequent futility pruning
+                    // scales well with respect to time and threads
+                    if (!ss->inCheck && lmrDepth < 12 && futilityValue <= alpha)
                     {
-                        if (g_shashinManager->useCrystalFutilityPruningParent())
-                        {
-                            // Crystal-inspired pruning logic
-                            int adjustedDepthLimit = 5 * (2 - (ourMove && (ss - 1)->secondaryLine));
-                            int adjustedHistoryLimit = 20500 - 3875 * (depth - 1);
-
-                            if (lmrDepth < adjustedDepthLimit && history < adjustedHistoryLimit)
-                                continue;
-                        }
-                        else
-                        {
-                            // Stockfish-inspired pruning logic
-                            if (lmrDepth < 12)
-                            {
-                                if (bestValue <= futilityValue && !is_decisive(bestValue)
-                                    && !is_win(futilityValue))
-                                    bestValue = futilityValue;
-                                continue;
-                            }
-                        }
+                        if (bestValue <= futilityValue && !is_decisive(bestValue)
+                            && !is_win(futilityValue))
+                            bestValue = futilityValue;
+                        continue;
                     }
 
                     lmrDepth = std::max(lmrDepth, 0);
