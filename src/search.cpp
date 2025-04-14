@@ -1895,70 +1895,108 @@ moves_loop:  // When in check, search starts here
             // We take care to not overdo to avoid search getting stuck.
             if (ss->ply < thisThread->rootDepth * 2)
             {
-                // Singular extension search. If all moves but one
-                // fail low on a search of (alpha-s, beta-s), and just one fails high on
-                // (alpha, beta), then that move is singular and should be extended. To
-                // verify this we do a reduced search on the position excluding the ttMove
-                // and if the result is lower than ttValue minus a margin, then we will
-                // extend the ttMove. Recursive singular search is avoided.
+                // Shashin-Crystal begin
 
-                // (* Scaler) Generally, higher singularBeta (i.e closer to ttValue)
-                // and lower extension margins scale well.
+                // Special extension for dynamic positions based on Shashin
+                bool gameCycleExtension = gameCycle && extension >= 0 && (ourMove && PvNode);
 
-                if (!rootNode && move == ttData.move && !excludedMove
-                    && depth >= 5 - (thisThread->completedDepth > 32) + ss->ttPv
-                    && is_valid(ttData.value) && !is_decisive(ttData.value)
-                    && (ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 3)
+                if (gameCycleExtension && rootShashinState.dynamicDerived.isHighTal && depth > 12)
+                    extension = std::min(extension + 1, 2);
+                else
                 {
-                    Value singularBeta =
-                      ttData.value - (55 + 81 * (ss->ttPv && !PvNode)) * depth / 58;
-                    Depth singularDepth = newDepth / 2;
+                    // Singular extension search. If all moves but one
+                    // fail low on a search of (alpha-s, beta-s), and just one fails high on
+                    // (alpha, beta), then that move is singular and should be extended. To
+                    // verify this we do a reduced search on the position excluding the ttMove
+                    // and if the result is lower than ttValue minus a margin, then we will
+                    // extend the ttMove. Recursive singular search is avoided.
+                    // (* Scaler) Generally, higher singularBeta (i.e closer to ttValue)
+                    // and lower extension margins scale well.
+                    // General condition for singular extension
+                    bool commonExtensionCondition =
+                      !rootNode && move == ttData.move && !excludedMove
+                      && depth >= 5 - (thisThread->completedDepth > 32) + ss->ttPv
+                      && is_valid(ttData.value) && !is_decisive(ttData.value)
+                      && (ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 3;
 
-                    ss->excludedMove = move;
-                    value = search<NonPV>(pos, ss, singularBeta - 1, singularBeta, singularDepth,
-                                          cutNode);
-                    ss->excludedMove = Move::none();
-
-                    if (value < singularBeta)
+                    if (commonExtensionCondition)
                     {
-                        int corrValAdj1  = std::abs(correctionValue) / 265083;
-                        int corrValAdj2  = std::abs(correctionValue) / 253680;
-                        int doubleMargin = 267 * PvNode - 181 * !ttCapture - corrValAdj1;
-                        int tripleMargin =
-                          96 + 282 * PvNode - 250 * !ttCapture + 103 * ss->ttPv - corrValAdj2;
+                        Value singularBeta =
+                          ttData.value - (55 + 81 * (ss->ttPv && !PvNode)) * depth / 58;
+                        Depth singularDepth = newDepth / 2;
 
-                        extension = 1 + (value < singularBeta - doubleMargin)
-                                  + (value < singularBeta - tripleMargin);
+                        ss->excludedMove = move;
+                        value            = search<NonPV>(pos, ss, singularBeta - 1, singularBeta,
+                                                         singularDepth, cutNode);
+                        ss->excludedMove = Move::none();
 
-                        depth++;
+                        if (value < singularBeta)
+                        {
+                            int corrValAdj1  = std::abs(correctionValue) / 265083;
+                            int corrValAdj2  = std::abs(correctionValue) / 253680;
+                            int doubleMargin = (267 * PvNode - 181 * !ttCapture - corrValAdj1);
+                            int tripleMargin =
+                              (96 + 282 * PvNode - 250 * !ttCapture + 103 * ss->ttPv - corrValAdj2);
+
+                            extension = 1 + (value < singularBeta - doubleMargin)
+                                      + (value < singularBeta - tripleMargin);
+
+                            // Regolazioni basate su Shashin (controllate)
+                            if (rootShashinState.dynamicDerived.isAggressive
+                                || rootShashinState.dynamicDerived.isTacticalReactive)
+                                extension += 1;
+
+                            if (rootShashinState.dynamicDerived.isStrategical)
+                                extension = std::max(extension - 1, 0);
+
+                            if (rootShashinState.staticState.isSacrificial)
+                                extension += 1;
+
+                            if (rootShashinState.staticState.kingExposed)
+                                extension += 1;
+
+                            // We avoid extreme values
+                            extension = std::clamp(extension, -1, 2);
+
+                            // If the extension is meaningful, we increase the depth
+                            if (extension >= 2 && depth < 20)
+                                depth++;
+                        }
+
+
+                        // Multi-cut to reduce unuseful searches
+                        // Our ttMove is assumed to fail high based on the bound of the TT entry,
+                        // and if after excluding the ttMove with a reduced search we fail high
+                        // over the original beta, we assume this expected cut-node is not
+                        // singular (multiple moves fail high), and we can prune the whole
+                        // subtree by returning a softbound.
+                        else if (value >= beta && !is_decisive(value))
+                        {
+                            return value;
+                        }
+
+                        // Negative extensions for non singular situations
+                        // If other moves failed high over (ttValue - margin) without the
+                        // ttMove on a reduced search, but we cannot do multi-cut because
+                        // (ttValue - margin) is lower than the original beta, we do not know
+                        // if the ttMove is singular or can do a multi-cut, so we reduce the
+                        // ttMove in favor of other moves based on some conditions:
+
+                        // If the ttMove is assumed to fail high over current beta
+                        else if (ttData.value >= beta)
+                        {
+                            extension = -3;
+                        }
+                        // If we are on a cutNode but the ttMove is not assumed to fail high
+                        // over current beta
+                        else if (cutNode)
+                        {
+                            extension = -2;
+                        }
                     }
-
-                    // Multi-cut pruning
-                    // Our ttMove is assumed to fail high based on the bound of the TT entry,
-                    // and if after excluding the ttMove with a reduced search we fail high
-                    // over the original beta, we assume this expected cut-node is not
-                    // singular (multiple moves fail high), and we can prune the whole
-                    // subtree by returning a softbound.
-                    else if (value >= beta && !is_decisive(value))
-                        return value;
-
-                    // Negative extensions
-                    // If other moves failed high over (ttValue - margin) without the
-                    // ttMove on a reduced search, but we cannot do multi-cut because
-                    // (ttValue - margin) is lower than the original beta, we do not know
-                    // if the ttMove is singular or can do a multi-cut, so we reduce the
-                    // ttMove in favor of other moves based on some conditions:
-
-                    // If the ttMove is assumed to fail high over current beta
-                    else if (ttData.value >= beta)
-                        extension = -3;
-
-                    // If we are on a cutNode but the ttMove is not assumed to fail high
-                    // over current beta
-                    else if (cutNode)
-                        extension = -2;
                 }
             }
+            // Shashin-Crystal end
 
 skipExtensionAndPruning:  // full threads search patch
             // Step 16. Make the move
