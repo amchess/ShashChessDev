@@ -2001,8 +2001,18 @@ skipExtensionAndPruning:  // full threads search patch
                 r -= 2230 + PvNode * 1013 + (ttData.value > alpha) * 925
                    + (ttData.depth >= depth) * (971 + cutNode * 1159);
 
+            // Shashin begin
+            if (rootShashinState.staticState.isSacrificial)
+                r -= 400;
+            if (rootShashinState.staticState.kingExposed)
+                r -= 250;
+            if (rootShashinState.dynamicDerived.isStrategical)
+                r += 200;
+            if (rootShashinState.dynamicDerived.isAggressive
+                || rootShashinState.dynamicDerived.isTacticalReactive)
+                r = std::max(1, r - 200);
+            //Shashin end
             // These reduction adjustments have no proven non-linear scaling
-
             r += 316 - moveCount * 32;
 
             r -= std::abs(correctionValue) / 31568;
@@ -2021,10 +2031,9 @@ skipExtensionAndPruning:  // full threads search patch
             // Increase reduction if next ply has a lot of fail high
             if ((ss + 1)->cutoffCnt > 3)
                 r += 981 + allNode * 833;
-
             // For first picked move (ttMove) reduce reduction
             else if (move == ttData.move)
-                r -= 1982;
+                r -= 2000;
 
             if (capture)
                 ss->statScore =
