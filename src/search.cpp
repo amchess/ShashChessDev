@@ -1940,27 +1940,7 @@ moves_loop:  // When in check, search starts here
 
                             extension = 1 + (value < singularBeta - doubleMargin)
                                       + (value < singularBeta - tripleMargin);
-
-                            // Regolazioni basate su Shashin (controllate)
-                            if (rootShashinState.dynamicDerived.isAggressive
-                                || rootShashinState.dynamicDerived.isTacticalReactive)
-                                extension += 1;
-
-                            if (rootShashinState.dynamicDerived.isStrategical)
-                                extension = std::max(extension - 1, 0);
-
-                            if (rootShashinState.staticState.isSacrificial)
-                                extension += 1;
-
-                            if (rootShashinState.staticState.kingExposed)
-                                extension += 1;
-
-                            // We avoid extreme values
-                            extension = std::clamp(extension, -1, 2);
-
-                            // If the extension is meaningful, we increase the depth
-                            if (extension >= 2 && depth < 20)
-                                depth++;
+                            depth++;
                         }
 
 
