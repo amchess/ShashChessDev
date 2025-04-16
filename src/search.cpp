@@ -2003,14 +2003,14 @@ skipExtensionAndPruning:  // full threads search patch
 
             // Shashin begin
             if (rootShashinState.staticState.isSacrificial)
-                r -= 300;
+                r -= 450;
             if (rootShashinState.staticState.kingExposed)
-                r -= 200;
+                r -= 300;
             if (rootShashinState.dynamicDerived.isStrategical)
-                r += 200;
+                r += 400;
             if (rootShashinState.dynamicDerived.isAggressive
                 || rootShashinState.dynamicDerived.isTacticalReactive)
-                r = std::max(1, r - 100);
+                r = std::max(1, r - 50);
             //Shashin end
             // These reduction adjustments have no proven non-linear scaling
             r += 316 - moveCount * 32;
