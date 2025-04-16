@@ -2001,18 +2001,8 @@ skipExtensionAndPruning:  // full threads search patch
                 r -= 2230 + PvNode * 1013 + (ttData.value > alpha) * 925
                    + (ttData.depth >= depth) * (971 + cutNode * 1159);
 
-            // Shashin begin
-            if (rootShashinState.staticState.isSacrificial)
-                r -= 450;
-            if (rootShashinState.staticState.kingExposed)
-                r -= 300;
-            if (rootShashinState.dynamicDerived.isStrategical)
-                r += 400;
-            if (rootShashinState.dynamicDerived.isAggressive
-                || rootShashinState.dynamicDerived.isTacticalReactive)
-                r = std::max(1, r - 50);
-            //Shashin end
             // These reduction adjustments have no proven non-linear scaling
+
             r += 316 - moveCount * 32;
 
             r -= std::abs(correctionValue) / 31568;
@@ -2031,9 +2021,10 @@ skipExtensionAndPruning:  // full threads search patch
             // Increase reduction if next ply has a lot of fail high
             if ((ss + 1)->cutoffCnt > 3)
                 r += 981 + allNode * 833;
+
             // For first picked move (ttMove) reduce reduction
             else if (move == ttData.move)
-                r -= 2000;
+                r -= 1982;
 
             if (capture)
                 ss->statScore =
@@ -2231,9 +2222,28 @@ skipExtensionAndPruning:  // full threads search patch
                 }
                 else
                 {
-                    // Reduce other moves if we have found at least one score improvement
+                    //from crystal-shashin begin
+                    bool isSafeZone = beta < VALUE_MAX_EVAL / 16 && alpha > -VALUE_MAX_EVAL / 16;
+
+                    // Reduce other moves if we have found at least one score improvement (~2 Elo)
                     if (depth > 2 && depth < 15 && !is_decisive(value))
-                        depth -= 2;
+                    {
+                        bool useCrystalReduction = !g_shashinManager->isTillCategory(
+                          ShashinPosition::MIDDLE_HIGH_PETROSIAN, ShashinPosition::MIDDLE_HIGH_TAL);
+                        if (useCrystalReduction && !gameCycle && isSafeZone)
+                        {
+                            depth -= 1;  // Crystal logic for tactical zones (minimal reduction)
+                        }
+                        else if (rootShashinState.dynamicDerived.isStrategical && !gameCycle)
+                        {
+                            depth -= 2;  // Stockfish logic for strategic zones (deeper reduction)
+                        }
+                        else
+                        {
+                            depth -= 2;  // Default reduction for all other cases
+                        }
+                    }
+                    //from crystal-shashin end
 
                     assert(depth > 0);
                     alpha = value;  // Update alpha! Always alpha < beta
