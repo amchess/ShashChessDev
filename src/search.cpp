@@ -2230,7 +2230,7 @@ skipExtensionAndPruning:  // full threads search patch
                     {
                         bool useCrystalReduction = !g_shashinManager->isTillCategory(
                           ShashinPosition::MIDDLE_HIGH_PETROSIAN, ShashinPosition::MIDDLE_HIGH_TAL);
-                        if (useCrystalReduction && !gameCycle && isSafeZone)
+                        if (useCrystalReduction && !gameCycle && !isSafeZone)
                         {
                             depth -= 1;  // Crystal logic for tactical zones (minimal reduction)
                         }
