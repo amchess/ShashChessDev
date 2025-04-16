@@ -2234,10 +2234,6 @@ skipExtensionAndPruning:  // full threads search patch
                         {
                             depth -= 1;  // Crystal logic for tactical zones (minimal reduction)
                         }
-                        else if (rootShashinState.dynamicDerived.isStrategical && !gameCycle)
-                        {
-                            depth -= 2;  // Stockfish logic for strategic zones (deeper reduction)
-                        }
                         else
                         {
                             depth -= 2;  // Default reduction for all other cases
