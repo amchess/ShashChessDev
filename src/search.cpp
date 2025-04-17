@@ -434,7 +434,6 @@ void Search::Worker::start_searching() {
         // Inizializza lo stato statico della rootPosition
         g_shashinManager->setStaticState(rootPos);
     }
-
     main_manager()->tm.init(limits, rootPos.side_to_move(), rootPos.game_ply(), options,
                             main_manager()->originalTimeAdjust);
     tt.new_search();
@@ -752,8 +751,8 @@ void Search::Worker::start_searching() {
 // repeatedly with increasing depth until the allocated thinking time has been
 // consumed, the user stops the search, or the maximum search depth is reached.
 void Search::Worker::iterative_deepening() {
-
-    SearchManager* mainThread = (is_mainthread() ? main_manager() : nullptr);
+    auto&          shashinManager = *g_shashinManager;
+    SearchManager* mainThread     = (is_mainthread() ? main_manager() : nullptr);
 
     Move pv[MAX_PLY + 1];
 
@@ -789,9 +788,9 @@ void Search::Worker::iterative_deepening() {
     }
 
     ss->pv = pv;
-    g_shashinManager->initDynamicRootShashinState(networks[numaAccessToken], refreshTable, rootPos,
-                                                  ss, VALUE_ZERO, shashinConfig);
-    const RootShashinState& rootShashinState = g_shashinManager->getState();
+    shashinManager.initDynamicRootShashinState(networks[numaAccessToken], refreshTable, rootPos, ss,
+                                               VALUE_ZERO, shashinConfig);
+    const RootShashinState& rootShashinState = shashinManager.getState();
     if (mainThread)
     {
         if (mainThread->bestPreviousScore == VALUE_INFINITE)
@@ -816,15 +815,15 @@ void Search::Worker::iterative_deepening() {
     {
         bool maybeDraw = rootPos.rule50_count() >= 90 || rootPos.upcoming_repetition(2);
         // Calculate static evaluation for root position
-        Value rootPosValue = g_shashinManager->static_value(
+        Value rootPosValue = shashinManager.static_value(
           networks[numaAccessToken], refreshTable, rootPos, ss, this->optimism[us]);  //shashin
-        bool isMCTSExplorationApplicable = g_shashinManager->isMCTSExplorationApplicable();
-        bool mctsExplore                 = options["MCTS Explore"]
-                        && (isMCTSExplorationApplicable
-                            || g_shashinManager->isHighPieceDensityCapablancaPosition());
+        bool isMCTSExplorationApplicable = shashinManager.isMCTSExplorationApplicable();
+        bool mctsExplore =
+          options["MCTS Explore"]
+          && (isMCTSExplorationApplicable || shashinManager.isHighPieceDensityCapablancaPosition());
 
         // Check if MCTS can be applied
-        bool possibleMCTSByValue = g_shashinManager->isMCTSApplicableByValue();
+        bool possibleMCTSByValue = shashinManager.isMCTSApplicableByValue();
         if (!mainThread && multiPV == 1 && !maybeDraw && (possibleMCTSByValue || mctsExplore)
             && (rootPos.count<ALL_PIECES>() > 7) && (this->threadIdx) <= (size_t) (mctsThreads)
             && !is_game_decided(rootPos, rootPosValue))
@@ -1110,13 +1109,15 @@ template<NodeType nodeType>
 Value Search::Worker::search(
   Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, bool cutNode) {
 
-    constexpr bool          PvNode           = nodeType != NonPV;
-    constexpr bool          rootNode         = nodeType == Root;
-    const bool              allNode          = !(PvNode || cutNode);
-    const RootShashinState& rootShashinState = g_shashinManager->getState();  //for ShashChess
+    constexpr bool PvNode   = nodeType != NonPV;
+    constexpr bool rootNode = nodeType == Root;
+    const bool     allNode  = !(PvNode || cutNode);
+
+    auto&                   shashinManager   = *g_shashinManager;
+    const RootShashinState& rootShashinState = shashinManager.getState();  //for ShashChess
     //From Shashin fortress begin
     // Determine if we are in a fortress (note: use the root position!)
-    if (g_shashinManager->isFortress(rootPos))
+    if (shashinManager.isFortress(rootPos))
     {
         // Reduce the search depth if in a fortress, because deep searches may be overconfident
         if (depth > 10)
@@ -1205,9 +1206,23 @@ Value Search::Worker::search(
     // Used to send selDepth info to GUI (selDepth counts from 1, ply from 0)
     if (PvNode && thisThread->selDepth < ss->ply + 1)
         thisThread->selDepth = ss->ply + 1;
-
+    const auto& dynamicDerived = rootShashinState.dynamicDerived;
+    const auto& staticState    = rootShashinState.staticState;
     if (!rootNode)
     {
+        // from Crystal-Shashin begin
+        bool allowCycleDetection =
+          (dynamicDerived.isStrategical && shashinManager.isComplexPosition())
+          || (shashinManager.isTacticalDefensive() && shashinManager.isLowActivity());
+
+        if (allowCycleDetection && !ss->excludedMove)
+        {
+            if (pos.upcoming_repetition(ss->ply))
+            {
+                gameCycle = true;
+            }
+        }
+        // from Crystal-Shashin end
         // Step 2. Check for aborted search and immediate draw
         if (threads.stop.load(std::memory_order_relaxed) || pos.is_draw(ss->ply)
             || ss->ply >= MAX_PLY)
@@ -1326,10 +1341,8 @@ Value Search::Worker::search(
             // At non-PV nodes we check for an early Global Learning Table cutoff
             if (!PvNode && !excludedMove &&
                 // shashin-crystal begin
-                (!gameCycle
-                 || (!rootShashinState.dynamicDerived.isStrategical
-                     || rootShashinState.staticState.legalMoveCount < 30))
-                && (!(ss - 1)->mainLine || g_shashinManager->isTactical()) &&
+                (!gameCycle || (!dynamicDerived.isStrategical || staticState.legalMoveCount < 30))
+                && (!(ss - 1)->mainLine || shashinManager.isTactical()) &&
                 //shashin-crystal end
                 updatedLearning && learningMove->depth > depth - (expTTValue < beta)
                 && is_valid(expTTValue) && (cutNode == (expTTValue >= beta) || depth > 5))
@@ -1519,18 +1532,15 @@ Value Search::Worker::search(
     // Step 7. Razoring Optimization
     baseRazoringMargin = 446 + 303 * depth * depth;
     // Razoring optimization based on position's type
-    if (rootShashinState.dynamicDerived.isAggressive)
+    if (dynamicDerived.isAggressive)
         baseRazoringMargin -= 75;
-    else if (rootShashinState.dynamicDerived.isStrategical
-             || rootShashinState.dynamicDerived.isTacticalReactive)
+    else if (dynamicDerived.isStrategical || dynamicDerived.isTacticalReactive)
         baseRazoringMargin += 40;
 
     if (!PvNode && eval < alpha - baseRazoringMargin
-        && !(rootShashinState.dynamicDerived.isAggressive
-             && rootShashinState.staticState.legalMoveCount >= 30)
-        && (g_shashinManager->isTacticalInitiative()
-            || rootShashinState.dynamicDerived.isTacticalReactive
-            || rootShashinState.dynamicDerived.isStrategical))
+        && !(dynamicDerived.isAggressive && staticState.legalMoveCount >= 30)
+        && (shashinManager.isTacticalInitiative() || dynamicDerived.isTacticalReactive
+            || dynamicDerived.isStrategical))
     {
         return qsearch<NonPV>(pos, ss, alpha, beta);
     }
@@ -1558,16 +1568,15 @@ Value Search::Worker::search(
 
     //only from Stockfish end
     //only from crystal begin
-    ourMove    = !(ss->ply & 1);
-    kingDanger = !ourMove && pos.king_danger(us);
-    quietKingSafe =
-      !rootShashinState.staticState.isSacrificial && !rootShashinState.staticState.kingExposed;
+    ourMove                      = !(ss->ply & 1);
+    kingDanger                   = !ourMove && pos.king_danger(us);
+    quietKingSafe                = !staticState.isSacrificial && !staticState.kingExposed;
     positionSafe                 = !kingDanger && quietKingSafe;  // King is safe during quiet moves
     allowNullMoveOnlyFromCrystal = !thisThread->nmpGuard && !gameCycle && (eval >= ss->staticEval)
                                 && positionSafe
                                 && (rootDepth < 11 || ourMove || (MoveList<LEGAL>(pos).size() > 5));
     //only from crystal end
-    useNullMoveByShashinForStockfish = g_shashinManager->useNullMoveByShashinForStockfish();
+    useNullMoveByShashinForStockfish = shashinManager.useNullMoveByShashinForStockfish();
 
     if (commonNullMoveConditions
         && (allowNullMoveOnlyFromCrystal
@@ -1773,7 +1782,7 @@ moves_loop:  // When in check, search starts here
             pos.undo_move(move);
         }
         uint64_t nodeCount = 0;
-        if (rootShashinState.dynamicDerived.isHighTal && isMate)
+        if (dynamicDerived.isHighTal && isMate)
         {
             ss->currentMove = move;
             ss->continuationHistory =
@@ -1817,9 +1826,9 @@ moves_loop:  // When in check, search starts here
             // Step 14. Pruning at shallow depth
             // Depth conditions are important for mate finding.
             //from crystal-shashin begin
-            applyPruning = commonPruningConditions
-                        && ((doLMP && rootShashinState.dynamicDerived.isHighTal)
-                            || (!rootNode && !rootShashinState.dynamicDerived.isHighTal));
+            applyPruning =
+              commonPruningConditions
+              && ((doLMP && dynamicDerived.isHighTal) || (!rootNode && !dynamicDerived.isHighTal));
 
             if (applyPruning)
             {
@@ -1900,7 +1909,7 @@ moves_loop:  // When in check, search starts here
                 // Special extension for dynamic positions based on Shashin
                 bool gameCycleExtension = gameCycle && extension >= 0 && (ourMove && PvNode);
 
-                if (gameCycleExtension && rootShashinState.dynamicDerived.isHighTal && depth > 12)
+                if (gameCycleExtension && dynamicDerived.isHighTal && depth > 12)
                     extension = std::min(extension + 1, 2);
                 else
                 {
@@ -2042,7 +2051,7 @@ skipExtensionAndPruning:  // full threads search patch
 
             // Step 17. Late moves reduction / extension (LMR)
             // Shashin-Crystal begin
-            bool useCrystalLMR = g_shashinManager->useMoveGenAndStep17CrystalLogic();
+            bool useCrystalLMR = shashinManager.useMoveGenAndStep17CrystalLogic();
             if (doLMRStep && moveCount > std::max(sibs, static_cast<int>(1))
                 && ((depth >= 2 && !useCrystalLMR)
                     || ((allowLMR && (!capture || lmrCapture)) && useCrystalLMR)))
@@ -2057,12 +2066,11 @@ skipExtensionAndPruning:  // full threads search patch
                 int baseMultiplier   = useCrystalLMR ? 6 : 7;
                 int dynamicReduction = (r + moveCount * baseMultiplier) / 1024;
                 // Tactical positions -> Reduce less (avoid excessive pruning)
-                if (rootShashinState.dynamicDerived.isAggressive
-                    || rootShashinState.dynamicDerived.isTacticalReactive)
+                if (dynamicDerived.isAggressive || dynamicDerived.isTacticalReactive)
                     dynamicReduction = std::max(1, dynamicReduction - 2);
 
                 // Passive positions (Petrosian style) -> Even stronger pruning
-                if (g_shashinManager->isPetrosian())
+                if (shashinManager.isPetrosian())
                 {
                     if (value > alpha + 15)  // If evaluation is improving, reduce less
                         dynamicReduction = std::min(dynamicReduction + 1, 4);
@@ -2085,11 +2093,11 @@ skipExtensionAndPruning:  // full threads search patch
                 {
                     // Deepen if position is aggressive & search fails high
                     const bool doDeeperSearch =
-                      g_shashinManager->isTal() && value > (bestValue + 30 + newDepth / 2);
+                      shashinManager.isTal() && value > (bestValue + 30 + newDepth / 2);
 
                     // Shallower search in Petrosian positions
                     const bool doShallowerSearch =
-                      g_shashinManager->isPetrosian() && value < bestValue + 5;
+                      shashinManager.isPetrosian() && value < bestValue + 5;
 
                     newDepth += doDeeperSearch - doShallowerSearch;
 
@@ -2228,7 +2236,7 @@ skipExtensionAndPruning:  // full threads search patch
                     // Reduce other moves if we have found at least one score improvement (~2 Elo)
                     if (depth > 2 && depth < 15 && !is_decisive(value))
                     {
-                        bool useCrystalReduction = !g_shashinManager->isTillCategory(
+                        bool useCrystalReduction = !shashinManager.isTillCategory(
                           ShashinPosition::MIDDLE_HIGH_PETROSIAN, ShashinPosition::MIDDLE_HIGH_TAL);
                         if (useCrystalReduction && !gameCycle && !isSafeZone)
                         {
@@ -2418,14 +2426,15 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
     // At non-PV nodes we check for an early TT cutoff
     //from Shashin-Crystal begin
+    const auto& staticState    = rootShashinState.staticState;
+    const auto& dynamicDerived = rootShashinState.dynamicDerived;
     if (!PvNode && ttHit && is_valid(ttData.value)
         && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER))
         && (ttData.depth >= ADJUSTED_QS_DEPTH) && (ttData.depth > MIN_DEPTH_FOR_QS_CUTOFF)
-        && !rootShashinState.dynamicDerived.isStrategical
-        && rootShashinState.staticState.legalMoveCount < 35
-        && (!rootShashinState.staticState.kingExposed || ttData.depth > DEPTH_QS + 4)
+        && !dynamicDerived.isStrategical && staticState.legalMoveCount < 35
+        && (!staticState.kingExposed || ttData.depth > DEPTH_QS + 4)
         && std::abs(ttData.value) > VALUE_DRAW + 60
-        && (!rootShashinState.staticState.kingExposed || ttData.depth > DEPTH_QS + 3))
+        && (!staticState.kingExposed || ttData.depth > DEPTH_QS + 3))
         return ttData.value;
     //from Shashin-Crystal end
     // Step 4. Static evaluation of the position
@@ -2449,13 +2458,12 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             int searchDepth = ss->ply;  // profondità attuale della ricerca
 
             // Penalità per posizioni sacrificiali: riduciamo la costante e la normalizzazione
-            if (rootShashinState.staticState.isSacrificial)
-                penalty +=
-                  std::min(4, static_cast<int>(rootShashinState.staticState.legalMoveCount / 8));
+            if (staticState.isSacrificial)
+                penalty += std::min(4, static_cast<int>(staticState.legalMoveCount / 8));
 
             // Penalità per re esposto: costante ridotta e divisione più elevata per abbassare il valore
-            if (rootShashinState.staticState.kingExposed)
-                penalty += std::min(3, std::abs(rootShashinState.staticState.kingSafetyScore) / 20);
+            if (staticState.kingExposed)
+                penalty += std::min(3, std::abs(staticState.kingSafetyScore) / 20);
 
             // Limitiamo la penalità massima a 12 (invece di 20)
             penalty = std::min(penalty, 12);
@@ -2533,10 +2541,8 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             if (!givesCheck && move.to_sq() != prevSq && !is_loss(futilityBase)
                 && move.type_of() != PROMOTION)
             {
-                if (moveCount > 2
-                                  + ((!(rootShashinState.dynamicDerived.isHighTal))
-                                       ? 0
-                                       : PvNode))  //from Crystal-shashin
+                if (moveCount
+                    > 2 + ((!(dynamicDerived.isHighTal)) ? 0 : PvNode))  //from Crystal-shashin
                     continue;
 
                 Value futilityValue = futilityBase + PieceValue[pos.piece_on(move.to_sq())];
