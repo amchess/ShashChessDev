@@ -943,13 +943,7 @@ void Search::Worker::iterative_deepening() {
                 {
                     beta  = (alpha + beta) / 2;
                     alpha = std::max(bestValue - delta, -VALUE_INFINITE);
-                    //from shashin begin
-                    // If the position is sacrificial, we extend the search windows
-                    if (rootShashinState.staticState.isSacrificial)
-                    {
-                        delta += 3 * delta / 4;  // It avoids aggressive cuts
-                    }
-                    //from shashin end
+
                     failedHighCnt = 0;
                     if (mainThread)
                         mainThread->stopOnPonderhit = false;
