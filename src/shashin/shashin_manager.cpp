@@ -147,26 +147,22 @@ bool ShashinManager::isTacticalInitiative() const {
 }
 
 bool ShashinManager::useEarlyPruning() const {
-    if (state.dynamicBase.currentDepth > 6)
+    const auto& staticState    = state.staticState;
+    const auto& dynamicDerived = state.dynamicDerived;
+    int         depth          = state.dynamicBase.currentDepth;
+    int         moves          = staticState.legalMoveCount;
+    if (depth > 2)
         return false;
-
-    const auto& staticState = state.staticState;
-
-    // Pruning allowed in simple strategic positions at shallow depths
-    if (isStrategical() && !isComplexPosition() && staticState.legalMoveCount < 20
-        && state.dynamicBase.currentDepth <= 6)
+    if (dynamicDerived.isStrategical && !isComplexPosition() && moves <= 6)
+        return true;
+    if (!dynamicDerived.isStrategical && isTacticalReactive() && !staticState.kingExposed
+        && moves <= 6)
     {
         return true;
     }
-
-    // Pruning allowed in simple tactical positions with low activity
-    if (isTactical() && staticState.legalMoveCount < 10 && state.dynamicBase.currentDepth <= 4)
-    {
-        return true;
-    }
-
     return false;
 }
+
 
 bool ShashinManager::isTal() const {
     return isShashinStyle(
