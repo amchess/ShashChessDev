@@ -947,7 +947,7 @@ void Search::Worker::iterative_deepening() {
                     // If the position is sacrificial, we extend the search windows
                     if (rootShashinState.staticState.isSacrificial)
                     {
-                        delta += delta / 2;  // It avoids aggressive cuts
+                        delta += 3 * delta / 4;  // It avoids aggressive cuts
                     }
                     //from shashin end
                     failedHighCnt = 0;
