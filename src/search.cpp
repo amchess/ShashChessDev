@@ -1545,162 +1545,181 @@ Value Search::Worker::search(
         return qsearch<NonPV>(pos, ss, alpha, beta);
     }
     // from shashin-crystal end
-    // Begin early pruning from Crystal by Shashin adapted
-    if ((!PvNode && !is_decisive(eval) && !is_decisive(beta) && eval >= beta)
-        || (!g_shashinManager->useEarlyPruning()))
+    // Step 8. Futility pruning: child node
+    // The depth condition is important for mate finding.
+    if (!ss->ttPv && depth < 14
+        && eval - futility_margin(depth, cutNode && !ss->ttHit, improving, opponentWorsening)
+               - (ss - 1)->statScore / 326 + 37 - std::abs(correctionValue) / 132821
+             >= beta
+        && eval >= beta && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval))
+        return beta + (eval - beta) / 3;
+
+    // Step 9. Null move search with verification search – Shashin-Crystal version
+    // If the position is critical (e.g., exposed King or sacrificial position), reduce null move aggressiveness.
+    //common null move conditions begin
+    nullThreshold            = beta - 21 * depth + 455 - 60 * improving;
+    commonNullMoveConditions = cutNode && !disableNMAndPC && ss->staticEval >= nullThreshold
+                            && !excludedMove && pos.non_pawn_material(us) && eval >= beta;
+    //common null move conditions end
+    //only from Stockfish begin
+    allowNullMoveOnlyFromStockfish = ((ss - 1)->currentMove != Move::null())
+                                  && (ss->ply >= thisThread->nmpMinPly) && !is_loss(beta);
+
+    //only from Stockfish end
+    //only from crystal begin
+    ourMove                      = !(ss->ply & 1);
+    kingDanger                   = !ourMove && pos.king_danger(us);
+    quietKingSafe                = !staticState.isSacrificial && !staticState.kingExposed;
+    positionSafe                 = !kingDanger && quietKingSafe;  // King is safe during quiet moves
+    allowNullMoveOnlyFromCrystal = !thisThread->nmpGuard && !gameCycle && (eval >= ss->staticEval)
+                                && positionSafe
+                                && (rootDepth < 11 || ourMove || (MoveList<LEGAL>(pos).size() > 5));
+    //only from crystal end
+    useNullMoveByShashinForStockfish = shashinManager.useNullMoveByShashinForStockfish();
+
+    if (commonNullMoveConditions
+        && (allowNullMoveOnlyFromCrystal
+            || (allowNullMoveOnlyFromStockfish && useNullMoveByShashinForStockfish)))
     {
+        assert(eval - beta >= 0);
+        thisThread->nmpSide = ourMove;  // Null move signal for Shashin
 
-        // Step 8. Futility pruning: child node
-        // The depth condition is important for mate finding.
-        if (!ss->ttPv && depth < 14
-            && eval - futility_margin(depth, cutNode && !ss->ttHit, improving, opponentWorsening)
-                   - (ss - 1)->statScore / 326 + 37 - std::abs(correctionValue) / 132821
-                 >= beta
-            && eval >= beta && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval))
-            return beta + (eval - beta) / 3;
-
-        // Step 9. Null move search with verification search – Shashin-Crystal version
-        // If the position is critical (e.g., exposed King or sacrificial position), reduce null move aggressiveness.
-        //common null move conditions begin
-        nullThreshold            = beta - 21 * depth + 455 - 60 * improving;
-        commonNullMoveConditions = cutNode && !disableNMAndPC && ss->staticEval >= nullThreshold
-                                && !excludedMove && pos.non_pawn_material(us) && eval >= beta;
-        //common null move conditions end
-        //only from Stockfish begin
-        allowNullMoveOnlyFromStockfish = ((ss - 1)->currentMove != Move::null())
-                                      && (ss->ply >= thisThread->nmpMinPly) && !is_loss(beta);
-
-        //only from Stockfish end
-        //only from crystal begin
-        ourMove       = !(ss->ply & 1);
-        kingDanger    = !ourMove && pos.king_danger(us);
-        quietKingSafe = !staticState.isSacrificial && !staticState.kingExposed;
-        positionSafe  = !kingDanger && quietKingSafe;  // King is safe during quiet moves
-        allowNullMoveOnlyFromCrystal =
-          !thisThread->nmpGuard && !gameCycle && (eval >= ss->staticEval) && positionSafe
-          && (rootDepth < 11 || ourMove || (MoveList<LEGAL>(pos).size() > 5));
-        //only from crystal end
-        useNullMoveByShashinForStockfish = shashinManager.useNullMoveByShashinForStockfish();
-
-        if (commonNullMoveConditions
-            && (allowNullMoveOnlyFromCrystal
-                || (allowNullMoveOnlyFromStockfish && useNullMoveByShashinForStockfish)))
+        int   baseR = std::min(int(eval - beta) / 237, 6) + depth / 3 + 5;
+        Depth R     = baseR;
+        if (allowNullMoveOnlyFromCrystal)
         {
-            assert(eval - beta >= 0);
-            thisThread->nmpSide = ourMove;  // Null move signal for Shashin
+            if (!ourMove && (ss - 1)->secondaryLine)
+                R = std::min(R, 8);
+        }
+        ss->currentMove                   = Move::null();
+        ss->continuationHistory           = &thisThread->continuationHistory[0][0][NO_PIECE][0];
+        ss->continuationCorrectionHistory = &thisThread->continuationCorrectionHistory[NO_PIECE][0];
 
-            int   baseR = std::min(int(eval - beta) / 237, 6) + depth / 3 + 5;
-            Depth R     = baseR;
-            if (allowNullMoveOnlyFromCrystal)
+        pos.do_null_move(st, tt);
+        thisThread->nmpGuard = true;
+        Value nullValue      = -search<NonPV>(pos, ss + 1, -beta, -beta + 1, depth - R, false);
+        thisThread->nmpGuard = false;
+        pos.undo_null_move();
+
+        // Do not return unproven mate or TB scores
+        if (nullValue >= beta && !is_win(nullValue))
+        {
+            if (thisThread->nmpMinPly || depth < 16)
+                return nullValue;
+
+            assert(!thisThread->nmpMinPly);  // Recursive verification is not allowed
+
+            // Do verification search at high depths, with null move pruning disabled
+            // until ply exceeds nmpMinPly.
+            thisThread->nmpMinPly = ss->ply + 3 * (depth - R) / 4;
+            thisThread->nmpGuardV = true;
+            Value v               = search<NonPV>(pos, ss, beta - 1, beta, depth - R, false);
+            thisThread->nmpGuardV = false;
+            thisThread->nmpMinPly = 0;
+
+            if (v >= beta)
+                return nullValue;
+        }
+    }
+    // End of Crystal-Shashin logic
+
+    improving |= ss->staticEval >= beta + 97;
+
+    // Step 10. Internal iterative reductions
+    // For PV nodes without a ttMove as well as for deep enough cutNodes, we decrease depth.
+    // (* Scaler) Especially if they make IIR more aggressive.
+    if (!shashinManager.avoidStep10() && quietKingSafe)
+    {
+        // Caso 1: PV node senza TT move oppure profondità “profonda” in cutNode
+        if ((PvNode || cutNode) && depth >= 7 - 3 * PvNode && !ttData.move)
+        {
+            depth = std::max(1, depth - 1);
+        }
+
+        // Caso 2: cutNode con TT move e bound UPPER
+        if (cutNode && ttData.move && ttData.bound == BOUND_UPPER && depth >= 7)
+        {
+            // Sfumature Shashin in base allo stile dinamico
+            if (dynamicDerived.isAggressive || dynamicDerived.isTacticalReactive)
             {
-                if (!ourMove && (ss - 1)->secondaryLine)
-                    R = std::min(R, 8);
+                // Riduzione minima in posizioni tattiche/aggressive
+                depth = std::max(1, depth - 1);
             }
-            ss->currentMove         = Move::null();
-            ss->continuationHistory = &thisThread->continuationHistory[0][0][NO_PIECE][0];
+            else if (dynamicDerived.isStrategical)
+            {
+                // Riduzione “piena” in posizioni strategiche
+                depth = std::max(1, depth - 2);
+            }
+            else
+            {
+                // Passive (o altri casi), riduzione standard
+                depth = std::max(1, depth - 1);
+            }
+        }
+    }
+
+    // Step 11. ProbCut
+    // If we have a good enough capture (or queen promotion) and a reduced search
+    // returns a value much above beta, we can (almost) safely prune the previous move.
+    probCutBeta = beta + 187 - 55 * improving;
+    if (depth >= 3
+        && !is_decisive(beta)
+        // If value from transposition table is lower than probCutBeta, don't attempt
+        // probCut there and in further interactions with transposition table cutoff
+        // depth is set to depth - 3 because probCut search has depth set to depth - 4
+        // but we also do a move before it. So effective depth is equal to depth - 3.
+        && !(is_valid(ttData.value) && ttData.value < probCutBeta))
+    {
+        assert(probCutBeta < VALUE_INFINITE && probCutBeta > beta);
+
+        MovePicker mp(pos, ttData.move, probCutBeta - ss->staticEval, &thisThread->captureHistory);
+        Depth      probCutDepth = std::max(depth - 4, 0);
+
+        while ((move = mp.next_move()) != Move::none())
+        {
+            assert(move.is_ok());
+
+            if (move == excludedMove)
+                continue;
+
+            if (!pos.legal(move))
+                continue;
+
+            assert(pos.capture_stage(move));
+
+            movedPiece = pos.moved_piece(move);
+
+            pos.do_move(move, st, &tt);
+            thisThread->nodes.fetch_add(1, std::memory_order_relaxed);
+
+            ss->currentMove = move;
+            ss->isTTMove    = (move == ttData.move);
+            ss->continuationHistory =
+              &this->continuationHistory[ss->inCheck][true][movedPiece][move.to_sq()];
             ss->continuationCorrectionHistory =
-              &thisThread->continuationCorrectionHistory[NO_PIECE][0];
+              &this->continuationCorrectionHistory[movedPiece][move.to_sq()];
 
-            pos.do_null_move(st, tt);
-            thisThread->nmpGuard = true;
-            Value nullValue      = -search<NonPV>(pos, ss + 1, -beta, -beta + 1, depth - R, false);
-            thisThread->nmpGuard = false;
-            pos.undo_null_move();
+            // Perform a preliminary qsearch to verify that the move holds
+            value = -qsearch<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1);
 
-            // Do not return unproven mate or TB scores
-            if (nullValue >= beta && !is_win(nullValue))
+            // If the qsearch held, perform the regular search
+            if (value >= probCutBeta && probCutDepth > 0)
+                value = -search<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1, probCutDepth,
+                                       !cutNode);
+
+            pos.undo_move(move);
+
+            if (value >= probCutBeta)
             {
-                if (thisThread->nmpMinPly || depth < 16)
-                    return nullValue;
+                // Save ProbCut data into transposition table
+                ttWriter.write(posKey, value_to_tt(value, ss->ply), ss->ttPv, BOUND_LOWER,
+                               probCutDepth + 1, move, unadjustedStaticEval, tt.generation());
 
-                assert(!thisThread->nmpMinPly);  // Recursive verification is not allowed
-
-                // Do verification search at high depths, with null move pruning disabled
-                // until ply exceeds nmpMinPly.
-                thisThread->nmpMinPly = ss->ply + 3 * (depth - R) / 4;
-                thisThread->nmpGuardV = true;
-                Value v               = search<NonPV>(pos, ss, beta - 1, beta, depth - R, false);
-                thisThread->nmpGuardV = false;
-                thisThread->nmpMinPly = 0;
-
-                if (v >= beta)
-                    return nullValue;
+                if (!is_decisive(value))
+                    return value - (probCutBeta - beta);
             }
         }
-        // End of Crystal-Shashin logic
-
-        improving |= ss->staticEval >= beta + 97;
-
-        // Step 10. Internal iterative reductions
-        // For PV nodes without a ttMove as well as for deep enough cutNodes, we decrease depth.
-        // (* Scaler) Especially if they make IIR more aggressive.
-        if (((PvNode || cutNode) && depth >= 7 - 3 * PvNode) && !ttData.move)
-            depth--;
-
-        // Step 11. ProbCut
-        // If we have a good enough capture (or queen promotion) and a reduced search
-        // returns a value much above beta, we can (almost) safely prune the previous move.
-        probCutBeta = beta + 187 - 55 * improving;
-        if (depth >= 3
-            && !is_decisive(beta)
-            // If value from transposition table is lower than probCutBeta, don't attempt
-            // probCut there and in further interactions with transposition table cutoff
-            // depth is set to depth - 3 because probCut search has depth set to depth - 4
-            // but we also do a move before it. So effective depth is equal to depth - 3.
-            && !(is_valid(ttData.value) && ttData.value < probCutBeta))
-        {
-            assert(probCutBeta < VALUE_INFINITE && probCutBeta > beta);
-
-            MovePicker mp(pos, ttData.move, probCutBeta - ss->staticEval,
-                          &thisThread->captureHistory);
-            Depth      probCutDepth = std::max(depth - 4, 0);
-
-            while ((move = mp.next_move()) != Move::none())
-            {
-                assert(move.is_ok());
-
-                if (move == excludedMove)
-                    continue;
-
-                if (!pos.legal(move))
-                    continue;
-
-                assert(pos.capture_stage(move));
-
-                movedPiece = pos.moved_piece(move);
-
-                pos.do_move(move, st, &tt);
-                thisThread->nodes.fetch_add(1, std::memory_order_relaxed);
-
-                ss->currentMove = move;
-                ss->isTTMove    = (move == ttData.move);
-                ss->continuationHistory =
-                  &this->continuationHistory[ss->inCheck][true][movedPiece][move.to_sq()];
-                ss->continuationCorrectionHistory =
-                  &this->continuationCorrectionHistory[movedPiece][move.to_sq()];
-
-                // Perform a preliminary qsearch to verify that the move holds
-                value = -qsearch<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1);
-
-                // If the qsearch held, perform the regular search
-                if (value >= probCutBeta && probCutDepth > 0)
-                    value = -search<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1,
-                                           probCutDepth, !cutNode);
-
-                pos.undo_move(move);
-
-                if (value >= probCutBeta)
-                {
-                    // Save ProbCut data into transposition table
-                    ttWriter.write(posKey, value_to_tt(value, ss->ply), ss->ttPv, BOUND_LOWER,
-                                   probCutDepth + 1, move, unadjustedStaticEval, tt.generation());
-
-                    if (!is_decisive(value))
-                        return value - (probCutBeta - beta);
-                }
-            }
-        }
-    }  // End early Pruning from Crystal by Shashin adapted
+    }
 moves_loop:  // When in check, search starts here
 
     // Step 12. A small Probcut idea

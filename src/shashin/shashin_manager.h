@@ -65,7 +65,6 @@ public:
     // Feature flags
     bool useMoveGenAndStep17CrystalLogic() const;
     bool isComplexPosition() const;
-    bool useEarlyPruning() const;
     bool isLowActivity() const { return state.staticState.legalMoveCount < 20; }
     bool isTacticalInitiative() const;
     bool isTacticalReactive() const;

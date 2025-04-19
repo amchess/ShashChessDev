@@ -146,17 +146,6 @@ bool ShashinManager::isTacticalInitiative() const {
     return isInRanges(state.dynamicBase.currentRange, ShashinPosition::LOW_TAL);
 }
 
-bool ShashinManager::useEarlyPruning() const {
-    const auto& staticState = state.staticState;
-    int         depth       = state.dynamicBase.currentDepth;
-    if (depth != 0 || staticState.pawnsNearPromotion)
-        return false;
-    if (staticState.allPiecesCount <= 6 && staticState.legalMoveCount <= 2)
-        return true;
-    return false;
-}
-
-
 bool ShashinManager::isTal() const {
     return isShashinStyle(
       {ShashinPosition::LOW_TAL, ShashinPosition::MIDDLE_TAL, ShashinPosition::HIGH_TAL});
