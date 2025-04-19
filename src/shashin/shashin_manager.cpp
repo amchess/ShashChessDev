@@ -147,22 +147,12 @@ bool ShashinManager::isTacticalInitiative() const {
 }
 
 bool ShashinManager::useEarlyPruning() const {
-    const auto& staticState  = state.staticState;
-    const auto& dynamicState = state.dynamicDerived;
-    int         moves        = staticState.legalMoveCount;
-    int         pcs          = staticState.allPiecesCount;
-    int         depth        = state.dynamicBase.currentDepth;
-    if (depth != 0)
+    const auto& staticState = state.staticState;
+    int         depth       = state.dynamicBase.currentDepth;
+    if (depth != 0 || staticState.pawnsNearPromotion)
         return false;
-    if (dynamicState.isStrategical && !staticState.kingExposed && !staticState.isSacrificial
-        && moves <= 3 && pcs <= 8)
-    {
+    if (staticState.allPiecesCount <= 6 && staticState.legalMoveCount <= 2)
         return true;
-    }
-    if (isTacticalDefensive() && !staticState.kingExposed && moves <= 2 && pcs <= 8)
-    {
-        return true;
-    }
     return false;
 }
 
