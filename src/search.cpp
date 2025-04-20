@@ -1630,18 +1630,20 @@ Value Search::Worker::search(
     // (* Scaler) Especially if they make IIR more aggressive.
     if (!shashinManager.avoidStep10() && quietKingSafe)
     {
-        const bool standardReductionCondition = (PvNode || cutNode) && depth >= 7 - 3 * PvNode && !ttData.move;
-        const bool ttUpperBoundReduction = cutNode && ttData.move && ttData.bound == BOUND_UPPER && depth >= 7;
-    
+        const bool standardReductionCondition =
+          (PvNode || cutNode) && depth >= 7 - 3 * PvNode && !ttData.move;
+        const bool ttUpperBoundReduction =
+          cutNode && ttData.move && ttData.bound == BOUND_UPPER && depth >= 7;
+
         if (standardReductionCondition)
             depth = std::max(1, depth - 1);
-    
+
         if (ttUpperBoundReduction)
         {
             if (dynamicDerived.isAggressive || dynamicDerived.isTacticalReactive)
                 depth = std::max(1, depth - 1);
-            else if (dynamicDerived.isStrategical && depth >= 9)
-                depth = std::max(1, depth - 2);  // più drastico ma solo se profondità è buona
+            else if (dynamicDerived.isStrategical && depth >= 1)
+                depth = std::max(1, depth - 2);
             else
                 depth = std::max(1, depth - 1);
         }
