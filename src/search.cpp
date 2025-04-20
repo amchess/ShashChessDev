@@ -1630,31 +1630,20 @@ Value Search::Worker::search(
     // (* Scaler) Especially if they make IIR more aggressive.
     if (!shashinManager.avoidStep10() && quietKingSafe)
     {
-        // Caso 1: PV node senza TT move oppure profondità “profonda” in cutNode
-        if ((PvNode || cutNode) && depth >= 7 - 3 * PvNode && !ttData.move)
-        {
+        const bool standardReductionCondition = (PvNode || cutNode) && depth >= 7 - 3 * PvNode && !ttData.move;
+        const bool ttUpperBoundReduction = cutNode && ttData.move && ttData.bound == BOUND_UPPER && depth >= 7;
+    
+        if (standardReductionCondition)
             depth = std::max(1, depth - 1);
-        }
-
-        // Caso 2: cutNode con TT move e bound UPPER
-        if (cutNode && ttData.move && ttData.bound == BOUND_UPPER && depth >= 7)
+    
+        if (ttUpperBoundReduction)
         {
-            // Sfumature Shashin in base allo stile dinamico
             if (dynamicDerived.isAggressive || dynamicDerived.isTacticalReactive)
-            {
-                // Riduzione minima in posizioni tattiche/aggressive
                 depth = std::max(1, depth - 1);
-            }
-            else if (dynamicDerived.isStrategical)
-            {
-                // Riduzione “piena” in posizioni strategiche
-                depth = std::max(1, depth - 2);
-            }
+            else if (dynamicDerived.isStrategical && depth >= 9)
+                depth = std::max(1, depth - 2);  // più drastico ma solo se profondità è buona
             else
-            {
-                // Passive (o altri casi), riduzione standard
                 depth = std::max(1, depth - 1);
-            }
         }
     }
 
