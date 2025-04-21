@@ -1642,7 +1642,7 @@ Value Search::Worker::search(
         {
             if (dynamicDerived.isAggressive || dynamicDerived.isTacticalReactive)
                 depth = std::max(1, depth - 1);
-            else if (dynamicDerived.isStrategical && depth >= 1)
+            else if (dynamicDerived.isStrategical)
                 depth = std::max(1, depth - 2);
             else
                 depth = std::max(1, depth - 1);
