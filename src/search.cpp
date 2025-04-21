@@ -1713,32 +1713,32 @@ Value Search::Worker::search(
     }
 moves_loop:  // When in check, search starts here
 
+    // Prima di tutto, raccogliamo da rootShashinState i due sotto-stati
+    const auto& rootDynamic = rootShashinState.dynamicDerived;
+    const auto& rootStatic  = rootShashinState.staticState;
+
     // Step 12. A small Probcut idea
-    probCutBeta = beta + 413;
+    probCutBeta           = beta + 413;
+    bool isCrystalProbcut = rootDynamic.isHighTal
+                         || (rootDynamic.isTacticalReactive && !rootStatic.kingExposed
+                             && rootStatic.legalMoveCount < 30);
+
+    bool isStrategicalFallback =
+      rootDynamic.isStrategical && !rootStatic.kingExposed && !rootStatic.isSacrificial;
 
     if ((ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 4 && ttData.value >= probCutBeta)
     {
-        if ((ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 4
-            && ttData.value >= probCutBeta)
+        if (isCrystalProbcut && ss->inCheck && !gameCycle && !kingDanger && !excludedMove
+            && !(ss - 1)->secondaryLine)
         {
-            // Crystal‑only gatekeeper: taglio “alto‑medio” solo in posizioni tattiche pulite
-            if (g_shashinManager->allowCrystalProbCut())
-            {
-                if (!ss->inCheck && !gameCycle && !kingDanger && !excludedMove
-                    && !(ss - 1)->secondaryLine)
-                {
-                    return probCutBeta;
-                }
-            }
-            // Fallback Stockfish ∙ SOLO in posizioni marcate strategical da Shashin
-            else if (rootShashinState.dynamicDerived.isStrategical && !is_decisive(beta)
-                     && is_valid(ttData.value) && !is_decisive(ttData.value))
-            {
-                return probCutBeta;
-            }
+            return probCutBeta;
+        }
+        if (isStrategicalFallback && !is_decisive(beta) && is_valid(ttData.value)
+            && !is_decisive(ttData.value))
+        {
+            return probCutBeta;
         }
     }
-
 
     const PieceToHistory* contHist[] = {
       (ss - 1)->continuationHistory, (ss - 2)->continuationHistory, (ss - 3)->continuationHistory,

@@ -52,23 +52,6 @@ bool ShashinManager::useMoveGenAndStep17CrystalLogic() const {
 
     return false;
 }
-bool ShashinManager::allowCrystalProbCut() const {
-    const auto& staticState  = state.staticState;
-    const auto& dynamicState = state.dynamicDerived;
-
-    // “High‑tal tactical” o “tactical‑reactive” con re non esposto
-    // e poche mosse da esplorare
-    if ((dynamicState.isHighTal               // alto talento tattico
-         || dynamicState.isTacticalReactive)  // tattico‑reattiva
-        && !staticState.kingExposed && !staticState.isSacrificial
-        && staticState.legalMoveCount < 30)
-    {
-        return true;
-    }
-
-    return false;
-}
-
 bool ShashinManager::isTacticalReactive() const {
     return isInRanges(state.dynamicBase.currentRange, ShashinPosition::LOW_PETROSIAN);
 }
