@@ -1568,6 +1568,7 @@ Value Search::Worker::search(
     //only from Stockfish end
     //only from crystal begin
     ourMove                      = !(ss->ply & 1);
+    nullParity                   = (ourMove == thisThread->nmpSide);
     kingDanger                   = !ourMove && pos.king_danger(us);
     quietKingSafe                = !staticState.isSacrificial && !staticState.kingExposed;
     positionSafe                 = !kingDanger && quietKingSafe;  // King is safe during quiet moves
@@ -1713,32 +1714,27 @@ Value Search::Worker::search(
     }
 moves_loop:  // When in check, search starts here
 
-    // Prima di tutto, raccogliamo da rootShashinState i due sotto-stati
     const auto& rootDynamic = rootShashinState.dynamicDerived;
     const auto& rootStatic  = rootShashinState.staticState;
 
     // Step 12. A small Probcut idea
-    probCutBeta           = beta + 413;
-    bool isCrystalProbcut = rootDynamic.isHighTal
-                         || (rootDynamic.isTacticalReactive && !rootStatic.kingExposed
-                             && rootStatic.legalMoveCount < 30);
-
-    bool isStrategicalFallback =
-      rootDynamic.isStrategical && !rootStatic.kingExposed && !rootStatic.isSacrificial;
-
-    if ((ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 4 && ttData.value >= probCutBeta)
+    probCutBeta = beta + 417;
+    //from shashin begin
+    bool commonProbcut = (ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 4
+                      && ttData.value >= probCutBeta && !is_decisive(beta)
+                      && !is_decisive(ttData.value);
+    bool fromCrystalProbcutConditions = ss->inCheck && !PvNode && ttCapture && ourMove && !gameCycle
+                                     && !excludedMove && !kingDanger && !(ss - 1)->secondaryLine
+                                     && !(thisThread->nmpGuard && nullParity)
+                                     && !(thisThread->nmpGuardV && nullParity);
+    bool fromStockfishProbcutConditions = is_valid(ttData.value);
+    if (commonProbcut
+        && ((g_shashinManager->allowCrystalProbCut() && fromCrystalProbcutConditions)
+            || (g_shashinManager->allowStockfishProbCut() && fromStockfishProbcutConditions)))
     {
-        if (isCrystalProbcut && ss->inCheck && !gameCycle && !kingDanger && !excludedMove
-            && !(ss - 1)->secondaryLine)
-        {
-            return probCutBeta;
-        }
-        if (isStrategicalFallback && !is_decisive(beta) && is_valid(ttData.value)
-            && !is_decisive(ttData.value))
-        {
-            return probCutBeta;
-        }
+        return probCutBeta;
     }
+    //from shashin end
 
     const PieceToHistory* contHist[] = {
       (ss - 1)->continuationHistory, (ss - 2)->continuationHistory, (ss - 3)->continuationHistory,

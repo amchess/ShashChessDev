@@ -75,6 +75,8 @@ public:
     bool isTillCategory(ShashinPosition lowerBound, ShashinPosition upperBound) const;
     
     // Search optimizations
+    bool allowCrystalProbCut() const;
+    bool allowStockfishProbCut() const;
     bool useCrystalFutilityPruningParent() const;
     bool useCrystalFutilityPruningChild() const;
     bool useNullMoveByShashinForStockfish() const;

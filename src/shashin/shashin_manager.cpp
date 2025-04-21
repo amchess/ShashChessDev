@@ -52,6 +52,20 @@ bool ShashinManager::useMoveGenAndStep17CrystalLogic() const {
 
     return false;
 }
+bool ShashinManager::allowCrystalProbCut() const {
+    const auto& s              = state.staticState;
+    const auto& d              = state.dynamicDerived;
+    bool        highTalent     = d.isHighTal && s.legalMoveCount < 30 && !s.kingExposed;
+    bool        reactiveTactic = d.isTacticalReactive && !s.kingExposed && s.legalMoveCount < 25;
+    return highTalent || reactiveTactic;
+}
+
+bool ShashinManager::allowStockfishProbCut() const {
+    const auto& s     = state.staticState;
+    int         depth = state.dynamicBase.currentDepth;
+    return (s.legalMoveCount < 40 && depth <= 6) || (s.legalMoveCount < 60 && depth <= 8);
+}
+
 bool ShashinManager::isTacticalReactive() const {
     return isInRanges(state.dynamicBase.currentRange, ShashinPosition::LOW_PETROSIAN);
 }
