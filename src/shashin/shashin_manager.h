@@ -78,6 +78,7 @@ public:
     bool useCrystalFutilityPruningParent() const;
     bool useCrystalFutilityPruningChild() const;
     bool useNullMoveByShashinForStockfish() const;
+    bool allowCrystalProbCut() const;
     bool isSimpleIntermediate() const;
     bool isMCTSApplicableByValue() const;
     bool isMCTSExplorationApplicable() const;

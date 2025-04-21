@@ -1716,23 +1716,29 @@ moves_loop:  // When in check, search starts here
     // Step 12. A small Probcut idea
     probCutBeta = beta + 413;
 
-    // Crystal‑inspired gatekeeper: taglio “alto‑medio” solo in posizioni davvero tattiche
-    bool probCutFromCrystal =
-      rootShashinState.dynamicDerived.isHighTal               // posizioni di “alto talento tattico”
-      || (rootShashinState.dynamicDerived.isTacticalReactive  // posizioni tattico‑reattive
-          && !rootShashinState.staticState.kingExposed
-          && rootShashinState.staticState.legalMoveCount < 30);
+    if ((ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 4 && ttData.value >= probCutBeta)
+    {
+        if ((ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 4
+            && ttData.value >= probCutBeta)
+        {
+            // Crystal‑only gatekeeper: taglio “alto‑medio” solo in posizioni tattiche pulite
+            if (g_shashinManager->allowCrystalProbCut())
+            {
+                if (!ss->inCheck && !gameCycle && !kingDanger && !excludedMove
+                    && !(ss - 1)->secondaryLine)
+                {
+                    return probCutBeta;
+                }
+            }
+            // Fallback Stockfish ∙ SOLO in posizioni marcate strategical da Shashin
+            else if (rootShashinState.dynamicDerived.isStrategical && !is_decisive(beta)
+                     && is_valid(ttData.value) && !is_decisive(ttData.value))
+            {
+                return probCutBeta;
+            }
+        }
+    }
 
-    if ((ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 4 && ttData.value >= probCutBeta
-        && (
-          // Crystal‑only: tattico‑reattive/alto talento, senza re esposto
-          (probCutFromCrystal && ss->inCheck && !gameCycle && !kingDanger && !excludedMove
-           && !(ss - 1)->secondaryLine)
-          ||
-          // fallback Stockfish
-          (!probCutFromCrystal && !is_decisive(beta) && is_valid(ttData.value)
-           && !is_decisive(ttData.value))))
-        return probCutBeta;
 
     const PieceToHistory* contHist[] = {
       (ss - 1)->continuationHistory, (ss - 2)->continuationHistory, (ss - 3)->continuationHistory,
