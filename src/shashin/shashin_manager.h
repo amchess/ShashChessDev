@@ -83,7 +83,6 @@ public:
     bool isMCTSExplorationApplicable() const;
     bool isTal() const;
     bool isHighPieceDensityCapablancaPosition() const;
-    bool allowCrystalProbCut() const;
     bool isTacticalReduction() const;
     bool avoidStep10() const;
     bool isTalTacticalHighMiddle() const;

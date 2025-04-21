@@ -121,16 +121,6 @@ bool ShashinManager::isHighPieceDensityCapablancaPosition() const {
     return isInRange(ShashinPosition::CAPABLANCA) && isHighPieceDensity();
 }
 
-bool ShashinManager::allowCrystalProbCut() const {
-    const auto& staticState  = state.staticState;
-    const auto& dynamicState = state.dynamicDerived;
-    int         mv           = staticState.legalMoveCount;
-    if (isTalTacticalHighMiddle() && !staticState.kingExposed && !staticState.isSacrificial
-        && mv < 30)
-        return true;
-    return false;
-}
-
 bool ShashinManager::isTacticalReduction() const {
     const auto& staticState = state.staticState;
     return isAggressive() && (staticState.highMaterial || !isHighPieceDensity());
