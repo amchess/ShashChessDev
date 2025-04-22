@@ -1164,7 +1164,7 @@ Value Search::Worker::search(
     bool givesCheck, improving = false, priorCapture, opponentWorsening = false,
                      expTTHit = false;  //shashin
     //from Shashin-Crystal begin
-    bool canApplyProbCut, allowProbCut, isMate, gameCycle, capture, ttCapture, kingDanger,
+    bool canApplyProbCut, dangerousSacrifice, isMate, gameCycle, capture, ttCapture, kingDanger,
       quietKingSafe = false, nullParity = false;  // from Crystal
     //from shashin crystal end
     int priorReduction  = (ss - 1)->reduction;
@@ -1660,18 +1660,16 @@ Value Search::Worker::search(
     // If we have a good enough capture (or queen promotion) and a reduced search
     // returns a value much above beta, we can (almost) safely prune the previous move.
 
-    allowProbCut = !PvNode && !staticState.kingExposed && !staticState.isSacrificial
-                && staticState.allPiecesCount <= 8 && staticState.legalMoveCount <= 12;
 
     probCutBeta = beta + 187 - 55 * improving;
-
+    dangerousSacrifice = staticState.kingExposed && staticState.isSacrificial;
     canApplyProbCut = depth >= 3 && !disableNMAndPC
                    && !is_decisive(beta)
                    // If value from transposition table is lower than probCutBeta, don't attempt
                    // probCut there and in further interactions with transposition table cutoff
                    // depth is set to depth - 3 because probCut search has depth set to depth - 4
                    // but we also do a move before it. So effective depth is equal to depth - 3.
-                   && !(is_valid(ttData.value) && ttData.value < probCutBeta) && allowProbCut;
+                   && !(is_valid(ttData.value) && ttData.value < probCutBeta) && !dangerousSacrifice;
 
     if (canApplyProbCut)
     {
