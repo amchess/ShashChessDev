@@ -1112,8 +1112,12 @@ Value Search::Worker::search(
     constexpr bool rootNode = nodeType == Root;
     const bool     allNode  = !(PvNode || cutNode);
 
-    auto&                   shashinManager   = *g_shashinManager;
-    const RootShashinState& rootShashinState = shashinManager.getState();  //for ShashChess
+    auto& shashinManager = *g_shashinManager;
+    //for ShashChess begin
+    const RootShashinState& rootShashinState = shashinManager.getState();
+    const auto&             dynamicDerived   = rootShashinState.dynamicDerived;
+    const auto&             staticState      = rootShashinState.staticState;
+    //for ShashChess end
     //From Shashin fortress begin
     // Determine if we are in a fortress (note: use the root position!)
     if (shashinManager.isFortress(rootPos))
@@ -1137,15 +1141,23 @@ Value Search::Worker::search(
 
     // Limit the depth if extensions made it too large
     depth = std::min(depth, MAX_PLY - 1);
-
+    //from crystal-shashin begin
+    // Enhanced logic for draw repetitions (Optimized)
     // Check if we have an upcoming move that draws by repetition
     if (!rootNode && alpha < VALUE_DRAW && pos.upcoming_repetition(ss->ply))
     {
-        alpha = value_draw(this->nodes);
-        if (alpha >= beta)
-            return alpha;
-    }
+        bool isLowDepth = (ss->ply < std::min(8, depth));
+        bool isStrategicOrIntermediate =
+          dynamicDerived.isStrategical || shashinManager.isSimpleIntermediate();
 
+        if (isStrategicOrIntermediate && isLowDepth)
+        {
+            alpha = value_draw(this->nodes);
+            if (alpha >= beta)
+                return alpha;  // Cut-off due to draw repetition
+        }
+    }
+    //from crystal-shashin end
     assert(-VALUE_INFINITE <= alpha && alpha < beta && beta <= VALUE_INFINITE);
     assert(PvNode || (alpha == beta - 1));
     assert(0 < depth && depth < MAX_PLY);
@@ -1207,8 +1219,6 @@ Value Search::Worker::search(
     // Used to send selDepth info to GUI (selDepth counts from 1, ply from 0)
     if (PvNode && thisThread->selDepth < ss->ply + 1)
         thisThread->selDepth = ss->ply + 1;
-    const auto& dynamicDerived = rootShashinState.dynamicDerived;
-    const auto& staticState    = rootShashinState.staticState;
     if (!rootNode)
     {
         // from Crystal-Shashin begin
