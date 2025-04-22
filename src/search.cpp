@@ -1262,14 +1262,32 @@ Value Search::Worker::search(
     ss->ttPv     = excludedMove ? ss->ttPv : PvNode || (ttHit && ttData.is_pv);
     ttCapture    = ttData.move && pos.capture_stage(ttData.move);
 
+    // Begin Shashin influence on TT behavior
+    int  depthAdjustment = 0;
+    bool ignoreTTBound   = false;
+
+    if (dynamicDerived.isStrategical)
+    {
+        depthAdjustment = 2;  // Prefer deeper stored values for long-term plans
+    }
+    else if (dynamicDerived.isAggressive)
+    {
+        depthAdjustment = -1;    // Slightly more speculative lookups
+        ignoreTTBound   = true;  // Avoid relying too much on stored TT bounds
+    }
+    // end Shashin influence on TT behavior
     // At this point, if excluded, skip straight to step 6, static eval. However,
     // to save indentation, we list the condition in all code between here and there.
-
+    bool boundOK =
+      ignoreTTBound ? true : (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER));
+    bool shashinTTok =
+      (!gameCycle || (!dynamicDerived.isStrategical || staticState.legalMoveCount < 30))
+      && (!(ss - 1)->mainLine || shashinManager.isTactical());  //Shashin-Crystal
     // At non-PV nodes we check for an early TT cutoff
-    if (!PvNode && !excludedMove && ttData.depth > depth - (ttData.value <= beta)
-        && is_valid(ttData.value)  // Can happen when !ttHit or when access race in probe()
-        && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER))
-        && (cutNode == (ttData.value >= beta) || depth > 5))
+    if (!PvNode && !excludedMove && shashinTTok  //Shashin-Crystal
+        && ttData.depth > depth - (ttData.value <= beta)
+                            + depthAdjustment  // Adjust depth influence by Shashin
+        && is_valid(ttData.value) && boundOK && (cutNode == (ttData.value >= beta) || depth > 5))
     {
         // If ttMove is quiet, update move sorting heuristics on TT hit
         if (ttData.move && ttData.value >= beta)
@@ -1338,14 +1356,12 @@ Value Search::Worker::search(
             bool expTTCapture = learningMove->move && pos.capture_stage(expTTMove);
             // At this point, if excluded, skip straight to step 6, static eval. However,
             // to save indentation, we list the condition in all code between here and there.
-
             // At non-PV nodes we check for an early Global Learning Table cutoff
-            if (!PvNode && !excludedMove &&
-                // shashin-crystal begin
-                (!gameCycle || (!dynamicDerived.isStrategical || staticState.legalMoveCount < 30))
-                && (!(ss - 1)->mainLine || shashinManager.isTactical()) &&
+            if (!PvNode && !excludedMove && shashinTTok &&
                 //shashin-crystal end
-                updatedLearning && learningMove->depth > depth - (expTTValue < beta)
+                updatedLearning
+                && learningMove->depth > depth - (expTTValue <= beta)
+                                           + depthAdjustment  // Adjust depth influence by Shashin
                 && is_valid(expTTValue) && (cutNode == (expTTValue >= beta) || depth > 5))
             {
                 // If expTTMove is quiet, update move sorting heuristics on Global learning table hit
@@ -2467,6 +2483,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         && (!staticState.kingExposed || ttData.depth > DEPTH_QS + 3))
         return ttData.value;
     //from Shashin-Crystal end
+
     // Step 4. Static evaluation of the position
     Value      unadjustedStaticEval = VALUE_NONE;
     const auto correctionValue      = correction_value(*thisThread, pos, ss);
@@ -2482,8 +2499,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                 unadjustedStaticEval = evaluate(pos);
             ss->staticEval = bestValue =
               to_corrected_static_eval(unadjustedStaticEval, correctionValue);
-
-            // from Shashin begin
+            //from Shashin begin
             int penalty = 0;
             if (staticState.isSacrificial)
                 penalty += std::min(4, static_cast<int>(staticState.legalMoveCount / 8));
@@ -2506,7 +2522,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
               to_corrected_static_eval(unadjustedStaticEval, correctionValue);
         }
 
-        // Stand pat. Ritorna subito se il valore statico è almeno beta
+        // Stand pat. Return immediately if static value is at least beta
         if (bestValue >= beta)
         {
             if (!is_decisive(bestValue))
