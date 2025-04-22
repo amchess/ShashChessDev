@@ -1164,9 +1164,8 @@ Value Search::Worker::search(
     bool givesCheck, improving = false, priorCapture, opponentWorsening = false,
                      expTTHit = false;  //shashin
     //from Shashin-Crystal begin
-    bool canApplyProbCut, allowProbCut, isSafeTactical, isStrategicSlowPosition, isMate, gameCycle,
-      capture, ttCapture, kingDanger, quietKingSafe = false, nullParity = false;  // from Crystal
-    int probCutAdjustment;
+    bool canApplyProbCut, allowProbCut, isMate, gameCycle, capture, ttCapture, kingDanger,
+      quietKingSafe = false, nullParity = false;  // from Crystal
     //from shashin crystal end
     int priorReduction  = (ss - 1)->reduction;
     (ss - 1)->reduction = 0;
@@ -1661,20 +1660,10 @@ Value Search::Worker::search(
     // If we have a good enough capture (or queen promotion) and a reduced search
     // returns a value much above beta, we can (almost) safely prune the previous move.
 
-    isStrategicSlowPosition = dynamicDerived.isStrategical && !staticState.kingExposed;
-    isSafeTactical          = (dynamicDerived.isAggressive || dynamicDerived.isTacticalReactive)
-                  && !staticState.isSacrificial && !staticState.kingExposed;
+    allowProbCut = !PvNode && !staticState.kingExposed && !staticState.isSacrificial
+                && staticState.allPiecesCount <= 8 && staticState.legalMoveCount <= 12;
 
-    allowProbCut = isSafeTactical
-                || (!PvNode && staticState.allPiecesCount <= 8 && staticState.legalMoveCount <= 10
-                    && !staticState.kingExposed);
-
-    // Regola il margine in base al contesto posizionale
-    probCutAdjustment = isSafeTactical ? (15 + depth / 3)  // meno pruning, posizione attiva
-                      : isStrategicSlowPosition ? -15      // più pruning
-                                                : 0;
-
-    probCutBeta = beta + 187 - 55 * improving + probCutAdjustment;
+    probCutBeta = beta + 187 - 55 * improving;
 
     canApplyProbCut = depth >= 3 && !disableNMAndPC
                    && !is_decisive(beta)
@@ -1705,7 +1694,6 @@ Value Search::Worker::search(
 
             movedPiece = pos.moved_piece(move);
 
-            movedPiece = pos.moved_piece(move);
             pos.do_move(move, st, &tt);
             thisThread->nodes.fetch_add(1, std::memory_order_relaxed);
 
@@ -1716,12 +1704,8 @@ Value Search::Worker::search(
             ss->continuationCorrectionHistory =
               &this->continuationCorrectionHistory[movedPiece][move.to_sq()];
 
-            // If the king is exposed, the pruning windows is restrained
-            Value qsearchThreshold =
-              staticState.kingExposed ? probCutBeta - depth * 2 : probCutBeta;
-
             // Perform a preliminary qsearch to verify that the move holds
-            value = -qsearch<NonPV>(pos, ss + 1, -qsearchThreshold, -probCutBeta + 1);
+            value = -qsearch<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1);
 
             // If the qsearch held, perform the regular search
             if (value >= probCutBeta && probCutDepth > 0)
