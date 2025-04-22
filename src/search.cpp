@@ -790,7 +790,6 @@ void Search::Worker::iterative_deepening() {
     ss->pv = pv;
     shashinManager.initDynamicRootShashinState(networks[numaAccessToken], refreshTable, rootPos, ss,
                                                VALUE_ZERO, shashinConfig);
-    const RootShashinState& rootShashinState = shashinManager.getState();
     if (mainThread)
     {
         if (mainThread->bestPreviousScore == VALUE_INFINITE)
@@ -1164,9 +1163,12 @@ Value Search::Worker::search(
                      probCutBeta = VALUE_NONE;  // from Kelly
     bool givesCheck, improving = false, priorCapture, opponentWorsening = false,
                      expTTHit = false;  //shashin
-    bool isMate, gameCycle;             // from Crystal-Shashin
-    bool capture, ttCapture, kingDanger, quietKingSafe = false, nullParity = false;  // from Crystal
-    int  priorReduction = (ss - 1)->reduction;
+    //from Shashin-Crystal begin
+    bool canApplyProbCut, allowProbCut, isSafeTactical, isStrategicSlowPosition, isMate, gameCycle,
+      capture, ttCapture, kingDanger, quietKingSafe = false, nullParity = false;  // from Crystal
+    int probCutAdjustment;
+    //from shashin crystal end
+    int priorReduction  = (ss - 1)->reduction;
     (ss - 1)->reduction = 0;
     Piece movedPiece;
     bool  ourMove = false;  // from Crystal
@@ -1510,13 +1512,18 @@ Value Search::Worker::search(
     if (thisThread->fullSearch)
         goto moves_loop;  // full threads patch
     // full threads patch end
-    // Set up the improving flag, which is true if current static evaluation is
-    // bigger than the previous static evaluation at our turn (if we were in
-    // check at our previous move we go back until we weren't in check) and is
-    // false otherwise. The improving flag is used in various pruning heuristics.
-    improving = ss->staticEval > (ss - 2)->staticEval;
-
+    // from Kelly begin
+    if (!expectedPVNode)
+    {
+        // Set up the improving flag, which is true if current static evaluation is
+        // bigger than the previous static evaluation at our turn (if we were in
+        // check at our previous move we go back until we weren't in check) and is
+        // false otherwise. The improving flag is used in various pruning heuristics.
+        improving = ss->staticEval > (ss - 2)->staticEval;
+    }
+    // from Kelly end
     opponentWorsening = ss->staticEval > -(ss - 1)->staticEval;
+
 
     if (priorReduction >= 3 && !opponentWorsening)
         depth++;
@@ -1653,14 +1660,31 @@ Value Search::Worker::search(
     // Step 11. ProbCut
     // If we have a good enough capture (or queen promotion) and a reduced search
     // returns a value much above beta, we can (almost) safely prune the previous move.
-    probCutBeta = beta + 187 - 55 * improving;
-    if (depth >= 3
-        && !is_decisive(beta)
-        // If value from transposition table is lower than probCutBeta, don't attempt
-        // probCut there and in further interactions with transposition table cutoff
-        // depth is set to depth - 3 because probCut search has depth set to depth - 4
-        // but we also do a move before it. So effective depth is equal to depth - 3.
-        && !(is_valid(ttData.value) && ttData.value < probCutBeta))
+
+    isStrategicSlowPosition = dynamicDerived.isStrategical && !staticState.kingExposed;
+    isSafeTactical          = (dynamicDerived.isAggressive || dynamicDerived.isTacticalReactive)
+                  && !staticState.isSacrificial && !staticState.kingExposed;
+
+    allowProbCut = isSafeTactical
+                || (!PvNode && staticState.allPiecesCount <= 8 && staticState.legalMoveCount <= 10
+                    && !staticState.kingExposed);
+
+    // Regola il margine in base al contesto posizionale
+    probCutAdjustment = isSafeTactical ? (15 + depth / 3)  // meno pruning, posizione attiva
+                      : isStrategicSlowPosition ? -15      // più pruning
+                                                : 0;
+
+    probCutBeta = beta + 187 - 55 * improving + probCutAdjustment;
+
+    canApplyProbCut = depth >= 3 && !disableNMAndPC
+                   && !is_decisive(beta)
+                   // If value from transposition table is lower than probCutBeta, don't attempt
+                   // probCut there and in further interactions with transposition table cutoff
+                   // depth is set to depth - 3 because probCut search has depth set to depth - 4
+                   // but we also do a move before it. So effective depth is equal to depth - 3.
+                   && !(is_valid(ttData.value) && ttData.value < probCutBeta) && allowProbCut;
+
+    if (canApplyProbCut)
     {
         assert(probCutBeta < VALUE_INFINITE && probCutBeta > beta);
 
@@ -1681,6 +1705,7 @@ Value Search::Worker::search(
 
             movedPiece = pos.moved_piece(move);
 
+            movedPiece = pos.moved_piece(move);
             pos.do_move(move, st, &tt);
             thisThread->nodes.fetch_add(1, std::memory_order_relaxed);
 
@@ -1691,8 +1716,12 @@ Value Search::Worker::search(
             ss->continuationCorrectionHistory =
               &this->continuationCorrectionHistory[movedPiece][move.to_sq()];
 
+            // If the king is exposed, the pruning windows is restrained
+            Value qsearchThreshold =
+              staticState.kingExposed ? probCutBeta - depth * 2 : probCutBeta;
+
             // Perform a preliminary qsearch to verify that the move holds
-            value = -qsearch<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1);
+            value = -qsearch<NonPV>(pos, ss + 1, -qsearchThreshold, -probCutBeta + 1);
 
             // If the qsearch held, perform the regular search
             if (value >= probCutBeta && probCutDepth > 0)
@@ -1712,10 +1741,8 @@ Value Search::Worker::search(
             }
         }
     }
-moves_loop:  // When in check, search starts here
 
-    const auto& rootDynamic = rootShashinState.dynamicDerived;
-    const auto& rootStatic  = rootShashinState.staticState;
+moves_loop:  // When in check, search starts here
 
     // Step 12. A small Probcut idea
     probCutBeta = beta + 417;
@@ -2036,7 +2063,7 @@ skipExtensionAndPruning:  // full threads search patch
               &thisThread->continuationHistory[ss->inCheck][capture][movedPiece][move.to_sq()];
             ss->continuationCorrectionHistory =
               &thisThread->continuationCorrectionHistory[movedPiece][move.to_sq()];
-            uint64_t nodeCount = rootNode ? uint64_t(nodes) : 0;
+            nodeCount = rootNode ? uint64_t(nodes) : 0;
 
             // Decrease reduction for PvNodes (*Scaler)
             if (ss->ttPv)
@@ -2416,7 +2443,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     Key   posKey;
     Move  move, bestMove;
     Value bestValue, value, futilityBase;
-    bool  pvHit, givesCheck, capture, gameCycle = false;  // from Crystal
+    bool  pvHit, givesCheck, capture;  // from Crystal
     int   moveCount;
 
     // Step 1. Initialize node
@@ -2434,13 +2461,6 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     // Used to send selDepth info to GUI (selDepth counts from 1, ply from 0)
     if (PvNode && thisThread->selDepth < ss->ply + 1)
         thisThread->selDepth = ss->ply + 1;
-
-    // from Crystal begin
-    if (pos.upcoming_repetition(ss->ply))
-    {
-        gameCycle = true;
-    }
-    // from Crystal end
 
     // Step 2. Check for an immediate draw or maximum ply reached
     if (pos.is_draw(ss->ply) || ss->ply >= MAX_PLY)
@@ -2487,37 +2507,22 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
               to_corrected_static_eval(unadjustedStaticEval, correctionValue);
 
             // from Shashin begin
-            int penalty     = 0;
-            int searchDepth = ss->ply;  // profondità attuale della ricerca
-
-            // Penalità per posizioni sacrificiali: riduciamo la costante e la normalizzazione
+            int penalty = 0;
             if (staticState.isSacrificial)
                 penalty += std::min(4, static_cast<int>(staticState.legalMoveCount / 8));
-
-            // Penalità per re esposto: costante ridotta e divisione più elevata per abbassare il valore
             if (staticState.kingExposed)
                 penalty += std::min(3, std::abs(staticState.kingSafetyScore) / 20);
-
-            // Limitiamo la penalità massima a 12 (invece di 20)
             penalty = std::min(penalty, 12);
-
-            // Se la valutazione bestValue è vicina ad alpha, riduciamo la penalità di poco (per esempio, del 10%)
             if (bestValue > alpha - 15)
                 penalty = penalty * 90 / 100;  // Riduzione del 10%
-
-            // Applichiamo la penalità alla valutazione finale, scegliendo il massimo tra bestValue e (alpha - penalty)
             bestValue = std::max(bestValue, alpha - penalty);
             // from Shashin end
-
-
-            // ttValue può essere usato come migliore valutazione della posizione
             if (is_valid(ttData.value) && !is_decisive(ttData.value)
                 && (ttData.bound & (ttData.value > bestValue ? BOUND_LOWER : BOUND_UPPER)))
                 bestValue = ttData.value;
         }
         else
         {
-            // In caso di null move search, usa la valutazione statica precedente con segno opposto
             unadjustedStaticEval =
               (ss - 1)->currentMove != Move::null() ? evaluate(pos) : -(ss - 1)->staticEval;
             ss->staticEval = bestValue =
