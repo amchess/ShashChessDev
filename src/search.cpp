@@ -1262,32 +1262,14 @@ Value Search::Worker::search(
     ss->ttPv     = excludedMove ? ss->ttPv : PvNode || (ttHit && ttData.is_pv);
     ttCapture    = ttData.move && pos.capture_stage(ttData.move);
 
-    // Begin Shashin influence on TT behavior
-    int  depthAdjustment = 0;
-    bool ignoreTTBound   = false;
-
-    if (dynamicDerived.isStrategical)
-    {
-        depthAdjustment = 2;  // Prefer deeper stored values for long-term plans
-    }
-    else if (dynamicDerived.isAggressive)
-    {
-        depthAdjustment = -1;    // Slightly more speculative lookups
-        ignoreTTBound   = true;  // Avoid relying too much on stored TT bounds
-    }
-    // end Shashin influence on TT behavior
     // At this point, if excluded, skip straight to step 6, static eval. However,
     // to save indentation, we list the condition in all code between here and there.
-    bool boundOK =
-      ignoreTTBound ? true : (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER));
-    bool shashinTTok =
-      (!gameCycle || (!dynamicDerived.isStrategical || staticState.legalMoveCount < 30))
-      && (!(ss - 1)->mainLine || shashinManager.isTactical());  //Shashin-Crystal
+
     // At non-PV nodes we check for an early TT cutoff
-    if (!PvNode && !excludedMove && shashinTTok  //Shashin-Crystal
-        && ttData.depth > depth - (ttData.value <= beta)
-                            + depthAdjustment  // Adjust depth influence by Shashin
-        && is_valid(ttData.value) && boundOK && (cutNode == (ttData.value >= beta) || depth > 5))
+    if (!PvNode && !excludedMove && ttData.depth > depth - (ttData.value <= beta)
+        && is_valid(ttData.value)  // Can happen when !ttHit or when access race in probe()
+        && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER))
+        && (cutNode == (ttData.value >= beta) || depth > 5))
     {
         // If ttMove is quiet, update move sorting heuristics on TT hit
         if (ttData.move && ttData.value >= beta)
@@ -1357,12 +1339,9 @@ Value Search::Worker::search(
             // At this point, if excluded, skip straight to step 6, static eval. However,
             // to save indentation, we list the condition in all code between here and there.
             // At non-PV nodes we check for an early Global Learning Table cutoff
-            if (!PvNode && !excludedMove && shashinTTok &&
-                //shashin-crystal end
-                updatedLearning
-                && learningMove->depth > depth - (expTTValue <= beta)
-                                           + depthAdjustment  // Adjust depth influence by Shashin
-                && is_valid(expTTValue) && (cutNode == (expTTValue >= beta) || depth > 5))
+            if (!PvNode && !excludedMove && updatedLearning
+                && learningMove->depth > depth - (expTTValue <= beta) && is_valid(expTTValue)
+                && (cutNode == (expTTValue >= beta) || depth > 5))
             {
                 // If expTTMove is quiet, update move sorting heuristics on Global learning table hit
                 if (expTTMove && expTTValue >= beta)
