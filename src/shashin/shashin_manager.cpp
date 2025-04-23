@@ -85,6 +85,12 @@ bool ShashinManager::isTillCategory(ShashinPosition lowerBound, ShashinPosition 
     return !isInRanges(state.dynamicBase.currentRange, lowerBound, upperBound);
 }
 
+bool ShashinManager::useCrystalFutility() const {
+    const auto& dyn = state.dynamicDerived;
+    const auto& st  = state.staticState;
+    return (dyn.isAggressive || dyn.isTacticalReactive) && !st.kingExposed && !st.isSacrificial
+        && st.legalMoveCount < 20;
+}
 
 bool ShashinManager::useNullMoveByShashinForStockfish() const {
     const auto& staticState = state.staticState;
