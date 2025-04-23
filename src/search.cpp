@@ -1500,7 +1500,8 @@ Value Search::Worker::search(
     //from Shashin begin to review
     int  nullThreshold;
     bool commonNullMoveConditions, useNullMoveByShashinForStockfish, positionSafe,
-      allowNullMoveOnlyFromStockfish, allowNullMoveOnlyFromCrystal;
+      allowNullMoveOnlyFromStockfish, allowNullMoveOnlyFromCrystal, isInImportantLine,
+      allowCrystalFut, commonFutCond;
     //from Shashin end to review
     // full threads patch begin
     if (thisThread->fullSearch)
@@ -1549,25 +1550,21 @@ Value Search::Worker::search(
     // Step 8. Futility pruning: child node
     // The depth condition is important for mate finding.
     //from shashin/crystal begin
-    if (!ss->ttPv)
+    // gating Shashin-Crystal
+    isInImportantLine = (ss - 1)->mainLine || (ss - 1)->secondaryLine;
+    allowCrystalFut   = shashinManager.useCrystalFutility() && (!isInImportantLine || depth <= 6);
+
+    // common futility condition (estesa con +37, -|corr|/132821 come in Stockfish)
+    commonFutCond =
+      !ss->ttPv && depth < 14
+      && eval - futility_margin(depth, cutNode && !ss->ttHit, improving, opponentWorsening)
+             - (ss - 1)->statScore / 326 + 37 - std::abs(correctionValue) / 132821
+           >= beta
+      && eval >= beta && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval);
+
+    if (commonFutCond && allowCrystalFut)
     {
-        const Value futScore =
-          eval - futility_margin(depth, cutNode && !ss->ttHit, improving, opponentWorsening)
-          - (ss - 1)->statScore / 326 + 37 - std::abs(correctionValue) / 132821;
-        auto stockfishOK = [&]() {
-            return depth < 14 && futScore >= beta && eval >= beta && (!ttData.move || ttCapture)
-                && !is_loss(beta) && !is_win(eval);
-        }();
-        auto crystalOK = [&]() {
-            return depth < (9
-                            - 2
-                                * ((ss - 1)->mainLine || (ss - 1)->secondaryLine
-                                   || (ttData.move && !ttCapture)))
-                && futScore >= beta && eval >= beta && !kingDanger && !excludedMove && !gameCycle
-                && !(thisThread->nmpGuard && nullParity);
-        }();
-        if (shashinManager.useCrystalFutility() ? crystalOK : stockfishOK)
-            return beta + (eval - beta) / 3;
+        return beta + (eval - beta) / 3;
     }
     //from shashin-crystal end
 
