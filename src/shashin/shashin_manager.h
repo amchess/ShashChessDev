@@ -77,8 +77,6 @@ public:
     // Search optimizations
     bool allowCrystalProbCut() const;
     bool allowStockfishProbCut() const;
-    bool useCrystalFutilityPruningParent() const;
-    bool useCrystalFutilityPruningChild() const;
     bool useNullMoveByShashinForStockfish() const;
     bool isSimpleIntermediate() const;
     bool isMCTSApplicableByValue() const;

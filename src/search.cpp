@@ -1728,8 +1728,8 @@ moves_loop:  // When in check, search starts here
                                      && !(thisThread->nmpGuardV && nullParity);
     bool fromStockfishProbcutConditions = is_valid(ttData.value);
     if (commonProbcut
-        && ((g_shashinManager->allowCrystalProbCut() && fromCrystalProbcutConditions)
-            || (g_shashinManager->allowStockfishProbCut() && fromStockfishProbcutConditions)))
+        && ((shashinManager.allowCrystalProbCut() && fromCrystalProbcutConditions)
+            || (shashinManager.allowStockfishProbCut() && fromStockfishProbcutConditions)))
     {
         return probCutBeta;
     }

@@ -85,18 +85,6 @@ bool ShashinManager::isTillCategory(ShashinPosition lowerBound, ShashinPosition 
     return !isInRanges(state.dynamicBase.currentRange, lowerBound, upperBound);
 }
 
-bool ShashinManager::useCrystalFutilityPruningParent() const {
-    const auto& staticState = state.staticState;
-    return isTalTacticalHighMiddle() && isSimpleIntermediate() && !staticState.kingDanger
-        && !isHighPieceDensity() && state.dynamicBase.currentDepth < 12;
-}
-
-bool ShashinManager::useCrystalFutilityPruningChild() const {
-    const auto& staticState = state.staticState;
-    return (isAggressive() && staticState.legalMoveCount >= 20)
-        || (isTacticalReactive() && (staticState.legalMoveCount < 20 || staticState.highMaterial))
-        || (isStrategical() && staticState.legalMoveCount >= 30);
-}
 
 bool ShashinManager::useNullMoveByShashinForStockfish() const {
     const auto& staticState = state.staticState;
