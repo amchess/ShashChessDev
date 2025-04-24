@@ -86,7 +86,6 @@ public:
     bool isTacticalReduction() const;
     bool avoidStep10() const;
     bool isTalTacticalHighMiddle() const;
-    bool useCrystalFutility() const;
     bool isKingExposed() const { return state.staticState.kingSafetyScore < -30; }
     
     // Inline methods for performance

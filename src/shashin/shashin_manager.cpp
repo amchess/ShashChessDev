@@ -52,12 +52,6 @@ bool ShashinManager::useMoveGenAndStep17CrystalLogic() const {
 
     return false;
 }
-bool ShashinManager::useCrystalFutility() const {
-    const auto& st = state.staticState;
-    const auto& dd = state.dynamicDerived;
-    // Applichiamo Crystal solo in posizioni tattiche “pulite”:
-    return dd.isTacticalReactive && !st.kingExposed && !st.isSacrificial && st.legalMoveCount <= 20;
-}
 bool ShashinManager::allowCrystalProbCut() const {
     const auto& s              = state.staticState;
     const auto& d              = state.dynamicDerived;
