@@ -1500,8 +1500,7 @@ Value Search::Worker::search(
     //from Shashin begin to review
     int  nullThreshold;
     bool commonNullMoveConditions, useNullMoveByShashinForStockfish, positionSafe,
-      allowNullMoveOnlyFromStockfish, allowNullMoveOnlyFromCrystal, isInImportantLine,
-      allowCrystalFut, commonFutCond;
+      allowNullMoveOnlyFromStockfish, allowNullMoveOnlyFromCrystal;
     //from Shashin end to review
     // full threads patch begin
     if (thisThread->fullSearch)
@@ -1550,24 +1549,21 @@ Value Search::Worker::search(
     // Step 8. Futility pruning: child node
     // The depth condition is important for mate finding.
     //from shashin/crystal begin
-    // gating Shashin-Crystal
-    isInImportantLine = (ss - 1)->mainLine || (ss - 1)->secondaryLine;
-    allowCrystalFut   = shashinManager.useCrystalFutility() && (!isInImportantLine || depth <= 6);
-
-    // common futility condition (estesa con +37, -|corr|/132821 come in Stockfish)
-    commonFutCond =
-      !ss->ttPv && depth < 14
-      && eval - futility_margin(depth, cutNode && !ss->ttHit, improving, opponentWorsening)
-             - (ss - 1)->statScore / 326 + 37 - std::abs(correctionValue) / 132821
-           >= beta
-      && eval >= beta && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval);
-
-    if (commonFutCond && allowCrystalFut)
+    if (!ss->ttPv
+        && eval - futility_margin(depth, cutNode && !ss->ttHit, improving, opponentWorsening)
+               - (ss - 1)->statScore / 290
+             >= beta
+        // manteniamo il vincolo di “profondità” adattato al main/secondary line
+        && depth < (9
+                    - 2
+                        * ((ss - 1)->mainLine || (ss - 1)->secondaryLine
+                           || (ttData.move && !ttCapture)))
+        // esclusioni Shashin-Crystal
+        && !excludedMove && !gameCycle && !(thisThread->nmpGuard && nullParity))
     {
         return beta + (eval - beta) / 3;
     }
     //from shashin-crystal end
-
 
     // Step 9. Null move search with verification search – Shashin-Crystal version
     // If the position is critical (e.g., exposed King or sacrificial position), reduce null move aggressiveness.
