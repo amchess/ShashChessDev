@@ -1814,7 +1814,7 @@ moves_loop:  // When in check, search starts here
             isMate = MoveList<LEGAL>(pos).size() == 0;
             pos.undo_move(move);
         }
-         uint64_t nodeCount = 0;
+        uint64_t nodeCount = 0;
         if (dynamicDerived.isHighTal && isMate)
         {
             ss->currentMove = move;
@@ -1822,8 +1822,8 @@ moves_loop:  // When in check, search starts here
               &thisThread->continuationHistory[ss->inCheck][capture][movedPiece][move.to_sq()];
             ss->continuationCorrectionHistory =
               &thisThread->continuationCorrectionHistory[movedPiece][move.to_sq()];
-            nodeCount = rootNode ? uint64_t(nodes) : 0;  
-            value = mate_in(ss->ply + 1);
+            nodeCount = rootNode ? uint64_t(nodes) : 0;
+            value     = mate_in(ss->ply + 1);
 
             if (PvNode && (moveCount == 1 || value > alpha))
             {
