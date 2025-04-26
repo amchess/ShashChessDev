@@ -1164,8 +1164,7 @@ Value Search::Worker::search(
     bool givesCheck, improving = false, priorCapture, opponentWorsening = false,
                      expTTHit = false;  //shashin
     //from Shashin-Crystal begin
-    bool isMate, gameCycle, capture, ttCapture, kingDanger, quietKingSafe = false,
-                                                            nullParity = false;
+    bool gameCycle, capture, ttCapture, kingDanger, quietKingSafe = false, nullParity = false;
     //from shashin crystal end
     int priorReduction  = (ss - 1)->reduction;
     (ss - 1)->reduction = 0;
@@ -1795,388 +1794,345 @@ moves_loop:  // When in check, search starts here
         capture    = pos.capture_stage(move);
         movedPiece = pos.moved_piece(move);
         givesCheck = pos.gives_check(move);
-        // from Crystal-Shashin begin
-        isMate = false;
-        // This tracks all of our possible responses to our opponent's best moves outside of the PV.
-        // The reasoning here is that while we look for flaws in the PV, we must otherwise find an improvement
-        // in a secondary root move in order to change the PV. Such an improvement must occur on the path of
-        // our opponent's best moves or else it is meaningless.
-        ss->secondaryLine =
-          ((rootNode && moveCount > 1)
-           || (!ourMove && (ss - 1)->secondaryLine && !excludedMove && moveCount == 1)
-           || (ourMove && (ss - 1)->secondaryLine));
-        ss->mainLine = ((rootNode && moveCount == 1) || (!ourMove && (ss - 1)->mainLine)
-                        || (ourMove && (ss - 1)->mainLine && moveCount == 1 && !excludedMove));
-        if (givesCheck)
+        // Calculate new depth for this move
+        newDepth = depth - 1;
+
+        int   delta = beta - alpha;
+        Depth r     = reduction(improving, depth, moveCount, delta);
+        r -= 32 * moveCount;
+
+        // Increase reduction for ttPv nodes (*Scaler)
+        // Smaller or even negative value is better for short time controls
+        // Bigger value is better for long time controls
+        if (ss->ttPv)
+            r += 1031;
+
+        //shashin begin
+        bool applyPruning            = false;
+        bool commonPruningConditions = pos.non_pawn_material(us) && !is_loss(bestValue);
+        //shashin end
+        // full threads patch begin
+        if (thisThread->fullSearch)
         {
-            pos.do_move(move, st, &tt);
-            thisThread->nodes.fetch_add(1, std::memory_order_relaxed);
-            isMate = MoveList<LEGAL>(pos).size() == 0;
-            pos.undo_move(move);
+            goto skipExtensionAndPruning;
         }
-        uint64_t nodeCount = 0;
-        if (dynamicDerived.isHighTal && isMate)
+        // full threads patch end
+
+        // Step 14. Pruning at shallow depth
+        // Depth conditions are important for mate finding.
+        //from crystal-shashin begin
+        applyPruning =
+          commonPruningConditions
+          && ((doLMP && dynamicDerived.isHighTal) || (!rootNode && !dynamicDerived.isHighTal));
+
+        if (applyPruning)
         {
-            ss->currentMove = move;
-            ss->continuationHistory =
-              &thisThread->continuationHistory[ss->inCheck][capture][movedPiece][move.to_sq()];
-            ss->continuationCorrectionHistory =
-              &thisThread->continuationCorrectionHistory[movedPiece][move.to_sq()];
-            nodeCount = rootNode ? uint64_t(nodes) : 0;
-            value     = mate_in(ss->ply + 1);
+            // Skip quiet moves if movecount exceeds our FutilityMoveCount threshold
+            if (moveCount >= futility_move_count(improving, depth))
+                mp.skip_quiet_moves();
 
-            if (PvNode && (moveCount == 1 || value > alpha))
+            // Reduced depth of the next LMR search
+            int lmrDepth = newDepth - r / 1024;
+
+            if (capture || givesCheck)
             {
-                (ss + 1)->pv    = pv;
-                (ss + 1)->pv[0] = Move::none();
+                Piece capturedPiece = pos.piece_on(move.to_sq());
+                int   captHist =
+                  thisThread->captureHistory[movedPiece][move.to_sq()][type_of(capturedPiece)];
+
+                // Futility pruning for captures
+                if (!givesCheck && lmrDepth < 7 && !ss->inCheck)
+                {
+                    Value futilityValue = ss->staticEval + 242 + 238 * lmrDepth
+                                        + PieceValue[capturedPiece] + 95 * captHist / 700;
+                    if (futilityValue <= alpha)
+                        continue;
+                }
+
+                // SEE based pruning for captures and checks
+                int seeHist = std::clamp(captHist / 36, -153 * depth, 134 * depth);
+                if (!pos.see_ge(move, -157 * depth - seeHist))
+                    continue;
+            }
+            else
+            {
+                int history =
+                  (*contHist[0])[movedPiece][move.to_sq()]
+                  + (*contHist[1])[movedPiece][move.to_sq()]
+                  + thisThread->pawnHistory[pawn_structure_index(pos)][movedPiece][move.to_sq()];
+
+                // Continuation history based pruning
+                if (history < -4107 * depth)
+                    continue;
+
+                history += 68 * thisThread->mainHistory[us][move.from_to()] / 32;
+
+                lmrDepth += history / 3576;
+
+                Value futilityValue = ss->staticEval + (bestMove ? 49 : 143) + 116 * lmrDepth;
+
+                if (bestValue < ss->staticEval - 150 && lmrDepth < 7)
+                    futilityValue += 108;
+
+                // Futility pruning: parent node
+                // (*Scaler): Generally, more frequent futility pruning
+                // scales well with respect to time and threads
+                if (!ss->inCheck && lmrDepth < 12 && futilityValue <= alpha)
+                {
+                    if (bestValue <= futilityValue && !is_decisive(bestValue)
+                        && !is_win(futilityValue))
+                        bestValue = futilityValue;
+                    continue;
+                }
+
+                lmrDepth = std::max(lmrDepth, 0);
+
+                // Prune moves with negative SEE
+                if (!pos.see_ge(move, -26 * lmrDepth * lmrDepth))
+                    continue;
             }
         }
-        else
-        {  // end from Crystal-Shashin
-            // Calculate new depth for this move
-            newDepth = depth - 1;
+        //from Crystal-shashin end
 
-            int   delta = beta - alpha;
-            Depth r     = reduction(improving, depth, moveCount, delta);
-            r -= 32 * moveCount;
+        // Step 15. Extensions
+        // We take care to not overdo to avoid search getting stuck.
+        if (ss->ply < thisThread->rootDepth * 2)
+        {
+            // Shashin-Crystal begin
 
-            // Increase reduction for ttPv nodes (*Scaler)
-            // Smaller or even negative value is better for short time controls
-            // Bigger value is better for long time controls
-            if (ss->ttPv)
-                r += 1031;
+            // Special extension for dynamic positions based on Shashin
+            bool gameCycleExtension = gameCycle && extension >= 0 && (ourMove && PvNode);
 
-            //shashin begin
-            bool applyPruning            = false;
-            bool commonPruningConditions = pos.non_pawn_material(us) && !is_loss(bestValue);
-            //shashin end
-            // full threads patch begin
-            if (thisThread->fullSearch)
+            if (gameCycleExtension && dynamicDerived.isHighTal && depth > 12)
+                extension = std::min(extension + 1, 2);
+            else
             {
-                goto skipExtensionAndPruning;
-            }
-            // full threads patch end
+                // Singular extension search. If all moves but one
+                // fail low on a search of (alpha-s, beta-s), and just one fails high on
+                // (alpha, beta), then that move is singular and should be extended. To
+                // verify this we do a reduced search on the position excluding the ttMove
+                // and if the result is lower than ttValue minus a margin, then we will
+                // extend the ttMove. Recursive singular search is avoided.
+                // (* Scaler) Generally, higher singularBeta (i.e closer to ttValue)
+                // and lower extension margins scale well.
+                // General condition for singular extension
+                bool commonExtensionCondition =
+                  !rootNode && move == ttData.move && !excludedMove
+                  && depth >= 5 - (thisThread->completedDepth > 32) + ss->ttPv
+                  && is_valid(ttData.value) && !is_decisive(ttData.value)
+                  && (ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 3;
 
-            // Step 14. Pruning at shallow depth
-            // Depth conditions are important for mate finding.
-            //from crystal-shashin begin
-            applyPruning =
-              commonPruningConditions
-              && ((doLMP && dynamicDerived.isHighTal) || (!rootNode && !dynamicDerived.isHighTal));
-
-            if (applyPruning)
-            {
-                // Skip quiet moves if movecount exceeds our FutilityMoveCount threshold
-                if (moveCount >= futility_move_count(improving, depth))
-                    mp.skip_quiet_moves();
-
-                // Reduced depth of the next LMR search
-                int lmrDepth = newDepth - r / 1024;
-
-                if (capture || givesCheck)
+                if (commonExtensionCondition)
                 {
-                    Piece capturedPiece = pos.piece_on(move.to_sq());
-                    int   captHist =
-                      thisThread->captureHistory[movedPiece][move.to_sq()][type_of(capturedPiece)];
+                    Value singularBeta =
+                      ttData.value - (55 + 81 * (ss->ttPv && !PvNode)) * depth / 58;
+                    Depth singularDepth = newDepth / 2;
 
-                    // Futility pruning for captures
-                    if (!givesCheck && lmrDepth < 7 && !ss->inCheck)
+                    ss->excludedMove = move;
+                    value = search<NonPV>(pos, ss, singularBeta - 1, singularBeta, singularDepth,
+                                          cutNode);
+                    ss->excludedMove = Move::none();
+
+                    if (value < singularBeta)
                     {
-                        Value futilityValue = ss->staticEval + 242 + 238 * lmrDepth
-                                            + PieceValue[capturedPiece] + 95 * captHist / 700;
-                        if (futilityValue <= alpha)
-                            continue;
+                        int corrValAdj1  = std::abs(correctionValue) / 265083;
+                        int corrValAdj2  = std::abs(correctionValue) / 253680;
+                        int doubleMargin = (267 * PvNode - 181 * !ttCapture - corrValAdj1);
+                        int tripleMargin =
+                          (96 + 282 * PvNode - 250 * !ttCapture + 103 * ss->ttPv - corrValAdj2);
+
+                        extension = 1 + (value < singularBeta - doubleMargin)
+                                  + (value < singularBeta - tripleMargin);
+                        depth++;
                     }
 
-                    // SEE based pruning for captures and checks
-                    int seeHist = std::clamp(captHist / 36, -153 * depth, 134 * depth);
-                    if (!pos.see_ge(move, -157 * depth - seeHist))
-                        continue;
-                }
-                else
-                {
-                    int history =
-                      (*contHist[0])[movedPiece][move.to_sq()]
-                      + (*contHist[1])[movedPiece][move.to_sq()]
-                      + thisThread
-                          ->pawnHistory[pawn_structure_index(pos)][movedPiece][move.to_sq()];
 
-                    // Continuation history based pruning
-                    if (history < -4107 * depth)
-                        continue;
-
-                    history += 68 * thisThread->mainHistory[us][move.from_to()] / 32;
-
-                    lmrDepth += history / 3576;
-
-                    Value futilityValue = ss->staticEval + (bestMove ? 49 : 143) + 116 * lmrDepth;
-
-                    if (bestValue < ss->staticEval - 150 && lmrDepth < 7)
-                        futilityValue += 108;
-
-                    // Futility pruning: parent node
-                    // (*Scaler): Generally, more frequent futility pruning
-                    // scales well with respect to time and threads
-                    if (!ss->inCheck && lmrDepth < 12 && futilityValue <= alpha)
+                    // Multi-cut to reduce unuseful searches
+                    // Our ttMove is assumed to fail high based on the bound of the TT entry,
+                    // and if after excluding the ttMove with a reduced search we fail high
+                    // over the original beta, we assume this expected cut-node is not
+                    // singular (multiple moves fail high), and we can prune the whole
+                    // subtree by returning a softbound.
+                    else if (value >= beta && !is_decisive(value))
                     {
-                        if (bestValue <= futilityValue && !is_decisive(bestValue)
-                            && !is_win(futilityValue))
-                            bestValue = futilityValue;
-                        continue;
+                        return value;
                     }
 
-                    lmrDepth = std::max(lmrDepth, 0);
+                    // Negative extensions for non singular situations
+                    // If other moves failed high over (ttValue - margin) without the
+                    // ttMove on a reduced search, but we cannot do multi-cut because
+                    // (ttValue - margin) is lower than the original beta, we do not know
+                    // if the ttMove is singular or can do a multi-cut, so we reduce the
+                    // ttMove in favor of other moves based on some conditions:
 
-                    // Prune moves with negative SEE
-                    if (!pos.see_ge(move, -26 * lmrDepth * lmrDepth))
-                        continue;
-                }
-            }
-            //from Crystal-shashin end
-
-            // Step 15. Extensions
-            // We take care to not overdo to avoid search getting stuck.
-            if (ss->ply < thisThread->rootDepth * 2)
-            {
-                // Shashin-Crystal begin
-
-                // Special extension for dynamic positions based on Shashin
-                bool gameCycleExtension = gameCycle && extension >= 0 && (ourMove && PvNode);
-
-                if (gameCycleExtension && dynamicDerived.isHighTal && depth > 12)
-                    extension = std::min(extension + 1, 2);
-                else
-                {
-                    // Singular extension search. If all moves but one
-                    // fail low on a search of (alpha-s, beta-s), and just one fails high on
-                    // (alpha, beta), then that move is singular and should be extended. To
-                    // verify this we do a reduced search on the position excluding the ttMove
-                    // and if the result is lower than ttValue minus a margin, then we will
-                    // extend the ttMove. Recursive singular search is avoided.
-                    // (* Scaler) Generally, higher singularBeta (i.e closer to ttValue)
-                    // and lower extension margins scale well.
-                    // General condition for singular extension
-                    bool commonExtensionCondition =
-                      !rootNode && move == ttData.move && !excludedMove
-                      && depth >= 5 - (thisThread->completedDepth > 32) + ss->ttPv
-                      && is_valid(ttData.value) && !is_decisive(ttData.value)
-                      && (ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 3;
-
-                    if (commonExtensionCondition)
+                    // If the ttMove is assumed to fail high over current beta
+                    else if (ttData.value >= beta)
                     {
-                        Value singularBeta =
-                          ttData.value - (55 + 81 * (ss->ttPv && !PvNode)) * depth / 58;
-                        Depth singularDepth = newDepth / 2;
-
-                        ss->excludedMove = move;
-                        value            = search<NonPV>(pos, ss, singularBeta - 1, singularBeta,
-                                                         singularDepth, cutNode);
-                        ss->excludedMove = Move::none();
-
-                        if (value < singularBeta)
-                        {
-                            int corrValAdj1  = std::abs(correctionValue) / 265083;
-                            int corrValAdj2  = std::abs(correctionValue) / 253680;
-                            int doubleMargin = (267 * PvNode - 181 * !ttCapture - corrValAdj1);
-                            int tripleMargin =
-                              (96 + 282 * PvNode - 250 * !ttCapture + 103 * ss->ttPv - corrValAdj2);
-
-                            extension = 1 + (value < singularBeta - doubleMargin)
-                                      + (value < singularBeta - tripleMargin);
-                            depth++;
-                        }
-
-
-                        // Multi-cut to reduce unuseful searches
-                        // Our ttMove is assumed to fail high based on the bound of the TT entry,
-                        // and if after excluding the ttMove with a reduced search we fail high
-                        // over the original beta, we assume this expected cut-node is not
-                        // singular (multiple moves fail high), and we can prune the whole
-                        // subtree by returning a softbound.
-                        else if (value >= beta && !is_decisive(value))
-                        {
-                            return value;
-                        }
-
-                        // Negative extensions for non singular situations
-                        // If other moves failed high over (ttValue - margin) without the
-                        // ttMove on a reduced search, but we cannot do multi-cut because
-                        // (ttValue - margin) is lower than the original beta, we do not know
-                        // if the ttMove is singular or can do a multi-cut, so we reduce the
-                        // ttMove in favor of other moves based on some conditions:
-
-                        // If the ttMove is assumed to fail high over current beta
-                        else if (ttData.value >= beta)
-                        {
-                            extension = -3;
-                        }
-                        // If we are on a cutNode but the ttMove is not assumed to fail high
-                        // over current beta
-                        else if (cutNode)
-                        {
-                            extension = -2;
-                        }
+                        extension = -3;
+                    }
+                    // If we are on a cutNode but the ttMove is not assumed to fail high
+                    // over current beta
+                    else if (cutNode)
+                    {
+                        extension = -2;
                     }
                 }
             }
-            // Shashin-Crystal end
+        }
+        // Shashin-Crystal end
 
 skipExtensionAndPruning:  // full threads search patch
-            // Step 16. Make the move
-            pos.do_move(move, st, givesCheck, &tt);
-            bool doLMRStep = !(thisThread->fullSearch);  // Full threads patch
-            thisThread->nodes.fetch_add(1, std::memory_order_relaxed);
+        // Step 16. Make the move
+        pos.do_move(move, st, givesCheck, &tt);
+        bool doLMRStep = !(thisThread->fullSearch);  // Full threads patch
+        thisThread->nodes.fetch_add(1, std::memory_order_relaxed);
 
-            // Add extension to new depth
-            newDepth += extension;
+        // Add extension to new depth
+        newDepth += extension;
 
-            // Update the current move (this must be done after singular extension search)
-            ss->currentMove = move;
-            ss->isTTMove    = (move == ttData.move);
-            ss->continuationHistory =
-              &thisThread->continuationHistory[ss->inCheck][capture][movedPiece][move.to_sq()];
-            ss->continuationCorrectionHistory =
-              &thisThread->continuationCorrectionHistory[movedPiece][move.to_sq()];
-            nodeCount = rootNode ? uint64_t(nodes) : 0;
+        // Update the current move (this must be done after singular extension search)
+        ss->currentMove = move;
+        ss->isTTMove    = (move == ttData.move);
+        ss->continuationHistory =
+          &thisThread->continuationHistory[ss->inCheck][capture][movedPiece][move.to_sq()];
+        ss->continuationCorrectionHistory =
+          &thisThread->continuationCorrectionHistory[movedPiece][move.to_sq()];
+        int nodeCount = rootNode ? uint64_t(nodes) : 0;
 
-            // Decrease reduction for PvNodes (*Scaler)
-            if (ss->ttPv)
-                r -= 2230 + PvNode * 1013 + (ttData.value > alpha) * 925
-                   + (ttData.depth >= depth) * (971 + cutNode * 1159);
+        // Decrease reduction for PvNodes (*Scaler)
+        if (ss->ttPv)
+            r -= 2230 + PvNode * 1013 + (ttData.value > alpha) * 925
+               + (ttData.depth >= depth) * (971 + cutNode * 1159);
 
-            // These reduction adjustments have no proven non-linear scaling
+        // These reduction adjustments have no proven non-linear scaling
 
-            r += 316 - moveCount * 32;
+        r += 316 - moveCount * 32;
 
-            r -= std::abs(correctionValue) / 31568;
+        r -= std::abs(correctionValue) / 31568;
 
-            if (PvNode && !is_decisive(bestValue))
-                r -= risk_tolerance(pos, bestValue);
+        if (PvNode && !is_decisive(bestValue))
+            r -= risk_tolerance(pos, bestValue);
 
-            // Increase reduction for cut nodes
-            if (cutNode)
-                r += 2608 + 1024 * !ttData.move;
+        // Increase reduction for cut nodes
+        if (cutNode)
+            r += 2608 + 1024 * !ttData.move;
 
-            // Increase reduction if ttMove is a capture but the current move is not a capture
-            if (ttCapture && !capture)
-                r += 1123 + (depth < 8) * 982;
+        // Increase reduction if ttMove is a capture but the current move is not a capture
+        if (ttCapture && !capture)
+            r += 1123 + (depth < 8) * 982;
 
-            // Increase reduction if next ply has a lot of fail high
-            if ((ss + 1)->cutoffCnt > 3)
-                r += 981 + allNode * 833;
+        // Increase reduction if next ply has a lot of fail high
+        if ((ss + 1)->cutoffCnt > 3)
+            r += 981 + allNode * 833;
 
-            // For first picked move (ttMove) reduce reduction
-            else if (move == ttData.move)
-                r -= 1982;
+        // For first picked move (ttMove) reduce reduction
+        else if (move == ttData.move)
+            r -= 1982;
 
-            if (capture)
-                ss->statScore =
-                  688 * int(PieceValue[pos.captured_piece()]) / 100
-                  + thisThread
-                      ->captureHistory[movedPiece][move.to_sq()][type_of(pos.captured_piece())]
-                  - 4653;
-            else
-                ss->statScore = 2 * thisThread->mainHistory[us][move.from_to()]
-                              + (*contHist[0])[movedPiece][move.to_sq()]
-                              + (*contHist[1])[movedPiece][move.to_sq()] - 3591;
+        if (capture)
+            ss->statScore =
+              688 * int(PieceValue[pos.captured_piece()]) / 100
+              + thisThread->captureHistory[movedPiece][move.to_sq()][type_of(pos.captured_piece())]
+              - 4653;
+        else
+            ss->statScore = 2 * thisThread->mainHistory[us][move.from_to()]
+                          + (*contHist[0])[movedPiece][move.to_sq()]
+                          + (*contHist[1])[movedPiece][move.to_sq()] - 3591;
 
-            // Decrease/increase reduction for moves with a good/bad history
-            r -= ss->statScore * 1407 / 16384;
+        // Decrease/increase reduction for moves with a good/bad history
+        r -= ss->statScore * 1407 / 16384;
 
-            // Step 17. Late moves reduction / extension (LMR)
-            // Shashin-Crystal begin
-            bool useCrystalLMR = shashinManager.useMoveGenAndStep17CrystalLogic();
-            if (doLMRStep && moveCount > std::max(sibs, static_cast<int>(1))
-                && ((depth >= 2 && !useCrystalLMR)
-                    || ((allowLMR && (!capture || lmrCapture)) && useCrystalLMR)))
+        // Step 17. Late moves reduction / extension (LMR)
+        // Shashin-Crystal begin
+        bool useCrystalLMR = shashinManager.useMoveGenAndStep17CrystalLogic();
+        if (doLMRStep && moveCount > std::max(sibs, static_cast<int>(1))
+            && ((depth >= 2 && !useCrystalLMR)
+                || ((allowLMR && (!capture || lmrCapture)) && useCrystalLMR)))
+        {
+            // In general we want to cap the LMR depth search at newDepth, but when
+            // reduction is negative, we allow this move a limited search extension
+            // beyond the first move depth.
+            // To prevent problems when the max value is less than the min value,
+            // std::clamp has been replaced by a more robust implementation.
+
+            // Base reduction calculation
+            int baseMultiplier   = useCrystalLMR ? 6 : 7;
+            int dynamicReduction = (r + moveCount * baseMultiplier) / 1024;
+            // Tactical positions -> Reduce less (avoid excessive pruning)
+            if (dynamicDerived.isAggressive || dynamicDerived.isTacticalReactive)
+                dynamicReduction = std::max(1, dynamicReduction - 2);
+
+            // Passive positions (Petrosian style) -> Even stronger pruning
+            if (shashinManager.isPetrosian())
             {
-                // In general we want to cap the LMR depth search at newDepth, but when
-                // reduction is negative, we allow this move a limited search extension
-                // beyond the first move depth.
-                // To prevent problems when the max value is less than the min value,
-                // std::clamp has been replaced by a more robust implementation.
-
-                // Base reduction calculation
-                int baseMultiplier   = useCrystalLMR ? 6 : 7;
-                int dynamicReduction = (r + moveCount * baseMultiplier) / 1024;
-                // Tactical positions -> Reduce less (avoid excessive pruning)
-                if (dynamicDerived.isAggressive || dynamicDerived.isTacticalReactive)
-                    dynamicReduction = std::max(1, dynamicReduction - 2);
-
-                // Passive positions (Petrosian style) -> Even stronger pruning
-                if (shashinManager.isPetrosian())
-                {
-                    if (value > alpha + 15)  // If evaluation is improving, reduce less
-                        dynamicReduction = std::min(dynamicReduction + 1, 4);
-                    else if (value < alpha - 10)  // If evaluation is worsening, prune aggressively
-                        dynamicReduction = std::min(dynamicReduction + 3, 6);
-                }
-
-                // Compute final reduction depth
-                // Final reduction calculation
-                Depth d = std::clamp(newDepth - dynamicReduction, 1,
-                                     newDepth + (!allNode ? 1 : 0) + (PvNode && !bestMove ? 1 : 0));
-
-                ss->reduction = newDepth - d;
-                value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
-                ss->reduction = 0;
-
-                // If the reduced search fails high, attempt full-depth search
-                // Do a full-depth search when reduced LMR search fails high
-                if (value > alpha + 12 && d < newDepth - 1)
-                {
-                    // Deepen if position is aggressive & search fails high
-                    const bool doDeeperSearch =
-                      shashinManager.isTal() && value > (bestValue + 30 + newDepth / 2);
-
-                    // Shallower search in Petrosian positions
-                    const bool doShallowerSearch =
-                      shashinManager.isPetrosian() && value < bestValue + 5;
-
-                    newDepth += doDeeperSearch - doShallowerSearch;
-
-                    if (newDepth > d)
-                        value =
-                          -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, newDepth, !cutNode);
-
-                    // Update continuation history: give a bonus if the move fails high
-                    // Post LMR continuation history updates (scaled bonus)
-                    int bonus = (value >= beta) * (1700 + newDepth * 9);
-                    update_continuation_histories(ss, movedPiece, move.to_sq(), bonus);
-                }
-            }
-            //shashin-crystal end
-
-            // Step 18. Full-depth search when LMR is skipped
-            else if (!PvNode || moveCount > 1)
-            {
-                // Increase reduction if ttMove is not present
-                if (!ttData.move)
-                    r += 1111;
-
-                // Note that if expected reduction is high, we reduce search depth here
-                value =
-                  -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha,
-                                 newDepth - (r > 3554) - (r > 5373 && newDepth > 2), !cutNode);
+                if (value > alpha + 15)  // If evaluation is improving, reduce less
+                    dynamicReduction = std::min(dynamicReduction + 1, 4);
+                else if (value < alpha - 10)  // If evaluation is worsening, prune aggressively
+                    dynamicReduction = std::min(dynamicReduction + 3, 6);
             }
 
-            // For PV nodes only, do a full PV search on the first move or after a fail high,
-            // otherwise let the parent node fail low with value <= alpha and try another move.
-            if (PvNode && (moveCount == 1 || value > alpha))
+            // Compute final reduction depth
+            // Final reduction calculation
+            Depth d = std::clamp(newDepth - dynamicReduction, 1,
+                                 newDepth + (!allNode ? 1 : 0) + (PvNode && !bestMove ? 1 : 0));
+
+            ss->reduction = newDepth - d;
+            value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
+            ss->reduction = 0;
+
+            // If the reduced search fails high, attempt full-depth search
+            // Do a full-depth search when reduced LMR search fails high
+            if (value > alpha + 12 && d < newDepth - 1)
             {
-                (ss + 1)->pv    = pv;
-                (ss + 1)->pv[0] = Move::none();
+                // Deepen if position is aggressive & search fails high
+                const bool doDeeperSearch =
+                  shashinManager.isTal() && value > (bestValue + 30 + newDepth / 2);
 
-                // Extend move from transposition table if we are about to dive into qsearch.
-                if (move == ttData.move && thisThread->rootDepth > 8)
-                    newDepth = std::max(newDepth, 1);
+                // Shallower search in Petrosian positions
+                const bool doShallowerSearch =
+                  shashinManager.isPetrosian() && value < bestValue + 5;
 
-                value = -search<PV>(pos, ss + 1, -beta, -alpha, newDepth, false);
+                newDepth += doDeeperSearch - doShallowerSearch;
+
+                if (newDepth > d)
+                    value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, newDepth, !cutNode);
+
+                // Update continuation history: give a bonus if the move fails high
+                // Post LMR continuation history updates (scaled bonus)
+                int bonus = (value >= beta) * (1700 + newDepth * 9);
+                update_continuation_histories(ss, movedPiece, move.to_sq(), bonus);
             }
+        }
+        //shashin-crystal end
 
-            // Step 19. Undo move
-            pos.undo_move(move);
-        }  //crystal shashin
+        // Step 18. Full-depth search when LMR is skipped
+        else if (!PvNode || moveCount > 1)
+        {
+            // Increase reduction if ttMove is not present
+            if (!ttData.move)
+                r += 1111;
+
+            // Note that if expected reduction is high, we reduce search depth here
+            value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha,
+                                   newDepth - (r > 3554) - (r > 5373 && newDepth > 2), !cutNode);
+        }
+
+        // For PV nodes only, do a full PV search on the first move or after a fail high,
+        // otherwise let the parent node fail low with value <= alpha and try another move.
+        if (PvNode && (moveCount == 1 || value > alpha))
+        {
+            (ss + 1)->pv    = pv;
+            (ss + 1)->pv[0] = Move::none();
+
+            // Extend move from transposition table if we are about to dive into qsearch.
+            if (move == ttData.move && thisThread->rootDepth > 8)
+                newDepth = std::max(newDepth, 1);
+
+            value = -search<PV>(pos, ss + 1, -beta, -alpha, newDepth, false);
+        }
+
+        // Step 19. Undo move
+        pos.undo_move(move);
 
         assert(value > -VALUE_INFINITE && value < VALUE_INFINITE);
 
