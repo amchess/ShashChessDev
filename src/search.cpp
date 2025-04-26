@@ -1164,8 +1164,8 @@ Value Search::Worker::search(
     bool givesCheck, improving = false, priorCapture, opponentWorsening = false,
                      expTTHit = false;  //shashin
     //from Shashin-Crystal begin
-    bool isMate, gameCycle, capture, ttCapture, kingDanger, quietKingSafe = false,
-                                                            nullParity = false;
+    bool canApplyProbCut, dangerousSacrifice, isMate, gameCycle, capture, ttCapture, kingDanger,
+      quietKingSafe = false, nullParity = false;
     //from shashin crystal end
     int priorReduction  = (ss - 1)->reduction;
     (ss - 1)->reduction = 0;
@@ -1654,14 +1654,18 @@ Value Search::Worker::search(
     // Step 11. ProbCut
     // If we have a good enough capture (or queen promotion) and a reduced search
     // returns a value much above beta, we can (almost) safely prune the previous move.
-    probCutBeta = beta + 187 - 55 * improving;
-    if (depth >= 3
-        && !is_decisive(beta)
-        // If value from transposition table is lower than probCutBeta, don't attempt
-        // probCut there and in further interactions with transposition table cutoff
-        // depth is set to depth - 3 because probCut search has depth set to depth - 4
-        // but we also do a move before it. So effective depth is equal to depth - 3.
-        && !(is_valid(ttData.value) && ttData.value < probCutBeta))
+    probCutBeta        = beta + 187 - 55 * improving;
+    dangerousSacrifice = staticState.kingExposed && staticState.isSacrificial;
+    canApplyProbCut    = depth >= 3 && !disableNMAndPC
+                   && !is_decisive(beta)
+                   // If value from transposition table is lower than probCutBeta, don't attempt
+                   // probCut there and in further interactions with transposition table cutoff
+                   // depth is set to depth - 3 because probCut search has depth set to depth - 4
+                   // but we also do a move before it. So effective depth is equal to depth - 3.
+                   && !(is_valid(ttData.value) && ttData.value < probCutBeta)
+                   && !dangerousSacrifice;
+
+    if (canApplyProbCut)
     {
         assert(probCutBeta < VALUE_INFINITE && probCutBeta > beta);
 
