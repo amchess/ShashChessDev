@@ -1717,10 +1717,23 @@ Value Search::Worker::search(
 moves_loop:  // When in check, search starts here
 
     // Step 12. A small Probcut idea
-    probCutBeta = beta + 413;
-    if ((ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 4 && ttData.value >= probCutBeta
-        && !is_decisive(beta) && is_valid(ttData.value) && !is_decisive(ttData.value))
+    probCutBeta = beta + 417;
+    //from shashin begin
+    bool commonProbcut = (ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 4
+                      && ttData.value >= probCutBeta && !is_decisive(beta)
+                      && !is_decisive(ttData.value);
+    bool fromCrystalProbcutConditions = ss->inCheck && !PvNode && ttCapture && ourMove && !gameCycle
+                                     && !excludedMove && !kingDanger && !(ss - 1)->secondaryLine
+                                     && !(thisThread->nmpGuard && nullParity)
+                                     && !(thisThread->nmpGuardV && nullParity);
+    bool fromStockfishProbcutConditions = is_valid(ttData.value);
+    if (commonProbcut
+        && ((shashinManager.allowCrystalProbCut() && fromCrystalProbcutConditions)
+            || (shashinManager.allowStockfishProbCut() && fromStockfishProbcutConditions)))
+    {
         return probCutBeta;
+    }
+    //from shashin end
 
     const PieceToHistory* contHist[] = {
       (ss - 1)->continuationHistory, (ss - 2)->continuationHistory, (ss - 3)->continuationHistory,
