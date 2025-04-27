@@ -18,6 +18,7 @@
 
 #include "engine.h"
 
+#include <algorithm>
 #include <cassert>
 #include <deque>
 #include <iosfwd>
@@ -32,6 +33,7 @@
 #include "misc.h"
 #include "nnue/network.h"
 #include "nnue/nnue_common.h"
+#include "numa.h"
 #include "perft.h"
 #include "position.h"
 #include "search.h"
@@ -47,8 +49,9 @@ namespace ShashChess {
 
 namespace NN = Eval::NNUE;
 
-constexpr auto StartFEN  = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-constexpr int  MaxHashMB = Is64Bit ? 33554432 : 2048;
+constexpr auto StartFEN   = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+constexpr int  MaxHashMB  = Is64Bit ? 33554432 : 2048;
+int            MaxThreads = std::max(1024, 4 * int(get_hardware_concurrency()));
 
 Engine::Engine(std::optional<std::string> path) :
     binaryDirectory(CommandLine::get_binary_directory(
@@ -78,7 +81,7 @@ Engine::Engine(std::optional<std::string> path) :
       }));
 
     options.add(  //
-      "Threads", Option(1, 1, 1024, [this](const Option&) {
+      "Threads", Option(1, 1, MaxThreads, [this](const Option&) {
           resize_threads();
           return thread_allocation_information_as_string();
       }));

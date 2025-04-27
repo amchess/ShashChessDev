@@ -22,8 +22,9 @@ inline size_t index(const ShashChess::Value v, const int m) {
 // Calculate the "a" and "b" parameters of the WDL model for a given material
 WinRateParams win_rate_params(int materialClamp) {
     double           m    = materialClamp / 58.0;
-    constexpr double as[] = {-37.45051876, 121.19101539, -132.78783573, 420.70576692};
-    constexpr double bs[] = {90.26261072, -137.26549898, 71.10130540, 51.35259597};
+    constexpr double as[] = {-13.50030198, 40.92780883, -36.82753545, 386.83004070};
+    constexpr double bs[] = {96.53354896, -165.79058388, 90.89679019, 49.29561889};
+
 
     double a = (((as[0] * m + as[1]) * m + as[2]) * m) + as[3];
     double b = (((bs[0] * m + bs[1]) * m + bs[2]) * m) + bs[3];

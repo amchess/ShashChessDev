@@ -19,6 +19,7 @@
 #include "movepick.h"
 
 #include <cassert>
+#include <cstddef>
 #include <limits>
 #include <cmath>  //for ShashChess
 
@@ -167,24 +168,34 @@ void MovePicker::score() {
         }
         if constexpr (Type == CAPTURES)
         {
-            baseValue = 7 * int(PieceValue[pos.piece_on(to)])
-                      + (*captureHistory)[movedPiece][to][type_of(pos.piece_on(to))];
+            baseValue =
+              (2
+                 * (pos.blockers_for_king(~pos.side_to_move()) & m.from_sq()
+                    && !aligned(m.from_sq(), m.to_sq(), pos.square<KING>(~pos.side_to_move())))
+               + 7)
+                * int(PieceValue[pos.piece_on(m.to_sq())])
+              + (*captureHistory)[movedPiece][to][type_of(pos.piece_on(to))];
             if (isAggressive)
                 baseValue += 5000;  // extra bonus for aggressive captures
         }
         else if constexpr (Type == QUIETS)
         {
-            PieceType pt                = type_of(movedPiece);
-            Square    from              = m.from_sq();
-            int       continuationBonus = 0;
+            PieceType pt   = type_of(movedPiece);
+            Square    from = m.from_sq();
+
+            // histories
+            int continuationBonus = 0;
             for (int i = 0; i < 6; ++i)
-                continuationBonus += (i == 4) ? (*continuationHistory[i])[movedPiece][to] / 3
-                                              : (*continuationHistory[i])[movedPiece][to];
+                continuationBonus += (i == 4) ? 0 : (*continuationHistory[i])[movedPiece][to];
 
             baseValue = 2 * (*mainHistory)[pos.side_to_move()][m.from_to()]
                       + 2 * (*pawnHistory)[pawn_structure_index(pos)][movedPiece][to]
                       + continuationBonus;
-            // Bonus per fuggire dalla cattura
+
+            // bonus for checks
+            baseValue += (bool(pos.check_squares(pt) & to) && pos.see_ge(m, -75)) * 16384;
+
+            // Bonus for escaping from capture
             if (threatenedPieces & from)
             {
                 if (pt == QUEEN && !(to & threatenedByRook))
@@ -195,7 +206,7 @@ void MovePicker::score() {
                     baseValue += 14450;
             }
 
-            // Malus per mettere il pezzo in presa
+            // malus for putting piece en prise
             if (pt == QUEEN && (to & threatenedByRook))
                 baseValue -= 49000;
             else if (pt == ROOK && (to & threatenedByMinor))
@@ -354,5 +365,31 @@ top:
 }
 
 void MovePicker::skip_quiet_moves() { skipQuiets = true; }
+
+bool MovePicker::otherPieceTypesMobile(PieceType pt, ValueList<Move, 32>& capturesSearched) {
+    if (stage != GOOD_QUIET && stage != BAD_QUIET)
+        return true;
+
+    // verify good captures
+    for (std::size_t i = 0; i < capturesSearched.size(); i++)
+        if (type_of(pos.moved_piece(capturesSearched[i])) != pt)
+        {
+            if (type_of(pos.moved_piece(capturesSearched[i])) != KING)
+                return true;
+            if (pos.legal(capturesSearched[i]))
+                return true;
+        }
+
+    // now verify bad captures and quiets
+    for (ExtMove* c = moves; c < endBadQuiets; ++c)
+        if (type_of(pos.moved_piece(*c)) != pt)
+        {
+            if (type_of(pos.moved_piece(*c)) != KING)
+                return true;
+            if (pos.legal(*c))
+                return true;
+        }
+    return false;
+}
 
 }  // namespace ShashChess

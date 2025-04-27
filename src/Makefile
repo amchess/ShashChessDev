@@ -56,7 +56,7 @@ SRCS = benchmark.cpp bitboard.cpp evaluate.cpp main.cpp \
 	search.cpp thread.cpp timeman.cpp tt.cpp uci.cpp ucioption.cpp tune.cpp syzygy/tbprobe.cpp \
 	learn/learn.cpp mcts/montecarlo.cpp  \
 	book/file_mapping.cpp book/book.cpp book/book_manager.cpp book/polyglot/polyglot.cpp book/ctg/ctg.cpp \
-	nnue/nnue_misc.cpp nnue/features/half_ka_v2_hm.cpp nnue/network.cpp engine.cpp score.cpp memory.cpp \
+	nnue/nnue_accumulator.cpp nnue/nnue_misc.cpp nnue/features/half_ka_v2_hm.cpp nnue/network.cpp engine.cpp score.cpp memory.cpp \
 	wdl/win_probability.cpp \
 	livebook/BaseLivebook.cpp livebook/LichessOpening.cpp livebook/LichessEndgame.cpp livebook/ChessDb.cpp \
 	livebook/analysis/Cp.cpp livebook/analysis/Analysis.cpp livebook/analysis/Wdl.cpp livebook/analysis/Mate.cpp \
@@ -595,6 +595,15 @@ ifeq ($(COMP),ndk)
 		endif
 	endif
 	LDFLAGS += -static-libstdc++ -pie -lm -latomic
+endif
+
+# llvm-profdata must be version compatible with the specified CXX (be it clang, or the gcc alias)
+# make -j profile-build CXX=clang++-20 COMP=clang
+# Locate the version in the same directory as the compiler used,
+# with fallback to a generic one if it can't be located
+	LLVM_PROFDATA := $(dir $(realpath $(shell which $(CXX))))llvm-profdata
+ifeq ($(wildcard $(LLVM_PROFDATA)),)
+	LLVM_PROFDATA := llvm-profdata
 endif
 
 ifeq ($(comp),icx)

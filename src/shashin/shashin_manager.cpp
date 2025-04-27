@@ -170,13 +170,14 @@ void ShashinManager::setDynamicBaseState(Value score, const Position& rootPos, i
 }
 
 void ShashinManager::initDynamicRootShashinState(const Eval::NNUE::Networks&   networks,
+                                                 Eval::NNUE::AccumulatorStack& accumulators,
                                                  Eval::NNUE::AccumulatorCaches refreshTable,
                                                  Position&                     rootPos,
                                                  Search::Stack*                ss,
                                                  int                           optimism,
                                                  const ShashinConfig&          config) {
-    initDynamicBaseState(static_value(networks, refreshTable, rootPos, ss, optimism), rootPos,
-                         config);
+    initDynamicBaseState(static_value(networks, accumulators, refreshTable, rootPos, ss, optimism),
+                         rootPos, config);
     setDynamicDerivedState();
     MoveConfig::useMoveShashinLogic = useMoveGenAndStep17CrystalLogic();
     MoveConfig::isStrategical       = isStrategical();
@@ -236,6 +237,7 @@ bool ShashinManager::isFortress(const Position& pos) {
 }
 
 Value ShashinManager::static_value(const Eval::NNUE::Networks&   networks,
+                                   Eval::NNUE::AccumulatorStack& accumulators,
                                    Eval::NNUE::AccumulatorCaches refreshTable,
                                    Position&                     rootPos,
                                    Search::Stack*                ss,
@@ -256,7 +258,7 @@ Value ShashinManager::static_value(const Eval::NNUE::Networks&   networks,
     // Evaluate non-check positions directly
     if (!rootPos.checkers())
     {
-        return Eval::evaluate(networks, rootPos, refreshTable, optimism);
+        return Eval::evaluate(networks, rootPos, accumulators, refreshTable, optimism);
     }
 
     // Evaluate check positions by examining all legal moves
@@ -265,7 +267,8 @@ Value ShashinManager::static_value(const Eval::NNUE::Networks&   networks,
     {
         StateInfo stateInfo;
         rootPos.do_move(move, stateInfo);
-        Value value = -static_value(networks, refreshTable, rootPos, ss + 1, -optimism);
+        Value value =
+          -static_value(networks, accumulators, refreshTable, rootPos, ss + 1, -optimism);
         rootPos.undo_move(move);
         bestValue = std::max(bestValue, value);
     }

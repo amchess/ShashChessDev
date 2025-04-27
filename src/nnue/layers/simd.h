@@ -1,5 +1,5 @@
 /*
-  ShashChess, a UCI chess playing engine derived from Stockfish
+  ShashChess, a UCI chess playing engine derived from Glaurung 2.1
   Copyright (C) 2004-2025 The ShashChess developers (see AUTHORS file)
 
   ShashChess is free software: you can redistribute it and/or modify
@@ -16,8 +16,8 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef SHASHCHESS_SIMD_H_INCLUDED
-#define SHASHCHESS_SIMD_H_INCLUDED
+#ifndef STOCKFISH_SIMD_H_INCLUDED
+#define STOCKFISH_SIMD_H_INCLUDED
 
 #if defined(USE_AVX2)
     #include <immintrin.h>
@@ -131,4 +131,4 @@ dotprod_m128_add_dpbusd_epi32(int32x4_t& acc, int8x16_t a, int8x16_t b) {
 #endif
 }
 
-#endif  // SHASHCHESS_SIMD_H_INCLUDED
+#endif  // STOCKFISH_SIMD_H_INCLUDED

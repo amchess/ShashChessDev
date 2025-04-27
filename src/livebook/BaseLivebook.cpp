@@ -1,6 +1,6 @@
 #ifdef USE_LIVEBOOK
     #include "BaseLivebook.h"
-
+    #include <iostream>
 using namespace ShashChess::Livebook;
 
 static size_t curl_write(void* contents, const size_t size, const size_t nmemb, void* userp) {

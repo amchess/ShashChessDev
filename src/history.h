@@ -155,10 +155,18 @@ struct CorrHistTypedef<Continuation> {
     using type = MultiArray<CorrHistTypedef<PieceTo>::type, PIECE_NB, SQUARE_NB>;
 };
 
+template<>
+struct CorrHistTypedef<NonPawn> {
+    using type =
+      Stats<std::int16_t, CORRECTION_HISTORY_LIMIT, CORRECTION_HISTORY_SIZE, COLOR_NB, COLOR_NB>;
+};
+
 }
 
 template<CorrHistType T>
 using CorrectionHistory = typename Detail::CorrHistTypedef<T>::type;
+
+using TTMoveHistory = StatsEntry<std::int16_t, 8192>;
 
 }  // namespace ShashChess
 
