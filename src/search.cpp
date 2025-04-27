@@ -1839,10 +1839,9 @@ moves_loop:  // When in check, search starts here
                         || (ourMove && (ss - 1)->mainLine && moveCount == 1 && !excludedMove));
         if (givesCheck)
         {
-            pos.do_move(move, st, &tt);
-            thisThread->nodes.fetch_add(1, std::memory_order_relaxed);
+            do_move(pos, move, st);
             isMate = MoveList<LEGAL>(pos).size() == 0;
-            pos.undo_move(move);
+            undo_move(pos, move);
         }
         uint64_t nodeCount = 0;
         if (dynamicDerived.isHighTal && isMate)
