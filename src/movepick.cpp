@@ -124,21 +124,20 @@ void MovePicker::score() {
 
     static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
-    Bitboard threatenedByPawn, threatenedByMinor, threatenedByRook,
-      threatenedPieces;  //used variables for ShashChess
+    [[maybe_unused]] Bitboard threatenedPieces, threatByLesser[4];
     if constexpr (Type == QUIETS)
     {
         Color us = pos.side_to_move();
 
-        threatenedByPawn = pos.attacks_by<PAWN>(~us);
-        threatenedByMinor =
-          pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<BISHOP>(~us) | threatenedByPawn;
-        threatenedByRook = pos.attacks_by<ROOK>(~us) | threatenedByMinor;
+        threatByLesser[0] = threatByLesser[1] = pos.attacks_by<PAWN>(~us);
+        threatByLesser[2] =
+          pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<BISHOP>(~us) | threatByLesser[0];
+        threatByLesser[3] = pos.attacks_by<ROOK>(~us) | threatByLesser[2];
 
         // Pieces threatened by pieces of lesser material value
-        threatenedPieces = (pos.pieces(us, QUEEN) & threatenedByRook)
-                         | (pos.pieces(us, ROOK) & threatenedByMinor)
-                         | (pos.pieces(us, KNIGHT, BISHOP) & threatenedByPawn);
+        threatenedPieces = (pos.pieces(us, QUEEN) & threatByLesser[3])
+                         | (pos.pieces(us, ROOK) & threatByLesser[2])
+                         | (pos.pieces(us, KNIGHT, BISHOP) & threatByLesser[0]);
     }
     //fortress by Shashin begin
     // Compute a scaling factor for the Shashin bonus.
@@ -195,24 +194,18 @@ void MovePicker::score() {
             // bonus for checks
             baseValue += (bool(pos.check_squares(pt) & to) && pos.see_ge(m, -75)) * 16384;
 
-            // Bonus for escaping from capture
-            if (threatenedPieces & from)
+            // penalty for moving to a square threatened by a lesser piece
+            // or bonus for escaping an attack by a lesser piece.
+            if (KNIGHT <= pt && pt <= QUEEN)
             {
-                if (pt == QUEEN && !(to & threatenedByRook))
-                    baseValue += 51700;
-                else if (pt == ROOK && !(to & threatenedByMinor))
-                    baseValue += 25600;
-                else if (!(to & threatenedByPawn))
-                    baseValue += 14450;
+                int i = pt - 2;  // KNIGHT=2→i=0, BISHOP→1, ROOK→2, QUEEN→3
+                // v = +100 se fuggi da i, -95 se entri in attacco di i
+                int v = (threatByLesser[i] & to ? -95 : 100 * bool(threatByLesser[i] & from));
+                static constexpr int bonus[4] = {144, 144, 256, 517};
+                baseValue += bonus[i] * v;
             }
 
-            // malus for putting piece en prise
-            if (pt == QUEEN && (to & threatenedByRook))
-                baseValue -= 49000;
-            else if (pt == ROOK && (to & threatenedByMinor))
-                baseValue -= 24335;
-
-            // Bonus per le prime profondit� basato sulla history table
+            // Bonus for first depths based on the history table
             if (ply < LOW_PLY_HISTORY_SIZE)
                 baseValue += 8 * (*lowPlyHistory)[ply][m.from_to()] / (1 + 2 * ply);
             if (isStrategical)
@@ -224,8 +217,7 @@ void MovePicker::score() {
                 baseValue = PieceValue[pos.piece_on(m.to_sq())] + (1 << 28);
             else
                 baseValue = (*mainHistory)[pos.side_to_move()][m.from_to()]
-                          + (*continuationHistory[0])[pos.moved_piece(m)][to]
-                          + (*pawnHistory)[pawn_structure_index(pos)][pos.moved_piece(m)][to];
+                          + (*continuationHistory[0])[pos.moved_piece(m)][to];
         }
 
         // If in a fortress, penalize moves that break the defensive setup
