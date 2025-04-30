@@ -158,7 +158,7 @@ class Position {
     bool  is_repetition(int ply) const;
     bool  upcoming_repetition(int ply) const;
     bool  has_repeated() const;
-    //from shasin begin
+    //from shashin begin
     bool     king_danger(Color c) const;
     int      king_safety_score(Color c) const;
     bool     is_open_file(Square s) const;
@@ -195,6 +195,7 @@ class Position {
     bool pos_is_ok() const;
     void flip();
 
+    // Used by NNUE
     StateInfo* state() const;
 
     void put_piece(Piece pc, Square s);

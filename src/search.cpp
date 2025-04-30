@@ -1521,11 +1521,11 @@ Value Search::Worker::search(
             thisThread->pawnHistory[pawn_structure_index(pos)][pos.piece_on(prevSq)][prevSq]
               << bonus * 1266 / 1024;
     }
-    //from Shashin begin to review
+    //from Shashin begin
     int  nullThreshold;
     bool commonNullMoveConditions, useNullMoveByShashinForStockfish, positionSafe,
       allowNullMoveOnlyFromStockfish, allowNullMoveOnlyFromCrystal;
-    //from Shashin end to review
+    //from Shashin end
     // full threads patch begin
     if (thisThread->fullSearch)
         goto moves_loop;  // full threads patch

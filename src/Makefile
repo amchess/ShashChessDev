@@ -1120,7 +1120,7 @@ clang-profile-make:
 	all
 
 clang-profile-use:
-	$(XCRUN) llvm-profdata merge -output=shashchess.profdata *.profraw
+	$(XCRUN) $(LLVM_PROFDATA) merge -output=shashchess.profdata *.profraw
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
 	EXTRACXXFLAGS='-fprofile-use=shashchess.profdata' \
 	EXTRALDFLAGS='-fprofile-use ' \
