@@ -242,9 +242,16 @@ template<typename Pred>
 Move MovePicker::select(Pred filter) {
 
     for (; cur < endMoves; ++cur)
-        if (*cur != ttMove && filter())
+    //from Shashin begin
+    {
+        if (*cur == ttMove)
+            continue;
+        if (!pos.legal(*cur))
+            continue;
+        if (filter())
             return *cur++;
-
+    }
+    //from Shashin end
     return Move::none();
 }
 
