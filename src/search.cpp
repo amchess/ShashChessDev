@@ -793,7 +793,7 @@ void Search::Worker::iterative_deepening() {
 
     ss->pv = pv;
     shashinManager.initDynamicRootShashinState(networks[numaAccessToken], accumulatorStack,
-                                               refreshTable, rootPos, ss, optimism[rootPos.side_to_move()],
+                                               refreshTable, rootPos, ss, VALUE_ZERO,
                                                shashinConfig);
     if (mainThread)
     {

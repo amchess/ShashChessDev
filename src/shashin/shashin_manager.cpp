@@ -241,7 +241,7 @@ Value ShashinManager::static_value(const Eval::NNUE::Networks&   networks,
                                    Eval::NNUE::AccumulatorCaches refreshTable,
                                    Position&                     rootPos,
                                    Search::Stack*                ss,
-                                   Value                           optimism) {
+                                   Value                         optimism) {
     MoveList<LEGAL> legalMoves(rootPos);
 
     // Check for mate or draw conditions first

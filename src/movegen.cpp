@@ -172,17 +172,13 @@ ExtMove* generate_moves(const Position& pos, ExtMove* moveList, Bitboard target)
 
         while (b)
         {
-            Square to = pop_lsb(b);
-
-            // If we're in a forress, we avoid speculative moves
-            if (isFortress && isSpeculativeMove(from, to, pos))
-                continue;
-
-            // Crystal logic is applied here in an unified mode
-            if (!useCrystalLogic || !(blockers_for_king & from) || aligned(from, to, ksq))
+            Square to          = pop_lsb(b);
+            bool   speculative = isFortress && isSpeculativeMove(from, to, pos);
+            if (!speculative
+                && (!useCrystalLogic || !(blockers_for_king & from) || aligned(from, to, ksq)))
             {
                 *moveList++ = Move(from, to);
-                hasMoves    = true;  // found at least a valid move
+                hasMoves    = true;
             }
         }
     }

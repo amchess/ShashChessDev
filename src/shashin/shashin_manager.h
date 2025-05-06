@@ -50,7 +50,7 @@ public:
                       Eval::NNUE::AccumulatorCaches refreshTable,
                       Position& rootPos,
                       Search::Stack* ss,
-                      int optimism);
+                      Value optimism);
     
     // Initialization
     void initDynamicRootShashinState(const Eval::NNUE::Networks& networks,
