@@ -793,7 +793,7 @@ void Search::Worker::iterative_deepening() {
 
     ss->pv = pv;
     shashinManager.initDynamicRootShashinState(networks[numaAccessToken], accumulatorStack,
-                                               refreshTable, rootPos, ss, VALUE_ZERO,
+                                               refreshTable, rootPos, ss, optimism[rootPos.side_to_move()],
                                                shashinConfig);
     if (mainThread)
     {
@@ -821,7 +821,7 @@ void Search::Worker::iterative_deepening() {
         // Calculate static evaluation for root position
         Value rootPosValue =
           shashinManager.static_value(networks[numaAccessToken], accumulatorStack, refreshTable,
-                                      rootPos, ss, this->optimism[us]);  //shashin
+                                      rootPos, ss, optimism[rootPos.side_to_move()]);  //shashin
         bool isMCTSExplorationApplicable = shashinManager.isMCTSExplorationApplicable();
         bool mctsExplore =
           options["MCTS Explore"]

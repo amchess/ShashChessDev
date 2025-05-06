@@ -58,7 +58,7 @@ public:
                                     Eval::NNUE::AccumulatorCaches refreshTable,
                                     Position& rootPos,
                                     Search::Stack* ss,
-                                    int optimism,
+                                    Value optimism,
                                     const ShashinConfig& config);
     void setDynamicBaseState(Value score, const Position& rootPos, int depth);
     void setDynamicDerivedState();
