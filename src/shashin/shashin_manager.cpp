@@ -236,14 +236,16 @@ bool ShashinManager::isFortress(const Position& pos) {
     return fortressResult;
 }
 
-Value ShashinManager::static_value(const Eval::NNUE::Networks&   networks,
-                                   Eval::NNUE::AccumulatorStack  accumulators,  // COPIA per valore!
-                                   Eval::NNUE::AccumulatorCaches refreshTable,
-                                   Position&                     rootPos,
-                                   Search::Stack*                ss,
-                                   Value                         optimism) {
+Value ShashinManager::static_value(
+  const Eval::NNUE::Networks&   networks,
+  Eval::NNUE::AccumulatorStack  accumulators,  // copiato per valore!
+  Eval::NNUE::AccumulatorCaches refreshTable,
+  Position&                     rootPos,
+  Search::Stack*                ss,
+  Value                         optimism) {
 
     MoveList<LEGAL> legalMoves(rootPos);
+
     if (legalMoves.size() == 0)
         return rootPos.checkers() ? VALUE_MATE : VALUE_DRAW;
 
@@ -251,22 +253,24 @@ Value ShashinManager::static_value(const Eval::NNUE::Networks&   networks,
         return VALUE_DRAW;
 
     if (!rootPos.checkers())
-    {
         return Eval::evaluate(networks, rootPos, accumulators, refreshTable, optimism);
-    }
 
     Value bestValue = -VALUE_INFINITE;
+
     for (auto move : legalMoves)
     {
-        StateInfo st;
-        rootPos.do_move(move, st);
+        StateInfo  st;
+        DirtyPiece dp = rootPos.do_move(move, st, rootPos.gives_check(move), nullptr);
+        accumulators.push(dp);
         Value val = -static_value(networks, accumulators, refreshTable, rootPos, ss + 1, -optimism);
         rootPos.undo_move(move);
+        accumulators.pop();
         bestValue = std::max(bestValue, val);
     }
 
     return bestValue;
 }
+
 
 void ShashinManager::setStaticState(const Position& rootPos) {
     StaticState& staticState = state.staticState;
