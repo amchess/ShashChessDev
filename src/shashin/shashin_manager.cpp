@@ -237,40 +237,32 @@ bool ShashinManager::isFortress(const Position& pos) {
 }
 
 Value ShashinManager::static_value(const Eval::NNUE::Networks&   networks,
-                                   Eval::NNUE::AccumulatorStack& accumulators,
+                                   Eval::NNUE::AccumulatorStack  accumulators,  // COPIA per valore!
                                    Eval::NNUE::AccumulatorCaches refreshTable,
                                    Position&                     rootPos,
                                    Search::Stack*                ss,
                                    Value                         optimism) {
-    MoveList<LEGAL> legalMoves(rootPos);
 
-    // Check for mate or draw conditions first
+    MoveList<LEGAL> legalMoves(rootPos);
     if (legalMoves.size() == 0)
-    {
         return rootPos.checkers() ? VALUE_MATE : VALUE_DRAW;
-    }
 
     if (ss->ply >= MAX_PLY || rootPos.is_draw(ss->ply))
-    {
         return VALUE_DRAW;
-    }
 
-    // Evaluate non-check positions directly
     if (!rootPos.checkers())
     {
         return Eval::evaluate(networks, rootPos, accumulators, refreshTable, optimism);
     }
 
-    // Evaluate check positions by examining all legal moves
     Value bestValue = -VALUE_INFINITE;
-    for (const auto& move : legalMoves)
+    for (auto move : legalMoves)
     {
-        StateInfo stateInfo;
-        rootPos.do_move(move, stateInfo);
-        Value value =
-          -static_value(networks, accumulators, refreshTable, rootPos, ss + 1, -optimism);
+        StateInfo st;
+        rootPos.do_move(move, st);
+        Value val = -static_value(networks, accumulators, refreshTable, rootPos, ss + 1, -optimism);
         rootPos.undo_move(move);
-        bestValue = std::max(bestValue, value);
+        bestValue = std::max(bestValue, val);
     }
 
     return bestValue;

@@ -46,7 +46,7 @@ public:
     
     // Evaluation
     Value static_value(const Eval::NNUE::Networks& networks,
-                       Eval::NNUE::AccumulatorStack&  accumulators,
+                       Eval::NNUE::AccumulatorStack  accumulators,
                       Eval::NNUE::AccumulatorCaches refreshTable,
                       Position& rootPos,
                       Search::Stack* ss,

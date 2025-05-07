@@ -335,7 +335,7 @@ class Worker {
     Value rootDelta;
 
     //for mcts
-    bool                      fullSearch;  //full threads patch
+    bool                      fullSearch = false;  //full threads patch
     NumaReplicatedAccessToken numaAccessToken;
 
     // Reductions lookup table initialized at startup
