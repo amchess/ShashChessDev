@@ -81,16 +81,6 @@ bool                       enabledLearningProbe = false;
 std::vector<QLearningMove> qLearningTrajectory;
 // Kelly end
 
-
-// from Shashin
-
-// Global ShashinManager for the main thread.
-static std::unique_ptr<ShashinManager> g_shashinManager;
-namespace Search {
-ShashinConfig shashinConfig;
-}
-// end from Shashin
-
 namespace TB = Tablebases;
 
 void syzygy_extend_pv(const OptionsMap&             options,
@@ -411,8 +401,8 @@ Search::Worker::Worker(SharedState&                    sharedState,
     tt(sharedState.tt),
     networks(sharedState.networks),
     refreshTable(networks[token]),
-    shashinManager(std::make_unique<ShashinManager>()) {  //shashin
-
+    shashinManager(std::make_unique<ShashinManager>()),
+    shConfig(sharedState.shashinConfig) {
     clear();
 }
 //from shashin begin
@@ -438,9 +428,9 @@ void Search::Worker::start_searching() {
     }
     else
     {
-        g_shashinManager = std::make_unique<ShashinManager>();
+        shashinManager = std::make_unique<ShashinManager>();
         // It inizializes the rootPosition static state
-        g_shashinManager->setStaticState(rootPos);
+        shashinManager->setStaticState(rootPos);
     }
     main_manager()->tm.init(limits, rootPos.side_to_move(), rootPos.game_ply(), options,
                             main_manager()->originalTimeAdjust);
@@ -451,15 +441,7 @@ void Search::Worker::start_searching() {
     // Kelly end
 
     set_variety(options["Variety"]);  // variety
-    // begin from Shashin
-    shashinConfig.highTal         = options["High Tal"];
-    shashinConfig.middleTal       = options["Middle Tal"];
-    shashinConfig.lowTal          = options["Low Tal"];
-    shashinConfig.capablanca      = options["Capablanca"];
-    shashinConfig.highPetrosian   = options["High Petrosian"];
-    shashinConfig.middlePetrosian = options["Middle Petrosian"];
-    shashinConfig.lowPetrosian    = options["Low Petrosian"];
-    // end from Shashin
+
     Move bookMove = Move::none();  //Books management
 
     if (rootMoves.empty())
@@ -759,7 +741,7 @@ void Search::Worker::start_searching() {
 // repeatedly with increasing depth until the allocated thinking time has been
 // consumed, the user stops the search, or the maximum search depth is reached.
 void Search::Worker::iterative_deepening() {
-    auto&          shashinManager = *g_shashinManager;
+    auto&          shashinManager = *this->shashinManager;
     SearchManager* mainThread     = (is_mainthread() ? main_manager() : nullptr);
 
     Move pv[MAX_PLY + 1];
@@ -793,8 +775,7 @@ void Search::Worker::iterative_deepening() {
 
     ss->pv = pv;
     shashinManager.initDynamicRootShashinState(networks[numaAccessToken], accumulatorStack,
-                                               refreshTable, rootPos, ss, VALUE_ZERO,
-                                               shashinConfig);
+                                               refreshTable, rootPos, ss, VALUE_ZERO, shConfig);
     if (mainThread)
     {
         if (mainThread->bestPreviousScore == VALUE_INFINITE)
@@ -1138,7 +1119,7 @@ Value Search::Worker::search(
     constexpr bool rootNode = nodeType == Root;
     const bool     allNode  = !(PvNode || cutNode);
 
-    auto&                   shashinManager   = *g_shashinManager;
+    auto&                   shashinManager   = *this->shashinManager;
     const RootShashinState& rootShashinState = shashinManager.getState();  //for ShashChess
     //From Shashin fortress begin
     // Determine if we are in a fortress (note: use the root position!)
@@ -2439,7 +2420,7 @@ template<NodeType nodeType>
 Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta) {
 
     static_assert(nodeType != Root);
-    const RootShashinState& rootShashinState = g_shashinManager->getState();
+    const RootShashinState& rootShashinState = shashinManager->getState();
     constexpr bool          PvNode           = nodeType == PV;
 
     assert(alpha >= -VALUE_INFINITE && alpha < beta && beta <= VALUE_INFINITE);
@@ -3210,7 +3191,7 @@ void SearchManager::pv(Search::Worker&           worker,
         //from shashin begin
         // Update the root Shashin state only for the main (first) PV line.
         if (i == 0)
-            g_shashinManager->updateRootShashinState(v, pos, d);
+            worker.getShashinManager().updateRootShashinState(v, pos, d);
         //from shashin end
         std::string pv;
         for (Move m : rootMoves[i].pv)

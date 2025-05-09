@@ -144,12 +144,8 @@ ExtMove* generate_pawn_moves(const Position& pos, ExtMove* moveList, Bitboard ta
 
     return moveList;
 }
-//from shashin for fortresses begin
-inline bool isSpeculativeMove(Square from, Square to, const Position& pos) {
-    PieceType pt = type_of(pos.piece_on(from));
-    return (pt == ROOK || pt == KNIGHT) ? !pos.is_king_nearby(to)
-                                        : (pt == PAWN && pos.is_pawn_weakening_move(from, to));
-}
+
+
 template<Color Us, PieceType Pt>
 ExtMove* generate_moves(const Position& pos, ExtMove* moveList, Bitboard target) {
 
@@ -157,44 +153,17 @@ ExtMove* generate_moves(const Position& pos, ExtMove* moveList, Bitboard target)
 
     Bitboard bb = pos.pieces(Us, Pt);
 
-    // Logical variables for Shashin-Crystal e moves control
-    const Square   ksq               = pos.square<KING>(Us);
-    const Bitboard blockers_for_king = pos.blockers_for_king(Us);
-    const bool     useCrystalLogic   = MoveConfig::useMoveShashinLogic;
-    const bool     isFortress        = MoveConfig::isFortress;
-
-    bool hasMoves = false;  // it controls if at least a move has been generated
-
     while (bb)
     {
         Square   from = pop_lsb(bb);
         Bitboard b    = attacks_bb<Pt>(from, pos.pieces()) & target;
 
         while (b)
-        {
-            Square to          = pop_lsb(b);
-            bool   speculative = isFortress && isSpeculativeMove(from, to, pos);
-            if (!speculative
-                && (!useCrystalLogic || !(blockers_for_king & from) || aligned(from, to, ksq)))
-            {
-                *moveList++ = Move(from, to);
-                hasMoves    = true;
-            }
-        }
-    }
-
-    // Safety control: stalemate/mate
-    if (!hasMoves)
-    {
-        if (pos.checkers())  // If the king is under check and no move ? checkmate
-            return moveList;
-        else  // If the isn't under check and no move ? stalemante
-            return moveList;
+            *moveList++ = Move(from, pop_lsb(b));
     }
 
     return moveList;
 }
-//from shashin for fortresses end
 
 
 template<Color Us, GenType Type>

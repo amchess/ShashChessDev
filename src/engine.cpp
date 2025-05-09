@@ -263,19 +263,41 @@ Engine::Engine(std::optional<std::string> path) :
     options.add("Concurrent Experience", Option(false));
 
     // Shashin personalities begin
-    options.add("High Tal", Option(false));
-
-    options.add("Middle Tal", Option(false));
-
-    options.add("Low Tal", Option(false));
-
-    options.add("Capablanca", Option(false));
-
-    options.add("Low Petrosian", Option(false));
-
-    options.add("Middle Petrosian", Option(false));
-
-    options.add("High Petrosian", Option(false));
+    options.add("High Tal",
+                Option(false, [this](const Option&) noexcept -> std::optional<std::string> {
+                    resize_threads();
+                    return std::nullopt;
+                }));
+    options.add("Middle Tal",
+                Option(false, [this](const Option&) noexcept -> std::optional<std::string> {
+                    resize_threads();
+                    return std::nullopt;
+                }));
+    options.add("Low Tal",
+                Option(false, [this](const Option&) noexcept -> std::optional<std::string> {
+                    resize_threads();
+                    return std::nullopt;
+                }));
+    options.add("Capablanca",
+                Option(false, [this](const Option&) noexcept -> std::optional<std::string> {
+                    resize_threads();
+                    return std::nullopt;
+                }));
+    options.add("Low Petrosian",
+                Option(false, [this](const Option&) noexcept -> std::optional<std::string> {
+                    resize_threads();
+                    return std::nullopt;
+                }));
+    options.add("Middle Petrosian",
+                Option(false, [this](const Option&) noexcept -> std::optional<std::string> {
+                    resize_threads();
+                    return std::nullopt;
+                }));
+    options.add("High Petrosian",
+                Option(false, [this](const Option&) noexcept -> std::optional<std::string> {
+                    resize_threads();
+                    return std::nullopt;
+                }));
     // Shashin personalities end
     load_networks();
     resize_threads();
@@ -391,9 +413,18 @@ void Engine::set_numa_config_from_option(const std::string& o) {
 
 void Engine::resize_threads() {
     threads.wait_for_search_finished();
-    threads.set(numaContext.get_numa_config(), {bookMan, options, threads, tt, networks},
+    //from shashin begin
+    ShashinConfig shCfg;
+    shCfg.highTal         = options["High Tal"];
+    shCfg.middleTal       = options["Middle Tal"];
+    shCfg.lowTal          = options["Low Tal"];
+    shCfg.capablanca      = options["Capablanca"];
+    shCfg.highPetrosian   = options["High Petrosian"];
+    shCfg.middlePetrosian = options["Middle Petrosian"];
+    shCfg.lowPetrosian    = options["Low Petrosian"];
+    threads.set(numaContext.get_numa_config(), {bookMan, options, threads, tt, networks, shCfg},
                 updateContext);  //book management
-
+    //from shashin end
     // Reallocate the hash with the new threadpool size
     set_tt_size(options["Hash"]);
     threads.ensure_network_replicated();

@@ -28,9 +28,7 @@ ShashinPosition ShashinManager::getResilientShashinRange(ShashinPosition range, 
     return range;
 }
 
-// In shashin_manager.cpp
-__attribute__((hot)) // Suggerimento di ottimizzazione per GCC/Clang
-bool ShashinManager::useMoveGenAndStep17CrystalLogic() const {
+__attribute__((hot)) bool ShashinManager::useMoveGenAndStep17CrystalLogic() const {
     const auto& s = state.staticState;  // Accesso locale
 
     // Strategical with high material and many moves
@@ -184,7 +182,6 @@ void ShashinManager::initDynamicRootShashinState(const Eval::NNUE::Networks&   n
     MoveConfig::isAggressive        = state.dynamicDerived.isAggressive;
 }
 
-// MODIFICARE IN shashin_manager.cpp
 void ShashinManager::updateRootShashinState(Value score, const Position& rootPos, int depth) {
     if (depth <= state.dynamicBase.currentDepth && depth != 0)
         return;
@@ -309,7 +306,6 @@ bool ShashinManager::isSacrificialPosition(const Position& rootPos) {
     return sacrificialResult;
 }
 
-// MODIFICARE IN shashin_manager.cpp
 bool ShashinManager::isPawnNearPromotion(const Position& rootPos) {
     if (pawnNearPromoCacheValid)
         return pawnNearPromoResult;
@@ -323,7 +319,6 @@ bool ShashinManager::isPawnNearPromotion(const Position& rootPos) {
 }
 
 // Constexpr lookup table initialization
-// In shashin_manager.cpp
 static constexpr std::array<ShashinPosition, 101> initializeLookupTable() {
     std::array<ShashinPosition, 101> lookup = {};  // Zero-initialize
 

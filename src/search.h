@@ -151,12 +151,14 @@ struct SharedState {
                 const OptionsMap&                               optionsMap,
                 ThreadPool&                                     threadPool,
                 TranspositionTable&                             transpositionTable,
-                const LazyNumaReplicated<Eval::NNUE::Networks>& nets) :
+                const LazyNumaReplicated<Eval::NNUE::Networks>& nets,
+                const ShashChess::ShashinConfig&                shCfg) :
         bookMan(bm),
         options(optionsMap),
         threads(threadPool),
         tt(transpositionTable),
-        networks(nets) {}
+        networks(nets),
+        shashinConfig(shCfg) {}
 
     BookManager& bookMan;
     //from Polyfish end
@@ -164,6 +166,7 @@ struct SharedState {
     ThreadPool&                                     threads;
     TranspositionTable&                             tt;
     const LazyNumaReplicated<Eval::NNUE::Networks>& networks;
+    const ShashChess::ShashinConfig                 shashinConfig;
 };
 
 class Worker;
@@ -355,9 +358,12 @@ class Worker {
     const LazyNumaReplicated<Eval::NNUE::Networks>& networks;
 
     // Used by NNUE
-    Eval::NNUE::AccumulatorStack    accumulatorStack;
-    Eval::NNUE::AccumulatorCaches   refreshTable;
-    std::unique_ptr<ShashinManager> shashinManager;  //Shashin
+    Eval::NNUE::AccumulatorStack  accumulatorStack;
+    Eval::NNUE::AccumulatorCaches refreshTable;
+    //Shashin begin
+    std::unique_ptr<ShashinManager>  shashinManager;
+    const ShashChess::ShashinConfig& shConfig;
+    //Shashin end
     friend class ShashChess::ThreadPool;
     friend class SearchManager;
 };
