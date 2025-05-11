@@ -272,9 +272,10 @@ void MonteCarlo::create_root(Search::Worker* worker) {
     lastOutputTime = startTime;
 
     // Prepare the stack to go down and up in the game tree
-    for (auto& stack : stackBuffer)
+
+    for (auto& currentStack : stackBuffer)
     {
-        stack = ShashChess::Search::Stack();  // Use assignment to clear the object
+        currentStack = ShashChess::Search::Stack();
     }
 
     for (int i = -7; i <= MAX_PLY + 10; i++)

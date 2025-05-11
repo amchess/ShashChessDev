@@ -174,8 +174,10 @@ void ShashinManager::initDynamicRootShashinState(const Eval::NNUE::Networks&   n
                                                  Search::Stack*                ss,
                                                  int                           optimism,
                                                  const ShashinConfig&          config) {
-    initDynamicBaseState(static_value(networks, accumulators, refreshTable, rootPos, ss, optimism),
-                         rootPos, config);
+    const auto& alignedNetworks = networks;
+    initDynamicBaseState(
+      static_value(alignedNetworks, accumulators, refreshTable, rootPos, ss, optimism), rootPos,
+      config);
     setDynamicDerivedState();
     MoveConfig::useMoveShashinLogic = useMoveGenAndStep17CrystalLogic();
     MoveConfig::isStrategical       = isStrategical();
