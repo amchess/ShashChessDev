@@ -224,10 +224,41 @@ void MovePicker::score() {
         // and give a slight bonus for moves that preserve it.
         if (fortress)
         {
+            const int phase           = std::clamp(static_cast<int>(pos.game_ply()) / 25, 0, 3);
+            const int breakingPenalty = 18000 + 6000 * phase;
+            const int preservingBonus = 9000 + 3000 * (3 - phase);
+
             if (pos.is_fortress_breaking_move(m))
-                fortressPenalty = 10000;
+            {
+                baseValue -= breakingPenalty;
+
+                if (pos.is_fortress_key_piece(movedPiece))
+                    baseValue -= 4500;
+
+                if (pos.king_safety_score(pos.side_to_move()) > 120)
+                    baseValue += 3000;
+            }
             else if (pos.is_fortress_preserving_move(m))
-                baseValue += 500;
+            {
+                baseValue += preservingBonus;
+
+                Bitboard pawns = pos.pieces(PAWN, pos.side_to_move());
+                File     f     = file_of(m.to_sq());
+                Bitboard adjacentPawns =
+                  pos.pieces(PAWN, pos.side_to_move())
+                  & ((f > FILE_A ? pawns << 1 : 0) | (f < FILE_H ? pawns >> 1 : 0));
+
+                if (popcount(adjacentPawns) >= 2)
+                    baseValue += 5000;
+
+                if (phase == 3 && type_of(movedPiece) == KING)
+                    baseValue += 2000;
+            }
+
+            if (pos.no_progress_for(15))
+                baseValue = baseValue * 5 / 4;
+            else if (!pos.has_safe_waiting_moves())
+                baseValue = baseValue * 3 / 4;
         }
 
         // Compute the final move value
