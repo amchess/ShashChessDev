@@ -1121,20 +1121,35 @@ Value Search::Worker::search(
 
     auto&                   localShashinManager = *this->shashinManager;
     const RootShashinState& rootShashinState    = localShashinManager.getState();  //for ShashChess
-    //From Shashin fortress begin
-    // Determine if we are in a fortress (note: use the root position!)
+    // From Shashin fortress begin
     if (localShashinManager.isFortress(rootPos))
     {
-        // Reduce the search depth if in a fortress, because deep searches may be overconfident
-        if (depth > 10)
-            depth -= 1;
+        constexpr Depth BaseReduction    = 2;
+        Depth           scaled_reduction = std::min(depth / 4, Depth(5));
+        depth = std::max(depth - (BaseReduction + scaled_reduction), Depth(10));
+        constexpr int Official50MoveRule = 50;
+        constexpr int SafetyMargin       = 10;
+        const int     progress           = pos.rule50_count();
+        const int     dynamic_window   = std::min(15, Official50MoveRule - progress - SafetyMargin);
+        const int     transition_start = Official50MoveRule - dynamic_window;
 
-        // Also, if no progress has been made (say, 30 moves without breakthroughs),
-        // force a draw.
-        if (pos.no_progress_for(40))
-            return VALUE_DRAW;
+        if (progress >= transition_start)
+        {
+            double x      = static_cast<double>(progress - transition_start) / dynamic_window;
+            double weight = 0.5 * (1.0 + tanh(6.0 * (x - 0.5)));
+
+            Value current_eval = evaluate(pos);
+            Value draw_influence =
+              static_cast<Value>(current_eval * (1.0 - weight) + VALUE_DRAW * weight);
+
+            constexpr Value DrawBoundary = VALUE_DRAW / 2;
+            return std::clamp(draw_influence, DrawBoundary, VALUE_DRAW);
+        }
+
+        if (depth < 15)
+            ss->staticEval += 22 * (15 - depth);
     }
-    //from Shashin fortress end
+    // From Shashin fortress end
     // Dive into quiescence search when the depth reaches zero
     if (depth <= 0)
     {
