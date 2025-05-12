@@ -220,16 +220,42 @@ void ShashinManager::setDynamicDerivedState() {
 bool ShashinManager::isFortress(const Position& pos) {
     if (!fortressCached)
     {
-        // Early game positions are not fortresses
-        if (pos.game_ply() < 30)
+        constexpr int MinPly         = 28;
+        constexpr int DefenderPieces = 2;
+
+        const int   gameStage = pos.game_ply();
+        const Color us        = pos.side_to_move();
+
+        const int ourPawns   = popcount(pos.pieces(PAWN, us));
+        const int theirPawns = popcount(pos.pieces(PAWN, ~us));
+
+        const bool enoughMaterial =
+          (pos.count<ROOK>(us) + pos.count<KNIGHT>(us) + pos.count<BISHOP>(us)) >= DefenderPieces;
+
+        const bool compactStructure = (ourPawns >= 4) && (ourPawns >= theirPawns);
+
+        const bool kingSafety = (pos.king_safety_score(us) > 150)
+                             && (distance(pos.square<KING>(us), pos.square<KING>(~us)) > 3);
+
+        fortressResult = (gameStage >= MinPly) && (!pos.has_pawn_breaks()) && pos.is_king_cutoff(us)
+                      && pos.has_safe_waiting_moves() && enoughMaterial && compactStructure
+                      && kingSafety && (pos.non_pawn_material(us) > 2 * pos.non_pawn_material(~us));
+
+        if (fortressResult)
         {
-            fortressResult = false;
+            const Bitboard ourPieces = pos.pieces(us);
+            const Bitboard enemyMobility =
+              pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<BISHOP>(~us) | pos.attacks_by<ROOK>(~us);
+
+            // Verifica che i pezzi avversari non abbiano accesso critico
+            const int overlapping = popcount(enemyMobility & ourPieces);
+            fortressResult        = overlapping < 3;
+
+            // Controllo aggiuntivo: mobilità totale nemica
+            if (fortressResult)
+                fortressResult = popcount(enemyMobility) < 12;
         }
-        else
-        {
-            fortressResult = !pos.has_pawn_breaks() && pos.is_king_cutoff(pos.side_to_move())
-                          && pos.has_safe_waiting_moves();
-        }
+
         fortressCached = true;
     }
     return fortressResult;
