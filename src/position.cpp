@@ -2005,19 +2005,6 @@ bool Position::is_king_cutoff(Color strongSide) const {
 }
 
 
-int Position::see(Move m) const {
-    Square from = m.from_sq();
-    Square to   = m.to_sq();
-
-    Piece moved    = piece_on(from);
-    Piece captured = piece_on(to);
-
-    if (captured == NO_PIECE)
-        return 0;  // Nessuna cattura, quindi nessun guadagno o perdita
-
-    return PieceValue[type_of(captured)] - PieceValue[type_of(moved)];
-}
-
 bool Position::is_tempo_loss(Move m) const {
     return see(m) < 0;  // Se la mossa ha un valore SEE negativo, è svantaggiosa
 }

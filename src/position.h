@@ -223,6 +223,60 @@ class Position {
         const Bitboard fileBB = file_bb(file_of(s));
         return (pieces(PAWN) & fileBB) == 0;
     }
+    [[nodiscard]]
+    inline int see(Move m) const noexcept {
+        const Square from = m.from_sq();
+        const Square to   = m.to_sq();
+
+        // 1. Inizializza i valori base
+        const Piece captured = piece_on(to);
+        const Piece attacker = piece_on(from);
+        int         balance  = PieceValue[captured] - PieceValue[attacker];
+
+        // Cattura non vantaggiosa: ritorna immediatamente
+        if (balance <= 0)
+            return balance;
+
+        // 2. Setup iniziale
+        Bitboard occ       = pieces() ^ from;  // Occupancy senza pezzo attaccante
+        Color    side      = ~side_to_move();  // Inizia dall'avversario
+        Bitboard attackers = attackers_to(to, occ);
+
+        // 3. Loop principale SEE
+        while (true)
+        {
+            // Trova gli attaccanti validi per il colore corrente
+            Bitboard candidates = attackers & pieces(side);
+            if (!candidates)
+                break;
+
+            // Trova il pezzo più leggero (priorità: pedone -> re)
+            PieceType pt;
+            for (pt = PAWN; pt <= KING; ++pt)
+            {
+                Bitboard subset = candidates & pieces(pt);
+                if (subset)
+                {
+                    Square s = pop_lsb(subset);  // Estrai e rimuovi
+                    occ ^= s;                    // Aggiorna occupancy
+                    balance = -balance - PieceValue[pt];
+
+                    // Aggiorna gli attaccanti con nuove scoperte
+                    attackers |= attacks_bb(pt, s, occ) & pieces();
+                    break;
+                }
+            }
+
+            // Condizione di terminazione anticipata
+            if (balance <= 0 && side == side_to_move())
+                break;
+            side = ~side;  // Alterna i colori
+        }
+
+        // 4. Restituisci il valore minimo garantito
+        return std::max(balance, -PieceValue[attacker]);
+    }
+
     Bitboard attacking_pieces(Color c, Square s) const;
     bool     is_sacrifice(Move m) const;
     bool     is_ok_piece(Piece p) const;
@@ -240,7 +294,6 @@ class Position {
     bool     is_fortress_key_piece(Piece p) const;
     bool     is_inside_fortress(Square sq) const;
     bool     no_progress_for(int moves) const;
-    int      see(Move m) const;
     //For fortresses by Shashin end
     //perhaps to do begin
     //is_isolated(), is_doubled() → Struttura pedonale (Capablanca/Petrosian).
