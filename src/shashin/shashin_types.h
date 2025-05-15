@@ -93,18 +93,20 @@ struct StaticState {
 };
 
 // Ensure proper alignment for performance
-// In shashin_types.h
 struct alignas(64) RootShashinState {
-    DynamicBaseState    dynamicBase;    // 8 bytes
-    DynamicDerivedState dynamicDerived; // 4 bytes (now packed)
-    StaticState         staticState;    // 8 bytes
-    uint8_t padding[44];               // Padding to 64 bytes
-    
-    RootShashinState() : dynamicBase(), dynamicDerived(), staticState() {
+    DynamicBaseState    dynamicBase;     // 8 bytes
+    DynamicDerivedState dynamicDerived;  // 4 bytes
+    StaticState         staticState;     // 12 bytes
+    uint8_t padding[40];                // Padding calcolato
+
+    RootShashinState() : 
+        dynamicBase(),
+        dynamicDerived(),
+        staticState() 
+    {
         std::memset(padding, 0, sizeof(padding));
     }
 };
-
 } // namespace ShashChess
 
 #endif // SHASHIN_TYPES_H
