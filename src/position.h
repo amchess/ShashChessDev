@@ -278,8 +278,12 @@ class Position {
     }
 
     Bitboard attacking_pieces(Color c, Square s) const;
-    bool     is_sacrifice(Move m) const;
-    bool     is_ok_piece(Piece p) const;
+    [[nodiscard]]
+    inline bool is_sacrifice(Move m) const noexcept {
+        constexpr int SACRIFICE_THRESHOLD = -50;  // Soglia empirica (in centipawn)
+        return see(m) <= SACRIFICE_THRESHOLD;
+    }
+    bool is_ok_piece(Piece p) const;
     //For fortresses by Shashin begin
     Bitboard pawn_attacks(Color c, Square s) const;
     Bitboard king_ring(Square ksq) const;
