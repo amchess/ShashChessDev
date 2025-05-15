@@ -1959,28 +1959,6 @@ bool Position::has_repeated() const {
     return false;
 }
 //from Crystal-shashin begin
-/*
-The following function checks whether the king is under attack and has few or no safe squares to move to, thus determining whether the king is in danger. 
-*/
-bool Position::king_danger(Color c) const {
-    Square   ksq       = square<KING>(c);
-    Bitboard kingRing  = attacks_bb<KING>(ksq);           // Case intorno al re
-    Bitboard attackers = attackers_to(ksq) & pieces(~c);  // Pezzi avversari che attaccano il re
-
-    if (!attackers)
-        return false;  // Evita calcoli inutili se il re non è sotto attacco
-
-    // Conta gli attaccanti forti (regine e torri) e deboli (altri pezzi)
-    int strongAttackers = popcount(attackers & (pieces(~c, QUEEN) | pieces(~c, ROOK))) * 3;
-    int weakAttackers   = popcount(attackers & ~(pieces(~c, QUEEN) | pieces(~c, ROOK)));
-
-    int dangerScore = strongAttackers + weakAttackers;
-
-    // Conta le case di fuga sicure (non occupate e non attaccate)
-    Bitboard safeSquares = kingRing & ~pieces() & ~attackers_to(ksq);
-
-    return (dangerScore > 2 && popcount(safeSquares) < 2) || (dangerScore > 0 && safeSquares == 0);
-}
 int Position::king_safety_score(Color c) const {
     Square kingSq = square<KING>(c);
     if (king_danger(c))

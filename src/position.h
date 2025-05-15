@@ -159,7 +159,32 @@ class Position {
     bool  upcoming_repetition(int ply) const;
     bool  has_repeated() const;
     //from shashin begin
-    bool     king_danger(Color c) const;
+    [[nodiscard]]
+    inline bool king_danger(Color c) const noexcept {
+        const Square ksq = square<KING>(c);
+
+        // Ottieni i pezzi del colore opposto
+        const Color    opponent  = ~c;
+        const Bitboard attackers = attackers_to(ksq) & pieces(opponent);
+
+        if (!attackers)
+            return false;
+
+        // Maschere per tipi di pezzi usando il sistema esistente di Stockfish
+        const Bitboard strongAttackers = pieces(QUEEN, ROOK);
+        const Bitboard weakAttackers   = pieces(BISHOP, KNIGHT, PAWN);
+
+        // Calcola i conteggi
+        const int strongCount = popcount(attackers & strongAttackers);
+        const int weakCount   = popcount(attackers & weakAttackers);
+
+        // Formula con costanti centralizzate
+        constexpr int STRONG_WEIGHT    = 3;
+        constexpr int WEAK_WEIGHT      = 1;
+        constexpr int DANGER_THRESHOLD = 5;
+
+        return (strongCount * STRONG_WEIGHT + weakCount * WEAK_WEIGHT) > DANGER_THRESHOLD;
+    }
     int      king_safety_score(Color c) const;
     bool     is_open_file(Square s) const;
     Bitboard attacking_pieces(Color c, Square s) const;
