@@ -1959,23 +1959,6 @@ bool Position::has_repeated() const {
     return false;
 }
 //from Crystal-shashin begin
-int Position::king_safety_score(Color c) const {
-    Square kingSq = square<KING>(c);
-    if (king_danger(c))
-        return -150;
-
-    int      score     = is_open_file(kingSq) ? -50 : 0;
-    Bitboard attackers = attacking_pieces(~c, kingSq);
-
-    if (attackers)
-    {
-        score -= popcount(attackers & (pieces(~c, QUEEN) | pieces(~c, ROOK))) * 20;
-        score -= popcount(attackers & (pieces(~c, BISHOP) | pieces(~c, KNIGHT))) * 15;
-        score -= popcount(attackers & pieces(~c, PAWN)) * 5;
-    }
-    return score;
-}
-
 bool Position::is_open_file(Square s) const { return !(pieces(PAWN) & file_bb(file_of(s))); }
 
 Bitboard Position::attacking_pieces(Color c, Square s) const {

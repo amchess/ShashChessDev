@@ -185,7 +185,39 @@ class Position {
 
         return (strongCount * STRONG_WEIGHT + weakCount * WEAK_WEIGHT) > DANGER_THRESHOLD;
     }
-    int      king_safety_score(Color c) const;
+    [[nodiscard]]
+    inline int king_safety_score(Color c) const noexcept {
+        const Square   ksq           = square<KING>(c);
+        const Bitboard attackers     = attackers_to(ksq) & pieces(~c);
+        const int      attackerCount = popcount(attackers);
+
+        if (attackerCount == 0)
+        {
+            const Bitboard ourPawns = pieces(c, PAWN);
+            const Bitboard pawnShield =
+              (c == WHITE ? pawn_attacks_bb<WHITE>(ourPawns) : pawn_attacks_bb<BLACK>(ourPawns))
+              & ksq;
+
+            if (popcount(pawnShield) >= 3)
+                return 100;
+        }
+
+        const File     kf            = file_of(ksq);
+        const Bitboard adjacentFiles = (shift<EAST>(file_bb(kf)) | shift<WEST>(file_bb(kf)));
+        const Bitboard pawnShield    = pieces(c, PAWN) & (adjacentFiles | file_bb(kf));
+
+        const Square centerSq       = make_square(FILE_E, c == WHITE ? RANK_4 : RANK_5);
+        const int    centralization = 14 - distance(ksq, centerSq) * 2;
+
+        constexpr int ATTACKER_PENALTY = 12;
+        constexpr int SHIELD_BONUS     = 15;
+        constexpr int CENTER_BONUS     = 8;
+
+        int score = popcount(pawnShield) * SHIELD_BONUS - attackerCount * ATTACKER_PENALTY
+                  + centralization * CENTER_BONUS;
+
+        return std::clamp(score, -150, 100);
+    }
     bool     is_open_file(Square s) const;
     Bitboard attacking_pieces(Color c, Square s) const;
     bool     is_sacrifice(Move m) const;
