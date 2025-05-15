@@ -4,10 +4,12 @@
 namespace ShashChess {
 namespace MoveConfig {
 
-extern bool useMoveShashinLogic;
-extern bool isStrategical;
-extern bool isAggressive;
-extern bool isFortress;
+// Dichiarazione come variabili thread-local
+extern thread_local bool useMoveShashinLogic;
+extern thread_local bool isStrategical;
+extern thread_local bool isAggressive;
+extern thread_local bool isFortress;
+
 }  // namespace MoveConfig
 }  // namespace ShashChess
 
