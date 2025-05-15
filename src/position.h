@@ -218,7 +218,11 @@ class Position {
 
         return std::clamp(score, -150, 100);
     }
-    bool     is_open_file(Square s) const;
+    [[nodiscard]]
+    inline bool is_open_file(Square s) const noexcept {
+        const Bitboard fileBB = file_bb(file_of(s));
+        return (pieces(PAWN) & fileBB) == 0;
+    }
     Bitboard attacking_pieces(Color c, Square s) const;
     bool     is_sacrifice(Move m) const;
     bool     is_ok_piece(Piece p) const;

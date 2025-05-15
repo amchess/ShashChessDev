@@ -1959,7 +1959,6 @@ bool Position::has_repeated() const {
     return false;
 }
 //from Crystal-shashin begin
-bool Position::is_open_file(Square s) const { return !(pieces(PAWN) & file_bb(file_of(s))); }
 
 Bitboard Position::attacking_pieces(Color c, Square s) const {
     Bitboard atks = attackers_to(s);
