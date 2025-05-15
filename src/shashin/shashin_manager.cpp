@@ -9,19 +9,29 @@ namespace ShashChess {
 ShashinManager::ShashinManager() {}
 
 ShashinPosition ShashinManager::getResilientShashinRange(ShashinPosition range, int depth) {
-    if (depth <= 10)
+    constexpr int HIGH_MOBILITY_MOVES  = 30;
+    constexpr int MID_MOBILITY_MOVES   = 15;
+    constexpr int HIGH_DEPTH_LIMIT     = 12;
+    constexpr int MID_DEPTH_LIMIT      = 8;
+    constexpr int LOW_DEPTH_LIMIT      = 5;
+    constexpr int ADVANCED_DEPTH_LIMIT = 20;
+
+    int mvCount          = state.staticState.legalMoveCount;
+    int dynamicThreshold = (mvCount > HIGH_MOBILITY_MOVES) ? HIGH_DEPTH_LIMIT
+                         : (mvCount > MID_MOBILITY_MOVES)  ? MID_DEPTH_LIMIT
+                                                           : LOW_DEPTH_LIMIT;
+
+    bool isTalRange = (range == ShashinPosition::CAPABLANCA_TAL
+                       || range == ShashinPosition::TAL_CAPABLANCA_PETROSIAN);
+
+    if (depth <= dynamicThreshold)
     {
-        if (range == ShashinPosition::CAPABLANCA_TAL
-            || range == ShashinPosition::TAL_CAPABLANCA_PETROSIAN)
-        {
+        if (isTalRange)
             return ShashinPosition::LOW_TAL;
-        }
         if (range == ShashinPosition::CAPABLANCA_PETROSIAN)
-        {
             return ShashinPosition::CAPABLANCA;
-        }
     }
-    else if (depth <= 20 && range == ShashinPosition::TAL_CAPABLANCA_PETROSIAN)
+    else if (depth <= ADVANCED_DEPTH_LIMIT && range == ShashinPosition::TAL_CAPABLANCA_PETROSIAN)
     {
         return ShashinPosition::CAPABLANCA;
     }
