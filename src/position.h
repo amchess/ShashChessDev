@@ -311,13 +311,44 @@ class Position {
     bool is_fortress_preserving_move(const Move& m) const;
     [[nodiscard]]
     inline bool is_fortress_key_piece(Piece p) const noexcept {
-        if (p == NO_PIECE) return false;
+        if (p == NO_PIECE)
+            return false;
         const PieceType pt = type_of(p);
-          return pt == ROOK
-            || pt == KNIGHT
-            || pt == BISHOP;
+        return pt == ROOK || pt == KNIGHT || pt == BISHOP;
     }
-    bool is_inside_fortress(Square sq) const;
+    [[nodiscard]]
+    bool is_inside_fortress(Square sq) const noexcept {
+        const Color  us  = side_to_move();
+        const Square ksq = square<KING>(us);
+
+        // 1. Definizione dinamica della zona della fortezza (3x3 attorno al re)
+        Bitboard kingArea     = attacks_bb<KING>(ksq) | ksq;
+        Bitboard fortressZone = kingArea | shift<NORTH>(kingArea) | shift<SOUTH>(kingArea);
+
+        // 2. Calcola gli attacchi pedonali correttamente
+        Bitboard ourPawns = pieces(us, PAWN);
+        Bitboard pawnAttacks =
+          (us == WHITE) ? pawn_attacks_bb<WHITE>(ourPawns) : pawn_attacks_bb<BLACK>(ourPawns);
+
+        // 3. Struttura pedonale difensiva (scudo + attacchi)
+        Bitboard pawnShield = ourPawns & (pawnAttacks | kingArea);
+        Bitboard pawnStorm  = pieces(~us, PAWN) & fortressZone;
+
+        // 4. Requisiti minimi per una fortezza:
+        //    - Almeno 3 pedoni nello scudo/fortezza
+        //    - Nessun pedone nemico nella zona
+        //    - Re entro 2 case dalla casella
+        bool hasPawnShield = popcount(pawnShield & fortressZone) >= 3;
+        bool noEnemyPawns  = !pawnStorm;
+        bool kingProximity = distance(sq, ksq) <= 2;
+
+        // 5. Presenza di pezzi difensivi (Torri/Alfieri)
+        Bitboard keyDefenders    = pieces(us, ROOK, BISHOP) & fortressZone;
+        bool     hasKeyDefenders = popcount(keyDefenders) >= 1;
+
+        return (hasPawnShield && noEnemyPawns && kingProximity)
+            && (sq & (fortressZone | keyDefenders)) && hasKeyDefenders;
+    }
     bool no_progress_for(int moves) const;
     //For fortresses by Shashin end
     //perhaps to do begin
