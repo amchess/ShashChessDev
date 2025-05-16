@@ -33,7 +33,7 @@
 
 #include "bitboard.h"
 #include "misc.h"
-#include "movegen.h"
+//shashin
 #include "syzygy/tbprobe.h"
 #include "tt.h"
 #include "uci.h"
@@ -1958,71 +1958,6 @@ bool Position::has_repeated() const {
     }
     return false;
 }
-//from Crystal-shashin begin
-
-Bitboard Position::attacking_pieces(Color c, Square s) const {
-    Bitboard atks = attackers_to(s);
-    return atks ? (atks & pieces(c)) : 0ULL;
-}
-bool Position::is_ok_piece(Piece p) const {
-    return p >= W_PAWN && p <= B_KING;  // Oppure: return p != NO_PIECE;
-}
-
-Bitboard Position::pawn_attacks(Color c, Square s) const { return attacks_bb<PAWN>(s, c); }
-
-Bitboard Position::king_ring(Square ksq) const {
-    return attacks_bb<KING>(ksq) | ksq;  // It includes the king and its attackable squares
-}
-
-bool Position::is_king_cutoff(Color strongSide) const {
-    Square kingSq = square<KING>(strongSide);
-    return (pieces(strongSide, PAWN) & king_ring(kingSq))
-        || (blockers_for_king(~strongSide) & (rank_bb(rank_of(kingSq)) | file_bb(file_of(kingSq))));
-}
-
-
-bool Position::is_tempo_loss(Move m) const {
-    return see(m) < 0;  // Se la mossa ha un valore SEE negativo, è svantaggiosa
-}
-
-bool Position::has_safe_waiting_moves() const {
-    MoveList<LEGAL> moves(*this);
-    for (const auto& m : moves)
-    {
-        if (!capture_stage(m) && !gives_check(m) && see(m) >= 0)
-            return true;
-    }
-    return false;
-}
-
-bool Position::is_king_nearby(Square sq) const {
-    Square kingSq = square<KING>(side_to_move());
-    return distance(kingSq, sq) <= 2;  // The king is within two squares.
-}
-
-bool Position::is_pawn_weakening_move(Square from, Square to) const {
-    // If the pawn was protecting another pawn and no longer does, it is a weak move
-    Bitboard pawnShield = pawn_attacks(side_to_move(), from) & pieces(side_to_move(), PAWN);
-    return pawnShield && !(pawn_attacks(side_to_move(), to) & pieces(side_to_move(), PAWN));
-}
-bool Position::is_fortress_breaking_move(const Move& m) const {
-    Square from = m.from_sq(), to = m.to_sq();
-    Piece  moved = piece_on(from), captured = piece_on(to);
-    return (type_of(moved) == KING && !is_king_nearby(to))
-        || (type_of(moved) == PAWN && is_pawn_weakening_move(from, to))
-        || (captured != NO_PIECE && is_fortress_key_piece(captured));
-}
-
-bool Position::is_fortress_preserving_move(const Move& m) const {
-    return (type_of(piece_on(m.from_sq())) == KING && is_king_nearby(m.to_sq()))
-        || is_inside_fortress(m.to_sq());
-}
-
-
-bool Position::no_progress_for(int moves) const { return rule50_count() >= moves; }
-
-//from Crystal-shashin end
-
 // Tests if the position has a move which draws by repetition.
 // This function accurately matches the outcome of is_draw() over all legal moves.
 bool Position::upcoming_repetition(int ply) const {

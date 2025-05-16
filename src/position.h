@@ -27,6 +27,7 @@
 
 #include "bitboard.h"
 #include "types.h"
+#include "movegen.h"  //shashin
 
 namespace ShashChess {
 //Kelly begin
@@ -276,17 +277,29 @@ class Position {
         // 4. Restituisci il valore minimo garantito
         return std::max(balance, -PieceValue[attacker]);
     }
-
-    Bitboard attacking_pieces(Color c, Square s) const;
+    [[nodiscard]]
+    inline Bitboard attacking_pieces(Color c, Square s) const {
+        Bitboard atks = attackers_to(s);
+        return atks ? (atks & pieces(c)) : 0ULL;
+    }
     [[nodiscard]]
     inline bool is_sacrifice(Move m) const noexcept {
-        constexpr int SACRIFICE_THRESHOLD = -50;  // Soglia empirica (in centipawn)
+        constexpr int SACRIFICE_THRESHOLD = -50;
         return see(m) <= SACRIFICE_THRESHOLD;
     }
-    bool is_ok_piece(Piece p) const;
+    [[nodiscard]]
+    inline bool is_ok_piece(Piece p) const {
+        return p >= W_PAWN && p <= B_KING;
+    }
     //For fortresses by Shashin begin
-    Bitboard pawn_attacks(Color c, Square s) const;
-    Bitboard king_ring(Square ksq) const;
+    [[nodiscard]]
+    inline Bitboard pawn_attacks(Color c, Square s) const {
+        return attacks_bb<PAWN>(s, c);
+    }
+    [[nodiscard]]
+    inline Bitboard king_ring(Square ksq) const {
+        return attacks_bb<KING>(ksq) | ksq;  // It includes the king and its attackable squares
+    }
     [[nodiscard]]
     inline bool has_pawn_breaks() const noexcept {
         const Color    us    = side_to_move();
@@ -302,13 +315,51 @@ class Position {
         // 3. Verifica se almeno una casa di avanzamento è libera
         return (pushSquares & ~pieces()) != 0;
     }
-    bool is_king_cutoff(Color strongSide) const;
-    bool has_safe_waiting_moves() const;
-    bool is_tempo_loss(Move m) const;
-    bool is_king_nearby(Square sq) const;
-    bool is_pawn_weakening_move(Square from, Square to) const;
-    bool is_fortress_breaking_move(const Move& m) const;
-    bool is_fortress_preserving_move(const Move& m) const;
+    [[nodiscard]]
+    inline bool is_king_cutoff(Color strongSide) const {
+        Square kingSq = square<KING>(strongSide);
+        return (pieces(strongSide, PAWN) & king_ring(kingSq))
+            || (blockers_for_king(~strongSide)
+                & (rank_bb(rank_of(kingSq)) | file_bb(file_of(kingSq))));
+    }
+    [[nodiscard]]
+    inline bool has_safe_waiting_moves() const {
+        MoveList<LEGAL> moves(*this);
+        for (const auto& m : moves)
+        {
+            if (!capture_stage(m) && !gives_check(m) && see(m) >= 0)
+                return true;
+        }
+        return false;
+    }
+    [[nodiscard]]
+    inline bool is_tempo_loss(Move m) const {
+        return see(m) < 0;  // Se la mossa ha un valore SEE negativo, è svantaggiosa
+    }
+    [[nodiscard]]
+    inline bool is_king_nearby(Square sq) const {
+        Square kingSq = square<KING>(side_to_move());
+        return distance(kingSq, sq) <= 2;  // The king is within two squares.
+    }
+    [[nodiscard]]
+    inline bool is_pawn_weakening_move(Square from, Square to) const {
+        // If the pawn was protecting another pawn and no longer does, it is a weak move
+        Bitboard pawnShield = pawn_attacks(side_to_move(), from) & pieces(side_to_move(), PAWN);
+        return pawnShield && !(pawn_attacks(side_to_move(), to) & pieces(side_to_move(), PAWN));
+    }
+    [[nodiscard]]
+    inline bool is_fortress_breaking_move(const Move& m) const {
+        Square from = m.from_sq(), to = m.to_sq();
+        Piece  moved = piece_on(from), captured = piece_on(to);
+        return (type_of(moved) == KING && !is_king_nearby(to))
+            || (type_of(moved) == PAWN && is_pawn_weakening_move(from, to))
+            || (captured != NO_PIECE && is_fortress_key_piece(captured));
+    }
+    [[nodiscard]]
+    inline bool is_fortress_preserving_move(const Move& m) const {
+        return (type_of(piece_on(m.from_sq())) == KING && is_king_nearby(m.to_sq()))
+            || is_inside_fortress(m.to_sq());
+    }
     [[nodiscard]]
     inline bool is_fortress_key_piece(Piece p) const noexcept {
         if (p == NO_PIECE)
@@ -317,7 +368,7 @@ class Position {
         return pt == ROOK || pt == KNIGHT || pt == BISHOP;
     }
     [[nodiscard]]
-    bool is_inside_fortress(Square sq) const noexcept {
+    inline bool is_inside_fortress(Square sq) const noexcept {
         const Color  us  = side_to_move();
         const Square ksq = square<KING>(us);
 
@@ -349,7 +400,10 @@ class Position {
         return (hasPawnShield && noEnemyPawns && kingProximity)
             && (sq & (fortressZone | keyDefenders)) && hasKeyDefenders;
     }
-    bool no_progress_for(int moves) const;
+    [[nodiscard]]
+    inline bool no_progress_for(int moves) const {
+        return rule50_count() >= moves;
+    }
     //For fortresses by Shashin end
     //perhaps to do begin
     //is_isolated(), is_doubled() → Struttura pedonale (Capablanca/Petrosian).
