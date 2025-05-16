@@ -287,17 +287,31 @@ class Position {
     //For fortresses by Shashin begin
     Bitboard pawn_attacks(Color c, Square s) const;
     Bitboard king_ring(Square ksq) const;
-    bool     has_pawn_breaks() const;
-    bool     is_king_cutoff(Color strongSide) const;
-    bool     has_safe_waiting_moves() const;
-    bool     is_tempo_loss(Move m) const;
-    bool     is_king_nearby(Square sq) const;
-    bool     is_pawn_weakening_move(Square from, Square to) const;
-    bool     is_fortress_breaking_move(const Move& m) const;
-    bool     is_fortress_preserving_move(const Move& m) const;
-    bool     is_fortress_key_piece(Piece p) const;
-    bool     is_inside_fortress(Square sq) const;
-    bool     no_progress_for(int moves) const;
+    [[nodiscard]]
+    inline bool has_pawn_breaks() const noexcept {
+        const Color    us    = side_to_move();
+        const Bitboard pawns = pieces(us, PAWN);
+
+        // 1. Filtra pedoni che possono avanzare (escludendo ultima traversa)
+        const Bitboard eligiblePawns = pawns & ~(us == WHITE ? Rank7BB : Rank2BB);
+
+        // 2. Calcola le case di avanzamento immediato
+        const Bitboard pushSquares =
+          us == WHITE ? shift<NORTH>(eligiblePawns) : shift<SOUTH>(eligiblePawns);
+
+        // 3. Verifica se almeno una casa di avanzamento è libera
+        return (pushSquares & ~pieces()) != 0;
+    }
+    bool is_king_cutoff(Color strongSide) const;
+    bool has_safe_waiting_moves() const;
+    bool is_tempo_loss(Move m) const;
+    bool is_king_nearby(Square sq) const;
+    bool is_pawn_weakening_move(Square from, Square to) const;
+    bool is_fortress_breaking_move(const Move& m) const;
+    bool is_fortress_preserving_move(const Move& m) const;
+    bool is_fortress_key_piece(Piece p) const;
+    bool is_inside_fortress(Square sq) const;
+    bool no_progress_for(int moves) const;
     //For fortresses by Shashin end
     //perhaps to do begin
     //is_isolated(), is_doubled() → Struttura pedonale (Capablanca/Petrosian).

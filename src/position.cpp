@@ -1974,20 +1974,6 @@ Bitboard Position::king_ring(Square ksq) const {
     return attacks_bb<KING>(ksq) | ksq;  // It includes the king and its attackable squares
 }
 
-bool Position::has_pawn_breaks() const {
-    for (Color c : {WHITE, BLACK})
-    {
-        Bitboard pawns = pieces(c, PAWN);
-        while (pawns)
-        {
-            Square s = pop_lsb(pawns);
-            if (pawn_attacks(c, s) & pieces(~c) || !(pieces() & (s + pawn_push(c))))
-                return true;
-        }
-    }
-    return false;
-}
-
 bool Position::is_king_cutoff(Color strongSide) const {
     Square kingSq = square<KING>(strongSide);
     return (pieces(strongSide, PAWN) & king_ring(kingSq))
