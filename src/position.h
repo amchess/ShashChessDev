@@ -309,7 +309,14 @@ class Position {
     bool is_pawn_weakening_move(Square from, Square to) const;
     bool is_fortress_breaking_move(const Move& m) const;
     bool is_fortress_preserving_move(const Move& m) const;
-    bool is_fortress_key_piece(Piece p) const;
+    [[nodiscard]]
+    inline bool is_fortress_key_piece(Piece p) const noexcept {
+        if (p == NO_PIECE) return false;
+        const PieceType pt = type_of(p);
+          return pt == ROOK
+            || pt == KNIGHT
+            || pt == BISHOP;
+    }
     bool is_inside_fortress(Square sq) const;
     bool no_progress_for(int moves) const;
     //For fortresses by Shashin end

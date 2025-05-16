@@ -2018,11 +2018,6 @@ bool Position::is_fortress_preserving_move(const Move& m) const {
         || is_inside_fortress(m.to_sq());
 }
 
-// Check if the piece is crucial for the fortress
-bool Position::is_fortress_key_piece(Piece p) const {
-    return type_of(p) == ROOK || type_of(p) == KNIGHT;
-}
-
 // Check if a piece is in the fortress
 bool Position::is_inside_fortress(Square sq) const {
     Bitboard fortressZone = pieces(side_to_move(), PAWN) | pieces(side_to_move(), KING);
