@@ -26,7 +26,7 @@
 //for ShashChess
 
 namespace ShashChess {
-    using namespace ShashChess::Shashin;//shashin
+using namespace ShashChess::Shashin;  //shashin
 namespace {
 
 enum Stages {
@@ -226,17 +226,17 @@ void MovePicker::score() {
             const int breakingPenalty = 18000 + 6000 * phase;
             const int preservingBonus = 9000 + 3000 * (3 - phase);
 
-            if (is_fortress_breaking_move(pos,m))
+            if (is_fortress_breaking_move(pos, m))
             {
                 baseValue -= breakingPenalty;
 
                 if (is_fortress_key_piece(movedPiece))
                     baseValue -= 4500;
 
-                if (king_safety_score(pos,pos.side_to_move()) > 120)
+                if (king_safety_score(pos, pos.side_to_move()) > 120)
                     baseValue += 3000;
             }
-            else if (is_fortress_preserving_move(pos,m))
+            else if (is_fortress_preserving_move(pos, m))
             {
                 baseValue += preservingBonus;
 
@@ -253,7 +253,7 @@ void MovePicker::score() {
                     baseValue += 2000;
             }
 
-            if (no_progress_for(pos,15))
+            if (no_progress_for(pos, 15))
                 baseValue = baseValue * 5 / 4;
             else if (!has_safe_waiting_moves(pos))
                 baseValue = baseValue * 3 / 4;

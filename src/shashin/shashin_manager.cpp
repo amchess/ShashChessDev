@@ -39,7 +39,7 @@ ShashinPosition ShashinManager::getResilientShashinRange(ShashinPosition range, 
 }
 
 __attribute__((hot)) bool ShashinManager::useMoveGenAndStep17CrystalLogic() const {
-    const auto& s = state.staticState;  // Accesso locale
+    const auto& s = state.staticState;  // Local access
 
     // Strategical with high material and many moves
     if (__builtin_expect((state.dynamicBase.currentRange == ShashinPosition::CAPABLANCA)
@@ -356,25 +356,20 @@ bool ShashinManager::isPawnNearPromotion(const Position& rootPos) {
     return pawnNearPromoResult;
 }
 
-// Constexpr lookup table initialization
-static constexpr std::array<ShashinPosition, 101> initializeLookupTable() {
-    std::array<ShashinPosition, 101> lookup = {};  // Zero-initialize
-
-    // Compile-time pattern matching
-    for (int i = 0; i <= 100; ++i)
-    {
-        if (i <= HIGH_PETROSIAN_MAX)
-            lookup[i] = ShashinPosition::HIGH_PETROSIAN;
-        else if (i <= MIDDLE_HIGH_PETROSIAN_MAX)
-            lookup[i] = ShashinPosition::MIDDLE_HIGH_PETROSIAN;
-        // ... altri range ...
-        else
-            lookup[i] = ShashinPosition::TAL_CAPABLANCA_PETROSIAN;
-    }
-    return lookup;
+constexpr ShashinPosition getPositionForValue(int i) {
+    return (i <= HIGH_PETROSIAN_MAX)        ? ShashinPosition::HIGH_PETROSIAN
+         : (i <= MIDDLE_HIGH_PETROSIAN_MAX) ? ShashinPosition::MIDDLE_HIGH_PETROSIAN
+         : (i <= MIDDLE_PETROSIAN_MAX)      ? ShashinPosition::MIDDLE_PETROSIAN
+         : (i <= LOW_PETROSIAN_MAX)         ? ShashinPosition::LOW_PETROSIAN
+                                            : ShashinPosition::TAL_CAPABLANCA_PETROSIAN;
 }
 
-static constexpr auto lookup = initializeLookupTable();
+template<std::size_t... Is>
+constexpr std::array<ShashinPosition, sizeof...(Is)> makeLookupTable(std::index_sequence<Is...>) {
+    return {getPositionForValue(Is)...};
+}
+
+constexpr auto lookup = makeLookupTable(std::make_index_sequence<101>{});
 
 ShashinPosition ShashinManager::getShashinRange(Value value, const Position& rootPos) {
     WDLModel::WDL wdl            = WDLModel::get_wdl(value, rootPos);
