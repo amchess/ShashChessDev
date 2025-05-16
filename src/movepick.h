@@ -22,9 +22,9 @@
 #include <cstddef>
 
 #include "history.h"
-#include "movegen.h"
-#include "types.h"
+#include "shashin/shashin_position.h"  
 #include "shashin/moveconfig.h"  //from shashin
+
 namespace ShashChess {
 class Position;
 

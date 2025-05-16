@@ -36,7 +36,7 @@
 #include "nnue/network.h"
 #include "nnue/nnue_accumulator.h"
 #include "numa.h"
-#include "position.h"
+#include "shashin/shashin_position.h"  //shashin
 #include "score.h"
 #include "syzygy/tbprobe.h"
 #include "timeman.h"

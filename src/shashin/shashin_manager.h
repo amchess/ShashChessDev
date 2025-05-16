@@ -1,7 +1,7 @@
 #ifndef SHASHIN_MANAGER_H
 #define SHASHIN_MANAGER_H
 
-#include "../position.h"
+#include "shashin_position.h"
 #include "../types.h"
 #include "../movegen.h"
 #include "../movepick.h"

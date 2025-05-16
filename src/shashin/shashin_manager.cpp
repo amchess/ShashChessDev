@@ -5,7 +5,7 @@
 #include <algorithm>
 
 namespace ShashChess {
-
+using namespace ShashChess::Shashin;
 ShashinManager::ShashinManager() {}
 
 ShashinPosition ShashinManager::getResilientShashinRange(ShashinPosition range, int depth) {
@@ -244,11 +244,11 @@ bool ShashinManager::isFortress(const Position& pos) {
 
         const bool compactStructure = (ourPawns >= 4) && (ourPawns >= theirPawns);
 
-        const bool kingSafety = (pos.king_safety_score(us) > 150)
+        const bool kingSafety = (king_safety_score(pos, us) > 150)
                              && (distance(pos.square<KING>(us), pos.square<KING>(~us)) > 3);
 
-        fortressResult = (gameStage >= MinPly) && (!pos.has_pawn_breaks()) && pos.is_king_cutoff(us)
-                      && pos.has_safe_waiting_moves() && enoughMaterial && compactStructure
+        fortressResult = (gameStage >= MinPly) && (!has_pawn_breaks(pos)) && is_king_cutoff(pos, us)
+                      && has_safe_waiting_moves(pos) && enoughMaterial && compactStructure
                       && kingSafety && (pos.non_pawn_material(us) > 2 * pos.non_pawn_material(~us));
 
         if (fortressResult)
@@ -318,10 +318,10 @@ void ShashinManager::setStaticState(const Position& rootPos) {
     int nonPawnMaterial      = rootPos.non_pawn_material(WHITE) + rootPos.non_pawn_material(BLACK);
     staticState.highMaterial = (nonPawnMaterial > 2400);
 
-    staticState.kingDanger         = rootPos.king_danger(WHITE) || rootPos.king_danger(BLACK);
+    staticState.kingDanger         = king_danger(rootPos, WHITE) || king_danger(rootPos, BLACK);
     staticState.pawnsNearPromotion = isPawnNearPromotion(rootPos);
     staticState.allPiecesCount     = rootPos.count<ALL_PIECES>();
-    staticState.kingSafetyScore    = rootPos.king_safety_score(rootPos.side_to_move());
+    staticState.kingSafetyScore    = king_safety_score(rootPos, rootPos.side_to_move());
 
     MoveConfig::isFortress = isFortress(rootPos);
 }
@@ -333,7 +333,7 @@ bool ShashinManager::isSacrificialPosition(const Position& rootPos) {
         MoveList<LEGAL> legalMoves(rootPos);
         for (const auto& move : legalMoves)
         {
-            if (rootPos.is_sacrifice(move))
+            if (is_sacrifice(rootPos, move))
             {
                 sacrificialResult = true;
                 break;

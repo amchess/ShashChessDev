@@ -42,7 +42,9 @@ constexpr int MIDDLE_LOW_TAL_MAX        = 84;
 constexpr int MIDDLE_TAL_MAX            = 89;
 constexpr int MIDDLE_HIGH_TAL_MAX       = 94;
 constexpr int HIGH_TAL_MAX              = 100;
-
+constexpr Value PawnConversionFactor = 356;
+constexpr Value VALUE_TB_WIN         = 51 * PawnConversionFactor;
+constexpr Value VALUE_MAX_EVAL       = VALUE_TB_WIN - 8 * PawnConversionFactor;
 // Packed config to save space
 struct ShashinConfig {
     uint8_t highTal         : 1;

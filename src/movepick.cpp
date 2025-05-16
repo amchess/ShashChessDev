@@ -22,13 +22,11 @@
 #include <cstddef>
 #include <limits>
 #include <cmath>  //for ShashChess
-
-#include "bitboard.h"
 #include "misc.h"
 //for ShashChess
 
 namespace ShashChess {
-
+    using namespace ShashChess::Shashin;//shashin
 namespace {
 
 enum Stages {
@@ -228,17 +226,17 @@ void MovePicker::score() {
             const int breakingPenalty = 18000 + 6000 * phase;
             const int preservingBonus = 9000 + 3000 * (3 - phase);
 
-            if (pos.is_fortress_breaking_move(m))
+            if (is_fortress_breaking_move(pos,m))
             {
                 baseValue -= breakingPenalty;
 
-                if (pos.is_fortress_key_piece(movedPiece))
+                if (is_fortress_key_piece(movedPiece))
                     baseValue -= 4500;
 
-                if (pos.king_safety_score(pos.side_to_move()) > 120)
+                if (king_safety_score(pos,pos.side_to_move()) > 120)
                     baseValue += 3000;
             }
-            else if (pos.is_fortress_preserving_move(m))
+            else if (is_fortress_preserving_move(pos,m))
             {
                 baseValue += preservingBonus;
 
@@ -255,9 +253,9 @@ void MovePicker::score() {
                     baseValue += 2000;
             }
 
-            if (pos.no_progress_for(15))
+            if (no_progress_for(pos,15))
                 baseValue = baseValue * 5 / 4;
-            else if (!pos.has_safe_waiting_moves())
+            else if (!has_safe_waiting_moves(pos))
                 baseValue = baseValue * 3 / 4;
         }
 

@@ -53,7 +53,7 @@ Local assessments: Penalize or reward based on king's security, tactical complex
 #include "movepick.h"
 #include "nnue/network.h"
 #include "nnue/nnue_accumulator.h"
-#include "position.h"
+//shashin
 #include "syzygy/tbprobe.h"
 #include "thread.h"
 #include "timeman.h"
@@ -75,6 +75,7 @@ Local assessments: Penalize or reward based on king's security, tactical complex
 #include "livebook/ChessDBContributor.h"
 //Livebook end
 namespace ShashChess {
+    using namespace ShashChess::Shashin;//shashin    
 // Kelly begin
 bool                       useLearning          = true;
 bool                       enabledLearningProbe = false;
@@ -1591,7 +1592,7 @@ Value Search::Worker::search(
     //only from crystal begin
     ourMove                      = !(ss->ply & 1);
     nullParity                   = (ourMove == thisThread->nmpSide);
-    kingDanger                   = !ourMove && pos.king_danger(us);
+    kingDanger                   = !ourMove && king_danger(pos,us);
     quietKingSafe                = !staticState.isSacrificial && !staticState.kingExposed;
     positionSafe                 = !kingDanger && quietKingSafe;  // King is safe during quiet moves
     allowNullMoveOnlyFromCrystal = !thisThread->nmpGuard && !gameCycle && (eval >= ss->staticEval)
@@ -1767,7 +1768,7 @@ moves_loop:  // When in check, search starts here
     //for step 17 begin
     bool lmrCapture = cutNode && (ss - 1)->moveCount > 1;
 
-    bool kingDangerThem = ourMove && pos.king_danger(~us);
+    bool kingDangerThem = ourMove && king_danger(pos,~us);
 
     bool allowLMR =
       depth > 1 && !gameCycle && (!kingDangerThem || ss->ply > 6) && (!PvNode || ss->ply > 1);
