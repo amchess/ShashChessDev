@@ -357,11 +357,28 @@ bool ShashinManager::isPawnNearPromotion(const Position& rootPos) {
 }
 
 constexpr ShashinPosition getPositionForValue(int i) {
-    return (i <= HIGH_PETROSIAN_MAX)        ? ShashinPosition::HIGH_PETROSIAN
-         : (i <= MIDDLE_HIGH_PETROSIAN_MAX) ? ShashinPosition::MIDDLE_HIGH_PETROSIAN
-         : (i <= MIDDLE_PETROSIAN_MAX)      ? ShashinPosition::MIDDLE_PETROSIAN
-         : (i <= LOW_PETROSIAN_MAX)         ? ShashinPosition::LOW_PETROSIAN
-                                            : ShashinPosition::TAL_CAPABLANCA_PETROSIAN;
+    if (i <= HIGH_PETROSIAN_MAX)
+        return ShashinPosition::HIGH_PETROSIAN;
+    else if (i <= MIDDLE_HIGH_PETROSIAN_MAX)
+        return ShashinPosition::MIDDLE_HIGH_PETROSIAN;
+    else if (i <= MIDDLE_PETROSIAN_MAX)
+        return ShashinPosition::MIDDLE_PETROSIAN;
+    else if (i <= LOW_PETROSIAN_MAX)
+        return ShashinPosition::LOW_PETROSIAN;
+    else if (i <= CAPABLANCA_MAX)
+        return ShashinPosition::CAPABLANCA;
+    else if (i <= CAPABLANCA_TAL_MAX)
+        return ShashinPosition::CAPABLANCA_TAL;
+    else if (i <= LOW_TAL_MAX)
+        return ShashinPosition::LOW_TAL;
+    else if (i <= MIDDLE_LOW_TAL_MAX)
+        return ShashinPosition::MIDDLE_LOW_TAL;
+    else if (i <= MIDDLE_TAL_MAX)
+        return ShashinPosition::MIDDLE_TAL;
+    else if (i <= MIDDLE_HIGH_TAL_MAX)
+        return ShashinPosition::MIDDLE_HIGH_TAL;
+    else
+        return ShashinPosition::HIGH_TAL;
 }
 
 template<std::size_t... Is>
