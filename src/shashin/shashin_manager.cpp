@@ -363,9 +363,13 @@ constexpr ShashinPosition getPositionForValue(int i) {
         return ShashinPosition::MIDDLE_HIGH_PETROSIAN;
     else if (i <= MIDDLE_PETROSIAN_MAX)
         return ShashinPosition::MIDDLE_PETROSIAN;
+    else if (i <= MIDDLE_LOW_PETROSIAN_MAX)
+        return ShashinPosition::MIDDLE_LOW_PETROSIAN;
     else if (i <= LOW_PETROSIAN_MAX)
         return ShashinPosition::LOW_PETROSIAN;
-    else if (i <= CAPABLANCA_MAX)
+    else if (i <= CAPABLANCA_PETROSIAN_MAX)
+        return ShashinPosition::CAPABLANCA_PETROSIAN;
+    else if (i == CAPABLANCA_MAX)
         return ShashinPosition::CAPABLANCA;
     else if (i <= CAPABLANCA_TAL_MAX)
         return ShashinPosition::CAPABLANCA_TAL;
@@ -391,12 +395,10 @@ constexpr auto lookup = makeLookupTable(std::make_index_sequence<101>{});
 ShashinPosition ShashinManager::getShashinRange(Value value, const Position& rootPos) {
     WDLModel::WDL wdl            = WDLModel::get_wdl(value, rootPos);
     int           winProbability = wdl.win + (wdl.draw / 2);
-
-    // Special case for Win Probability = 50
     if (winProbability == CAPABLANCA_MAX)
     {
-        return (wdl.win == 0 && wdl.loss == 0) ? ShashinPosition::CAPABLANCA
-                                               : ShashinPosition::TAL_CAPABLANCA_PETROSIAN;
+        return (wdl.draw == 100) ? ShashinPosition::CAPABLANCA
+                                 : ShashinPosition::TAL_CAPABLANCA_PETROSIAN;
     }
 
     // Use the lookup table for valid indices
@@ -411,19 +413,51 @@ ShashinPosition ShashinManager::getShashinRange(Value value, const Position& roo
 ShashinPosition ShashinManager::getInitialShashinRange(Position&            rootPos,
                                                        Value                staticValue,
                                                        const ShashinConfig& config) {
-    // If all configs are disabled, use standard evaluation
+    // 1. Config disablede → Dynamic evaluaton (Total Chaos included)
     if (!config.highTal && !config.middleTal && !config.lowTal && !config.capablanca
         && !config.highPetrosian && !config.middlePetrosian && !config.lowPetrosian)
     {
         return getShashinRange(staticValue, rootPos);
     }
 
+    // 2. Special cases: fortess → Capablanca
     if (isFortress(rootPos))
     {
         return ShashinPosition::CAPABLANCA;
     }
 
-    // Petrosian logic
+    // 3. Hybrid combinations (max priority)
+    // -----------------------------------------
+    // 3a. Tal-Capablanca (every level Tal + Capablanca)
+    if (config.capablanca && (config.highTal || config.middleTal || config.lowTal))
+    {
+        return ShashinPosition::CAPABLANCA_TAL;
+    }
+
+    // 3b. Petrosian-Capablanca (every level Petrosian + Capablanca)
+    if (config.capablanca
+        && (config.highPetrosian || config.middlePetrosian || config.lowPetrosian))
+    {
+        return ShashinPosition::CAPABLANCA_PETROSIAN;
+    }
+
+    // 4. TAL (High → Middle → Low)
+    // -------------------------------------------
+    if (config.highTal)
+    {
+        return config.middleTal ? ShashinPosition::MIDDLE_HIGH_TAL : ShashinPosition::HIGH_TAL;
+    }
+    if (config.middleTal)
+    {
+        return config.lowTal ? ShashinPosition::MIDDLE_LOW_TAL : ShashinPosition::MIDDLE_TAL;
+    }
+    if (config.lowTal)
+    {
+        return ShashinPosition::LOW_TAL;
+    }
+
+    // 5. PETROSIAN (High → Middle → Low)
+    // ------------------------------------------------
     if (config.highPetrosian)
     {
         return config.middlePetrosian ? ShashinPosition::MIDDLE_HIGH_PETROSIAN
@@ -436,31 +470,17 @@ ShashinPosition ShashinManager::getInitialShashinRange(Position&            root
     }
     if (config.lowPetrosian)
     {
-        return config.capablanca ? ShashinPosition::CAPABLANCA_PETROSIAN
-                                 : ShashinPosition::LOW_PETROSIAN;
+        return ShashinPosition::LOW_PETROSIAN;
     }
 
-    // Capablanca logic
+    // 6. Capablanca (last option)
     if (config.capablanca)
     {
         return ShashinPosition::CAPABLANCA;
     }
 
-    // Tal logic
-    if (config.highTal)
-    {
-        return config.middleTal ? ShashinPosition::MIDDLE_HIGH_TAL : ShashinPosition::HIGH_TAL;
-    }
-    if (config.middleTal)
-    {
-        return config.lowTal ? ShashinPosition::MIDDLE_LOW_TAL : ShashinPosition::MIDDLE_TAL;
-    }
-    if (config.lowTal)
-    {
-        return config.capablanca ? ShashinPosition::CAPABLANCA_TAL : ShashinPosition::LOW_TAL;
-    }
-
-    return getShashinRange(staticValue, rootPos);
+    // 7. Default: Total Chaos (unmanaged combinations)
+    return ShashinPosition::TAL_CAPABLANCA_PETROSIAN;
 }
 
 }  // namespace ShashChess
