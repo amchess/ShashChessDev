@@ -57,28 +57,35 @@ namespace Shashin {
      return (pos.pieces(PAWN) & fileBB) == 0;
  }
  [[nodiscard]]
- inline int see(const Position& pos,Move m) noexcept {
+ inline int see(const Position& pos, Move m) noexcept {
      const Square from = m.from_sq();
-     const Square to   = m.to_sq();
+     const Square to = m.to_sq();
      const Piece captured = pos.piece_on(to);
      const Piece attacker = pos.piece_on(from);
-     int         balance  = PieceValue[captured] - PieceValue[attacker];
+     
+     int balance = PieceValue[captured];
+     
+     // Aggiungi il valore della promozione se presente
+     if (m.type_of() == PROMOTION) {                 
+         balance += PieceValue[make_piece(pos.side_to_move(), m.promotion_type())]; 
+     }
+     
+     balance -= PieceValue[attacker];
      if (balance <= 0)
          return balance;
-     Bitboard occ       = pos.pieces() ^ from;
-     Color    side      = ~pos.side_to_move();
+     
+     Bitboard occ = pos.pieces() ^ from;
+     Color side = ~pos.side_to_move();
      Bitboard attackers = pos.attackers_to(to, occ);
-     while (true)
-     {
+     
+     while (true) {
          Bitboard candidates = attackers & pos.pieces(side);
-         if (!candidates)
-             break;
+         if (!candidates) break;
+         
          PieceType pt;
-         for (pt = PAWN; pt <= KING; ++pt)
-         {
+         for (pt = PAWN; pt <= KING; ++pt) {
              Bitboard subset = candidates & pos.pieces(pt);
-             if (subset)
-             {
+             if (subset) {
                  Square s = pop_lsb(subset);
                  occ ^= s;
                  balance = -balance - PieceValue[pt];
@@ -86,10 +93,11 @@ namespace Shashin {
                  break;
              }
          }
-         if (balance <= 0 && side == pos.side_to_move())
-             break;
+         
+         if (balance <= 0 && side == pos.side_to_move()) break;
          side = ~side;
      }
+     
      return std::max(balance, -PieceValue[attacker]);
  }
  [[nodiscard]]
