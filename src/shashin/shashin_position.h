@@ -56,64 +56,34 @@ namespace Shashin {
      const Bitboard fileBB = file_bb(file_of(s));
      return (pos.pieces(PAWN) & fileBB) == 0;
  }
- [[nodiscard]]
- inline int see(const Position& pos, Move m) noexcept {
-     const Square from = m.from_sq();
-     const Square to = m.to_sq();
-     const Piece captured = pos.piece_on(to);
-     const Piece attacker = pos.piece_on(from);
-     
-     int balance = PieceValue[captured];
-     
-     // Aggiungi il valore della promozione se presente
-     if (m.type_of() == PROMOTION) {                 
-         balance += PieceValue[make_piece(pos.side_to_move(), m.promotion_type())]; 
-     }
-     
-     balance -= PieceValue[attacker];
-     if (balance <= 0)
-         return balance;
-     
-     Bitboard occ = pos.pieces() ^ from;
-     Color side = ~pos.side_to_move();
-     Bitboard attackers = pos.attackers_to(to, occ);
-     
-     while (true) {
-         Bitboard candidates = attackers & pos.pieces(side);
-         if (!candidates) break;
-         
-         PieceType pt;
-         for (pt = PAWN; pt <= KING; ++pt) {
-             Bitboard subset = candidates & pos.pieces(pt);
-             if (subset) {
-                 Square s = pop_lsb(subset);
-                 occ ^= s;
-                 balance = -balance - PieceValue[pt];
-                 attackers |= attacks_bb(pt, s, occ) & pos.pieces();
-                 break;
-             }
-         }
-         
-         if (balance <= 0 && side == pos.side_to_move()) break;
-         side = ~side;
-     }
-     
-     return std::max(balance, -PieceValue[attacker]);
- }
+
  [[nodiscard]]
  inline Bitboard attacking_pieces(const Position& pos,Color c, Square s) {
      Bitboard atks = pos.attackers_to(s);
      return atks ? (atks & pos.pieces(c)) : 0ULL;
  }
  [[nodiscard]]
- inline bool is_sacrifice(const Position& pos, Move m) noexcept {
-     constexpr int SACRIFICE_THRESHOLD = -50;
-     return see(pos,m) <= SACRIFICE_THRESHOLD;
- }
- [[nodiscard]]
  inline bool is_ok_piece(Piece p)  {
      return p >= W_PAWN && p <= B_KING;
  }
+[[nodiscard]]
+inline bool is_sacrifice(const Position& pos, Move m) noexcept {
+    const Square from = m.from_sq();
+    const Square to = m.to_sq();
+    
+    const Piece moved = pos.piece_on(from);
+    const Piece captured = pos.piece_on(to);
+
+    if (type_of(moved) == KING || captured == NO_PIECE)
+        return false;
+    Value moveValue = PieceValue[type_of(moved)];
+    if (m.type_of() == PROMOTION) {  // Usa type_of() invece di type()
+        moveValue += PieceValue[m.promotion_type()] - PieceValue[PAWN];
+    }
+
+    return moveValue > PieceValue[type_of(captured)];
+}
+
  //For fortresses by Shashin begin
  [[nodiscard]]
  inline Bitboard pawn_attacks(Color c, Square s) {
@@ -144,15 +114,40 @@ namespace Shashin {
      MoveList<LEGAL> moves(pos);
      for (const auto& m : moves)
      {
-         if (!pos.capture_stage(m) && !pos.gives_check(m) && see(pos,m) >= 0)
-             return true;
+         if (!pos.capture_stage(m) && !pos.gives_check(m)) 
+         {
+             const Square to = m.to_sq();
+             Piece moved = pos.moved_piece(m);
+             Value movedValue = PieceValue[type_of(moved)];
+ 
+             // Gestione promozioni
+             if (m.type_of() == PROMOTION) 
+                 movedValue = PieceValue[m.promotion_type()]; // Sovrascrive il valore del pedone
+ 
+             Bitboard attackers = pos.attackers_to(to, ~pos.side_to_move());
+             Value minOpponentAttacker = VALUE_INFINITE;
+ 
+             // Trova il pezzo attaccante avversario di valore minimo
+             while (attackers) {
+                 Square s = pop_lsb(attackers);
+                 Piece attacker = pos.piece_on(s);
+                 minOpponentAttacker = std::min(minOpponentAttacker, 
+                                               PieceValue[type_of(attacker)]);
+             }
+ 
+             // Condizioni di sicurezza aggiornate:
+             const bool isSafe = 
+                 (minOpponentAttacker > movedValue) ||       // Nessun attacco redditizio
+                 (!attackers && m.type_of() != PROMOTION) ||  // Mossa normale non attaccata
+                 (m.type_of() == PROMOTION && !attackers);    // Promozione non attaccata (qualsiasi tipo)
+ 
+             if (isSafe) 
+                 return true;
+         }
      }
      return false;
  }
- [[nodiscard]]
- inline bool is_tempo_loss(const Position& pos,Move m) {
-     return see(pos,m) < 0;
- }
+
  [[nodiscard]]
  inline bool is_king_nearby(const Position& pos, Square sq)  {
      Square kingSq = pos.square<KING>(pos.side_to_move());
