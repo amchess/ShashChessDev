@@ -2,7 +2,7 @@
 #define SHASH_CHESS_SHASHIN_POSITION_H
 
 #include "../position.h"
-
+#include "shashin_params.h"
 namespace ShashChess {
 namespace Shashin {
     [[nodiscard]] 

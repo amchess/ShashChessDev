@@ -2,6 +2,7 @@
 #define SHASHIN_MANAGER_H
 
 #include "shashin_position.h"
+#include "shashin_params.h"
 #include "../types.h"
 #include "../movegen.h"
 #include "../movepick.h"
@@ -26,7 +27,7 @@ struct Stack;
 
 class ShashinManager {
    public:
-    explicit ShashinManager();
+    explicit ShashinManager(const ShashinParams& params = {});
 
     // Core interface
     ShashinPosition         getResilientShashinRange(ShashinPosition range, int depth = 0);
@@ -94,40 +95,41 @@ class ShashinManager {
 
     // Inline methods for performance
     template<ShashinPosition P>
-    __attribute__((always_inline)) bool inRange() const {
+    inline __attribute__((always_inline)) bool inRange() const {
         return state.dynamicBase.currentRange == P;
     }
 
-    inline bool isStrategical() const {
+    inline __attribute__((always_inline)) bool isStrategical() const {
         return inRange<ShashinPosition::CAPABLANCA>() && !state.staticState.kingDanger;
     }
 
-    inline bool isPassive() const {
+    inline __attribute__((always_inline)) bool isPassive() const {
         return anyOf(state.dynamicBase.currentRange, ShashinPosition::MIDDLE_HIGH_PETROSIAN,
                           ShashinPosition::HIGH_PETROSIAN);
     }
 
-    inline bool isTactical() const {
+    inline __attribute__((always_inline)) bool isTactical() const {
         return isTal() || isPetrosian() || state.staticState.kingDanger;
     }
 
-    inline bool isPetrosian() const {
+    inline __attribute__((always_inline)) bool isPetrosian() const {
         return isShashinStyle({ShashinPosition::LOW_PETROSIAN, ShashinPosition::MIDDLE_PETROSIAN,
                                ShashinPosition::HIGH_PETROSIAN});
     }
 
-    inline bool isHighPieceDensity() const { return state.staticState.allPiecesCount > 14; }
+    inline __attribute__((always_inline)) bool isHighPieceDensity() const { return state.staticState.allPiecesCount > 14; }
 
-    inline bool isAggressive() const {
+    inline __attribute__((always_inline)) bool isAggressive() const {
         return anyOf(state.dynamicBase.currentRange, ShashinPosition::MIDDLE_LOW_TAL,
                           ShashinPosition::MIDDLE_TAL);
     }
 
-    inline bool isInRange(ShashinPosition position) const {
+    inline __attribute__((always_inline)) bool isInRange(ShashinPosition position) const {
         return state.dynamicBase.currentRange == position;
     }
 
    private:
+   ShashinParams        params;
    struct PositionCache {
     uint64_t posHash = 0;
     bool fortress = false;

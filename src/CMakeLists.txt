@@ -42,7 +42,7 @@ set(HEADERS
         livebook/analysis/Cp.h livebook/analysis/Analysis.h livebook/analysis/Wdl.h livebook/analysis/Mate.h
         livebook/LichessLivebook.h livebook/LichessMaster.h livebook/LichessPlayer.h livebook/LichessUsers.h livebook/Proxy.h
         livebook/LichessGames.h  livebook/ChessDBContributor.h
-        livebook/json/json.hpp  shashin/shashin_manager.h shashin/moveconfig.h shashin/shashin_types.h shashin/shashin_position.h
+        livebook/json/json.hpp  shashin/shashin_manager.h shashin/moveconfig.h shashin/shashin_types.h shashin/shashin_position.h shashin/shashin_params.h
 )
 
 # Set default values for options

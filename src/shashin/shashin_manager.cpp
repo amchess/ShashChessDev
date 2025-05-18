@@ -6,20 +6,15 @@
 
 namespace ShashChess {
 using namespace ShashChess::Shashin;
-ShashinManager::ShashinManager() {}
+ShashinManager::ShashinManager(const ShashinParams& params) :
+    params(params) {}
 
 ShashinPosition ShashinManager::getResilientShashinRange(ShashinPosition range, int depth) {
-    constexpr int HIGH_MOBILITY_MOVES  = 30;
-    constexpr int MID_MOBILITY_MOVES   = 15;
-    constexpr int HIGH_DEPTH_LIMIT     = 12;
-    constexpr int MID_DEPTH_LIMIT      = 8;
-    constexpr int LOW_DEPTH_LIMIT      = 5;
-    constexpr int ADVANCED_DEPTH_LIMIT = 20;
 
-    int mvCount          = state.staticState.legalMoveCount;
-    int dynamicThreshold = (mvCount > HIGH_MOBILITY_MOVES) ? HIGH_DEPTH_LIMIT
-                         : (mvCount > MID_MOBILITY_MOVES)  ? MID_DEPTH_LIMIT
-                                                           : LOW_DEPTH_LIMIT;
+    size_t mvCount          = state.staticState.legalMoveCount;
+    int    dynamicThreshold = (mvCount > params.highMobilityMoves) ? params.highDepthLimit
+                            : (mvCount > params.lowMobilityMoves)  ? params.midDepthLimit
+                                                                   : params.lowDepthLimit;
 
     bool isTalRange = (range == ShashinPosition::CAPABLANCA_TAL
                        || range == ShashinPosition::TAL_CAPABLANCA_PETROSIAN);
@@ -31,7 +26,8 @@ ShashinPosition ShashinManager::getResilientShashinRange(ShashinPosition range, 
         if (range == ShashinPosition::CAPABLANCA_PETROSIAN)
             return ShashinPosition::CAPABLANCA;
     }
-    else if (depth <= ADVANCED_DEPTH_LIMIT && range == ShashinPosition::TAL_CAPABLANCA_PETROSIAN)
+    else if (depth <= params.advancedDepthLimit
+             && range == ShashinPosition::TAL_CAPABLANCA_PETROSIAN)
     {
         return ShashinPosition::CAPABLANCA;
     }
@@ -43,7 +39,8 @@ __attribute__((hot)) bool ShashinManager::useMoveGenAndStep17CrystalLogic() cons
 
     // Strategical with high material and many moves
     if (__builtin_expect((state.dynamicBase.currentRange == ShashinPosition::CAPABLANCA)
-                           && !s.kingDanger && s.highMaterial && s.legalMoveCount >= 30,
+                           && !s.kingDanger && s.highMaterial
+                           && s.legalMoveCount >= params.highMobilityMoves,
                          0))
     {
         return true;
@@ -52,7 +49,7 @@ __attribute__((hot)) bool ShashinManager::useMoveGenAndStep17CrystalLogic() cons
     // Tal logic: attacking with low complexity and king danger
     if (__builtin_expect((state.dynamicBase.currentRange >= ShashinPosition::MIDDLE_LOW_TAL
                           && state.dynamicBase.currentRange <= ShashinPosition::MIDDLE_TAL)
-                           && s.legalMoveCount < 30 && s.kingDanger,
+                           && s.legalMoveCount < params.highMobilityMoves && s.kingDanger,
                          1))
     {
         return true;
@@ -65,21 +62,23 @@ bool ShashinManager::useCrystalFutility() const {
     const auto& st = state.staticState;
     const auto& dd = state.dynamicDerived;
     // Applichiamo Crystal solo in posizioni tattiche “pulite”:
-    return dd.isTacticalReactive && !st.kingExposed && !st.isSacrificial && st.legalMoveCount <= 20;
+    return dd.isTacticalReactive && !st.kingExposed && !st.isSacrificial
+        && st.legalMoveCount <= params.advancedDepthLimit;
 }
 
 bool ShashinManager::allowCrystalProbCut() const {
-    const auto& s              = state.staticState;
-    const auto& d              = state.dynamicDerived;
-    bool        highTalent     = d.isHighTal && s.legalMoveCount < 30 && !s.kingExposed;
-    bool        reactiveTactic = d.isTacticalReactive && !s.kingExposed && s.legalMoveCount < 25;
+    const auto& s   = state.staticState;
+    const auto& d   = state.dynamicDerived;
+    bool highTalent = d.isHighTal && s.legalMoveCount < params.highMobilityMoves && !s.kingExposed;
+    bool reactiveTactic = d.isTacticalReactive && !s.kingExposed && s.legalMoveCount < 25;
     return highTalent || reactiveTactic;
 }
 
 bool ShashinManager::allowStockfishProbCut() const {
     const auto& s     = state.staticState;
     int         depth = state.dynamicBase.currentDepth;
-    return (s.legalMoveCount < 40 && depth <= 6) || (s.legalMoveCount < 60 && depth <= 8);
+    return (s.legalMoveCount < 40 && depth <= 6)
+        || (s.legalMoveCount < 60 && depth <= params.midDepthLimit);
 }
 
 bool ShashinManager::isTacticalReactive() const {
@@ -105,14 +104,14 @@ bool ShashinManager::isTillCategory(ShashinPosition lowerBound, ShashinPosition 
 bool ShashinManager::useNullMoveByShashinForStockfish() const {
     const auto& staticState = state.staticState;
     return (!isInRange(ShashinPosition::HIGH_TAL) && (!isAggressive() || !staticState.highMaterial)
-            && (!isPassive() || staticState.legalMoveCount >= 15));
+            && (!isPassive() || staticState.legalMoveCount >= params.lowMobilityMoves));
 }
 
 bool ShashinManager::isSimpleIntermediate() const {
     const auto& staticState = state.staticState;
     return isTillCategory(ShashinPosition::MIDDLE_PETROSIAN, ShashinPosition::MIDDLE_TAL)
-        && staticState.legalMoveCount <= 20 && !staticState.kingDanger && !isHighPieceDensity()
-        && state.dynamicBase.currentDepth < 8;
+        && staticState.legalMoveCount <= params.midMobilityMoves && !staticState.kingDanger
+        && !isHighPieceDensity() && state.dynamicBase.currentDepth < params.midDepthLimit;
 }
 
 bool ShashinManager::isMCTSApplicableByValue() const {
@@ -125,7 +124,7 @@ bool ShashinManager::isMCTSExplorationApplicable() const {
     size_t legalMoveCount = state.staticState.legalMoveCount;
     return ((isInRange(ShashinPosition::MIDDLE_HIGH_PETROSIAN)
              || isInRange(ShashinPosition::HIGH_TAL))
-            && legalMoveCount >= 30)
+            && legalMoveCount >= params.highMobilityMoves)
         || isInRange(ShashinPosition::CAPABLANCA) || isPetrosian();
 }
 
@@ -146,7 +145,7 @@ bool ShashinManager::isTacticalReduction() const {
 
 bool ShashinManager::avoidStep10() const {
     const auto& staticState = state.staticState;
-    return (isPassive() && staticState.legalMoveCount < 20) || isStrategical()
+    return (isPassive() && staticState.legalMoveCount < params.midMobilityMoves) || isStrategical()
         || (isAggressive() && staticState.kingDanger);
 }
 
@@ -241,8 +240,8 @@ bool ShashinManager::isFortress(const Position& pos) {
     currentPosHash        = newHash;
 
     // Logica di determinazione della fortezza
-    constexpr int MinPly         = 28;
-    constexpr int DefenderPieces = 2;
+    int MinPly         = params.minPlyFortress;
+    int DefenderPieces = params.defenderPieces;
 
     const int   gameStage  = pos.game_ply();
     const Color us         = pos.side_to_move();
@@ -266,8 +265,9 @@ bool ShashinManager::isFortress(const Position& pos) {
         const Bitboard ourPieces = pos.pieces(us);
         const Bitboard enemyMobility =
           pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<BISHOP>(~us) | pos.attacks_by<ROOK>(~us);
-        const int overlapping  = popcount(enemyMobility & ourPieces);
-        positionCache.fortress = (overlapping < 3) && (popcount(enemyMobility) < 12);
+        const int overlapping = popcount(enemyMobility & ourPieces);
+        positionCache.fortress =
+          (overlapping < 3) && (popcount(enemyMobility) < params.highDepthLimit);
     }
 
     return positionCache.fortress;
