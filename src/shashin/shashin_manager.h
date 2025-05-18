@@ -103,7 +103,7 @@ class ShashinManager {
     }
 
     inline bool isPassive() const {
-        return isInRanges(state.dynamicBase.currentRange, ShashinPosition::MIDDLE_HIGH_PETROSIAN,
+        return anyOf(state.dynamicBase.currentRange, ShashinPosition::MIDDLE_HIGH_PETROSIAN,
                           ShashinPosition::HIGH_PETROSIAN);
     }
 
@@ -119,7 +119,7 @@ class ShashinManager {
     inline bool isHighPieceDensity() const { return state.staticState.allPiecesCount > 14; }
 
     inline bool isAggressive() const {
-        return isInRanges(state.dynamicBase.currentRange, ShashinPosition::MIDDLE_LOW_TAL,
+        return anyOf(state.dynamicBase.currentRange, ShashinPosition::MIDDLE_LOW_TAL,
                           ShashinPosition::MIDDLE_TAL);
     }
 

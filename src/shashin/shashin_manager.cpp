@@ -83,12 +83,12 @@ bool ShashinManager::allowStockfishProbCut() const {
 }
 
 bool ShashinManager::isTacticalReactive() const {
-    return isInRanges(state.dynamicBase.currentRange, ShashinPosition::LOW_PETROSIAN);
+    return anyOf(state.dynamicBase.currentRange, ShashinPosition::LOW_PETROSIAN);
 }
 
 bool ShashinManager::isTacticalDefensive() const {
-    return isInRanges(state.dynamicBase.currentRange, ShashinPosition::MIDDLE_LOW_PETROSIAN,
-                      ShashinPosition::MIDDLE_PETROSIAN);
+    return anyOf(state.dynamicBase.currentRange, ShashinPosition::MIDDLE_LOW_PETROSIAN,
+                 ShashinPosition::MIDDLE_PETROSIAN);
 }
 
 bool ShashinManager::isShashinStyle(std::initializer_list<ShashinPosition> positions) const {
@@ -98,7 +98,7 @@ bool ShashinManager::isShashinStyle(std::initializer_list<ShashinPosition> posit
 }
 
 bool ShashinManager::isTillCategory(ShashinPosition lowerBound, ShashinPosition upperBound) const {
-    return !isInRanges(state.dynamicBase.currentRange, lowerBound, upperBound);
+    return !anyOf(state.dynamicBase.currentRange, lowerBound, upperBound);
 }
 
 
@@ -155,7 +155,7 @@ bool ShashinManager::isTalTacticalHighMiddle() const {
 }
 
 bool ShashinManager::isTacticalInitiative() const {
-    return isInRanges(state.dynamicBase.currentRange, ShashinPosition::LOW_TAL);
+    return anyOf(state.dynamicBase.currentRange, ShashinPosition::LOW_TAL);
 }
 
 bool ShashinManager::isTal() const {

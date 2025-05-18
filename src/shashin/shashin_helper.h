@@ -24,7 +24,8 @@ using are_all_shashin = std::conjunction<std::is_same<Ts, ShashinPosition>...>;
 // =============================================
 
 template<typename... Args>
-constexpr bool isInRanges(ShashinPosition value, Args... ranges) {
+__attribute__((always_inline))
+constexpr bool anyOf(ShashinPosition value, Args... ranges) {
     static_assert((std::is_same_v<ShashinPosition, Args> && ...),
                   "All ranges must be ShashinPosition");
 
@@ -55,24 +56,6 @@ inline constexpr ShashinPosition& operator|=(ShashinPosition& lhs, ShashinPositi
 inline constexpr ShashinPosition& operator&=(ShashinPosition& lhs, ShashinPosition rhs) noexcept {
     lhs = lhs & rhs;
     return lhs;
-}
-
-// =============================================
-// Advanced Pattern Matching
-// =============================================
-
-template<typename Container>
-constexpr bool matchesAnyPattern(ShashinPosition value, const Container& patterns) noexcept {
-    using PatternT = typename Container::value_type;
-    static_assert(std::is_same_v<PatternT, ShashinPosition>,
-                  "Container must hold ShashinPosition values");
-
-    for (auto pattern : patterns)
-    {
-        if (to_underlying(value & pattern) != 0)
-            return true;
-    }
-    return false;
 }
 
 }  // namespace ShashChess

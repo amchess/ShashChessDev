@@ -12,48 +12,73 @@ namespace Shashin {
  //from shashin begin
  [[nodiscard]]
  inline bool king_danger(const Position& pos, Color c) noexcept {
-     const Square ksq = pos.square<KING>(c);
-     const Color    opponent  = ~c;
-     const Bitboard attackers = pos.attackers_to(ksq) & pos.pieces(opponent);
-     if (!attackers)
+     const Square ksq       = pos.square<KING>(c);
+     const Bitboard attackers = pos.attackers_to(ksq) & pos.pieces(~c);
+     if (!attackers) 
          return false;
-     const Bitboard strongAttackers = pos.pieces(QUEEN, ROOK);
-     const Bitboard weakAttackers   = pos.pieces(BISHOP, KNIGHT, PAWN);
-     const int strongCount = popcount(attackers & strongAttackers);
-     const int weakCount   = popcount(attackers & weakAttackers);
      constexpr int STRONG_WEIGHT    = 3;
      constexpr int WEAK_WEIGHT      = 1;
      constexpr int DANGER_THRESHOLD = 5;
-     return (strongCount * STRONG_WEIGHT + weakCount * WEAK_WEIGHT) > DANGER_THRESHOLD;
- }
- [[nodiscard]]
- inline int king_safety_score(const Position& pos,Color c) noexcept {
-     const Square   ksq           = pos.square<KING>(c);
-     const Bitboard attackers     = pos.attackers_to(ksq) & pos.pieces(~c);
-     const int      attackerCount = popcount(attackers);
-     if (attackerCount == 0)
-     {
-         const Bitboard ourPawns = pos.pieces(c, PAWN);
-         const Bitboard pawnShield =
-           (c == WHITE ? pawn_attacks_bb<WHITE>(ourPawns) : pawn_attacks_bb<BLACK>(ourPawns))
-           & ksq;
-
-         if (popcount(pawnShield) >= 3)
-             return 100;
+     int sum = 0;
+     Bitboard tmp = attackers;
+     while (tmp) {
+         Square s = pop_lsb(tmp);
+         Piece  p = pos.piece_on(s);
+         PieceType pt = type_of(p);
+         sum += (pt == QUEEN || pt == ROOK) ? STRONG_WEIGHT : WEAK_WEIGHT;
+         if (sum > DANGER_THRESHOLD)
+             return true;
      }
-     const File     kf            = file_of(ksq);
-     const Bitboard adjacentFiles = (shift<EAST>(file_bb(kf)) | shift<WEST>(file_bb(kf)));
-     const Bitboard pawnShield    = pos.pieces(c, PAWN) & (adjacentFiles | file_bb(kf));
-     const Square centerSq       = make_square(FILE_E, c == WHITE ? RANK_4 : RANK_5);
-     const int    centralization = 14 - distance(ksq, centerSq) * 2;
-     constexpr int ATTACKER_PENALTY = 12;
-     constexpr int SHIELD_BONUS     = 15;
-     constexpr int CENTER_BONUS     = 8;
-     int score = popcount(pawnShield) * SHIELD_BONUS - attackerCount * ATTACKER_PENALTY
-               + centralization * CENTER_BONUS;
-
-     return std::clamp(score, -150, 100);
+     return false;
  }
+ 
+ 
+ [[nodiscard]]
+inline int king_safety_score(const Position& pos, Color c) noexcept {
+    const Square   ksq           = pos.square<KING>(c);
+    const Bitboard attackers     = pos.attackers_to(ksq) & pos.pieces(~c);
+    const int      attackerCount = popcount(attackers);
+
+    // Caso senza attaccanti: rapido controllo shield pedonale
+    if (attackerCount == 0) {
+        const Bitboard ourPawns    = pos.pieces(c, PAWN);
+        const Bitboard pawnShield0 = 
+            ((c == WHITE ? pawn_attacks_bb<WHITE>(ourPawns) 
+                        : pawn_attacks_bb<BLACK>(ourPawns))
+             & ksq);
+        if (popcount(pawnShield0) >= 3)
+            return 100;
+    }
+
+    // Calcolo del pawn shield sui file adiacenti
+    const File     kf            = file_of(ksq);
+    const Bitboard adjacentFiles = shift<EAST>(file_bb(kf)) | shift<WEST>(file_bb(kf));
+    const Bitboard pawnShield    = pos.pieces(c, PAWN) & (adjacentFiles | file_bb(kf));
+
+    // Early-exit su shield pedonale
+    int shieldCount = 0;
+    Bitboard tmp    = pawnShield;
+    while (tmp && shieldCount < 3) {
+        pop_lsb(tmp);
+        ++shieldCount;
+    }
+
+    // Centralizzazione
+    const Square centerSq       = make_square(FILE_E, c == WHITE ? RANK_4 : RANK_5);
+    const int    centralization = 14 - distance(ksq, centerSq) * 2;
+
+    // Costanti per il punteggio
+    constexpr int ATTACKER_PENALTY = 12;
+    constexpr int SHIELD_BONUS     = 15;
+    constexpr int CENTER_BONUS     = 8;
+
+    int score = shieldCount * SHIELD_BONUS
+              - attackerCount * ATTACKER_PENALTY
+              + centralization * CENTER_BONUS;
+
+    return std::clamp(score, -150, 100);
+}
+
  [[nodiscard]]
  inline bool is_open_file(const Position& pos, Square s) noexcept {
      const Bitboard fileBB = file_bb(file_of(s));
