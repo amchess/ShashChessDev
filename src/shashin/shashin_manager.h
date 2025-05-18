@@ -128,19 +128,22 @@ class ShashinManager {
     }
 
    private:
+   struct PositionCache {
+    uint64_t posHash = 0;
+    bool fortress = false;
+    bool pawnNearPromo = false;
+    bool sacrificial = false;
+    };    
     RootShashinState state;
-    mutable bool     fortressCached          = false;
-    mutable bool     fortressResult          = false;
-    mutable bool     pawnNearPromoCacheValid = false;
-    mutable bool     pawnNearPromoResult     = false;
-    mutable bool     sacrificialCacheValid   = false;
-    mutable bool     sacrificialResult       = false;
-
+    PositionCache positionCache; 
+    uint64_t currentPosHash = 0;
+    // Helper to calculate the position hash
+    uint64_t computePositionHash(const Position& pos) {
+        return Shashin::shashin_position_hash(pos);
+    }
     // Helper to invalidate caches when position changes
     void invalidateCaches() {
-        fortressCached          = false;
-        pawnNearPromoCacheValid = false;
-        sacrificialCacheValid   = false;
+        currentPosHash = 0; // It invalidates all at the position change
     }
 };
 

@@ -5,7 +5,10 @@
 
 namespace ShashChess {
 namespace Shashin {
-
+    [[nodiscard]] 
+    inline uint64_t shashin_position_hash(const Position& pos) noexcept {
+        return pos.key() ^ pos.material_key();
+    }
  //from shashin begin
  [[nodiscard]]
  inline bool king_danger(const Position& pos, Color c) noexcept {
