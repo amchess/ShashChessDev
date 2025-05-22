@@ -273,41 +273,47 @@ bool ShashinManager::isFortress(const Position& pos) {
     return positionCache.fortress;
 }
 
-Value ShashinManager::static_value(
-  const Eval::NNUE::Networks&   networks,
-  Eval::NNUE::AccumulatorStack  accumulators,  // copiato per valore!
-  Eval::NNUE::AccumulatorCaches refreshTable,
-  Position&                     rootPos,
-  Search::Stack*                ss,
-  Value                         optimism) {
-
-    MoveList<LEGAL> legalMoves(rootPos);
-
-    if (legalMoves.size() == 0)
-        return rootPos.checkers() ? VALUE_MATE : VALUE_DRAW;
-
+Value ShashinManager::static_value(const Eval::NNUE::Networks&   networks,
+                                   Eval::NNUE::AccumulatorStack& accumulators,
+                                   Eval::NNUE::AccumulatorCaches refreshTable,
+                                   Position&                     rootPos,
+                                   Search::Stack*                ss,
+                                   Value                         optimism) {
+    // 1. Gestione casi terminali e posizioni quiescenti
     if (ss->ply >= MAX_PLY || rootPos.is_draw(ss->ply))
         return VALUE_DRAW;
 
+    MoveList<LEGAL> legalMoves(rootPos);
+    if (legalMoves.size() == 0)
+        return rootPos.checkers() ? VALUE_MATE : VALUE_DRAW;
+
+    // 2. Valutazione NNUE diretta se non sotto scacco
     if (!rootPos.checkers())
         return Eval::evaluate(networks, rootPos, accumulators, refreshTable, optimism);
 
+    // 3. Ricorsione su tutte le mosse legali (evasioni obbligatorie)
     Value bestValue = -VALUE_INFINITE;
-
-    for (auto move : legalMoves)
+    for (const auto& move : legalMoves)
     {
         StateInfo  st;
         DirtyPiece dp = rootPos.do_move(move, st, rootPos.gives_check(move), nullptr);
         accumulators.push(dp);
+
         Value val = -static_value(networks, accumulators, refreshTable, rootPos, ss + 1, -optimism);
+
         rootPos.undo_move(move);
         accumulators.pop();
-        bestValue = std::max(bestValue, val);
+
+        if (val > bestValue)
+        {
+            bestValue = val;
+            if (bestValue == VALUE_MATE)
+                break;  // Early exit per scacco matto
+        }
     }
 
     return bestValue;
 }
-
 
 void ShashinManager::setStaticState(const Position& rootPos) {
     StaticState& staticState = state.staticState;
