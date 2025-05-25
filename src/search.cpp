@@ -39,7 +39,6 @@ Local assessments: Penalize or reward based on king's security, tactical complex
 #include <cstdlib>
 //from shashchess
 #include <iostream>
-#include <limits>
 #include <list>
 #include <ratio>
 #include <string>
@@ -100,23 +99,6 @@ namespace {
 // so changing them or adding conditions that are similar requires
 // tests at these types of time controls.
 
-// Futility margin
-Value futility_margin(Depth d,
-                      bool  noTtCutNode,
-                      bool  improving,
-                      bool  oppWorsening,
-                      int   statScore,
-                      int   correctionValue) {
-    Value futilityMult       = 105 - 23 * noTtCutNode;
-    Value improvingDeduction = improving * futilityMult * 2;
-    Value worseningDeduction = oppWorsening * futilityMult / 3;
-    Value statScoreAddition  = statScore / 335;
-    Value correctionAddition = correctionValue / 149902;
-
-    return futilityMult * d - improvingDeduction - worseningDeduction + statScoreAddition
-         + correctionAddition;
-}
-
 constexpr int futility_move_count(bool improving, Depth depth) {
     return (3 + depth * depth) / (2 - improving);
 }
@@ -161,29 +143,6 @@ void update_correction_history(const Position& pos,
     if (m.is_ok())
         (*(ss - 2)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()]
           << bonus * 141 / 128;
-}
-
-int risk_tolerance(Value v) {
-    // Returns (some constant of) second derivative of sigmoid.
-    static constexpr auto sigmoid_d2 = [](int x, int y) {
-        return 631760 * x / ((x * x + 3 * y * y) * y);
-    };
-
-    // a and b are the crude approximation of the wdl model.
-    // The win rate is: 1/(1+exp((a-v)/b))
-    // The loss rate is 1/(1+exp((v+a)/b))
-    int a = 340;
-    int b = 122;
-
-    // guard against overflow
-    assert(abs(v) + a <= std::numeric_limits<int>::max() / 644800);
-
-    // The risk utility is therefore d/dv^2 (1/(1+exp(-(v-a)/b)) -1/(1+exp(-(-v-a)/b)))
-    // -115200x/(x^2+3) = -345600(ab) / (a^2+3b^2) (multiplied by some constant) (second degree pade approximant)
-    int winning_risk = sigmoid_d2(v - a, b);
-    int losing_risk  = sigmoid_d2(v + a, b);
-
-    return -(winning_risk + losing_risk) * 32;
 }
 
 // Add a small random component to draw evaluations to avoid 3-fold blindness
@@ -1311,7 +1270,30 @@ Value Search::Worker::search(
         // Partial workaround for the graph history interaction problem
         // For high rule50 counts don't produce transposition table cutoffs.
         if (pos.rule50_count() < 90)
-            return ttData.value;
+        {
+            if (depth >= 8 && ttData.move && pos.pseudo_legal(ttData.move) && pos.legal(ttData.move)
+                && !is_decisive(ttData.value))
+            {
+                do_move(pos, ttData.move, st);
+                Key nextPosKey                             = pos.key();
+                auto [ttHitNext, ttDataNext, ttWriterNext] = tt.probe(nextPosKey);
+                ttDataNext.value =
+                  ttHitNext ? value_from_tt(ttDataNext.value, ss->ply + 1, pos.rule50_count())
+                            : VALUE_NONE;
+                undo_move(pos, ttData.move);
+
+                if (!is_valid(ttDataNext.value))
+                    return ttData.value;
+                if (ttData.value >= beta && -ttDataNext.value >= beta)
+                    return ttData.value;
+                if (ttData.value <= alpha && -ttDataNext.value <= alpha)
+                    return ttData.value;
+            }
+            else
+            {
+                return ttData.value;
+            }
+        }
     }
     // from Kelly begin
     // Step 4Bis. Global Learning Table lookup
@@ -1322,67 +1304,56 @@ Value Search::Worker::search(
     {
         const LearningMove* learningMove = nullptr;
         sibs                             = LD.probeByMaxDepthAndScore(posKey, learningMove);
-        if (learningMove)
+
+        if (learningMove && learningMove->depth > 0)
         {
-            assert(sibs);
+            expTTHit   = true;
+            expTTMove  = learningMove->move;
+            expTTValue = learningMove->score;
 
-            enabledLearningProbe = true;
-            expTTHit             = true;
-            if (!ttData.move)
+            // 1. Integrazione priorità TT/Learning
+            if (!ttData.move.is_ok()
+                || (learningMove->depth > ttData.depth && is_valid(expTTValue)))
             {
-                ttData.move = learningMove->move;
-            }
-
-            if (learningMove->depth >= depth)
-            {
-                expTTMove       = learningMove->move;
-                expTTValue      = learningMove->score;
+                ttData.move     = expTTMove;
+                ttData.value    = expTTValue;
+                ttData.depth    = learningMove->depth;
                 updatedLearning = true;
             }
 
-            if ((learningMove->depth == 0))
-                updatedLearning = false;
-
-            if (updatedLearning && is_valid(expTTValue))
-
-
+            // 2. Gestione alpha/beta con fallback a Stockfish
+            if (updatedLearning)
             {
-                if (expTTValue < alpha)
-                {
-                    disableNMAndPC = true;
-                }
-                if (expTTValue > alpha && expTTValue < beta)
-                {
-                    expectedPVNode = true;
-                    improving      = true;
-                }
+                disableNMAndPC = (expTTValue < alpha);
+                expectedPVNode = (expTTValue > alpha && expTTValue < beta);
+                improving |= expectedPVNode;
             }
-            bool expTTCapture = learningMove->move && pos.capture_stage(expTTMove);
-            // At this point, if excluded, skip straight to step 6, static eval. However,
-            // to save indentation, we list the condition in all code between here and there.
-            // At non-PV nodes we check for an early Global Learning Table cutoff
-            if (!PvNode && !excludedMove && updatedLearning
-                && learningMove->depth > depth - (expTTValue <= beta) && is_valid(expTTValue)
-                && (cutNode == (expTTValue >= beta) || depth > 5))
+
+            // 3. Verifica avanzata allineata a Stockfish
+            if (pos.rule50_count() < 90)
             {
-                // If expTTMove is quiet, update move sorting heuristics on Global learning table hit
-                if (expTTMove && expTTValue >= beta)
+                if (depth >= 8 && expTTMove && pos.pseudo_legal(expTTMove) && pos.legal(expTTMove)
+                    && !is_decisive(expTTValue))
                 {
-                    // Bonus for a quiet ttMove that fails high
-                    if (!expTTCapture)
-                        update_quiet_histories(pos, ss, *this, ttData.move,
-                                               std::min(125 * depth - 77, 1157));
+                    do_move(pos, expTTMove, st);
+                    Key nextPosKey                             = pos.key();
+                    auto [ttHitNext, ttDataNext, ttWriterNext] = tt.probe(nextPosKey);
+                    ttDataNext.value =
+                      ttHitNext ? value_from_tt(ttDataNext.value, ss->ply + 1, pos.rule50_count())
+                                : VALUE_NONE;
+                    undo_move(pos, expTTMove);
 
-                    // Extra penalty for early quiet moves of
-                    // the previous ply
-                    if (prevSq != SQ_NONE && (ss - 1)->moveCount <= 3 && !priorCapture)
-                        update_continuation_histories(ss - 1, pos.piece_on(prevSq), prevSq, -2301);
+                    if (!is_valid(ttDataNext.value))
+                        return expTTValue;
+                    if (expTTValue >= beta && -ttDataNext.value >= beta)
+                        return expTTValue;
+                    if (expTTValue <= alpha && -ttDataNext.value <= alpha)
+                        return expTTValue;
                 }
-
-                // Partial workaround for the graph history interaction problem
-                // For high rule50 counts don't produce transposition table cutoffs.
-                if (pos.rule50_count() < 90)
+                else
+                {
                     return expTTValue;
+                }
             }
         }
     }
@@ -1569,13 +1540,21 @@ Value Search::Worker::search(
     // from shashin-crystal end
     // Step 8. Futility pruning: child node
     // The depth condition is important for mate finding.
-    if (!ss->ttPv && depth < 14
-        && eval
-               - futility_margin(depth, cutNode && !ss->ttHit, improving, opponentWorsening,
-                                 (ss - 1)->statScore, std::abs(correctionValue))
-             >= beta
-        && eval >= beta && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval))
-        return beta + (eval - beta) / 3;
+    {
+        auto futility_margin = [&](Depth d) {
+            Value futilityMult = 93 - 20 * (cutNode && !ss->ttHit);
+
+            return futilityMult * d                      //
+                 - improving * futilityMult * 2          //
+                 - opponentWorsening * futilityMult / 3  //
+                 + (ss - 1)->statScore / 376             //
+                 + std::abs(correctionValue) / 168639;
+        };
+
+        if (!ss->ttPv && depth < 14 && eval - futility_margin(depth) >= beta && eval >= beta
+            && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval))
+            return beta + (eval - beta) / 3;
+    }
 
     // Step 9. Null move search with verification search – Shashin-Crystal version
     // If the position is critical (e.g., exposed King or sacrificial position), reduce null move aggressiveness.
@@ -1703,7 +1682,6 @@ Value Search::Worker::search(
             do_move(pos, move, st);
 
             ss->currentMove = move;
-            ss->isTTMove    = (move == ttData.move);
             ss->continuationHistory =
               &this->continuationHistory[ss->inCheck][true][movedPiece][move.to_sq()];
             ss->continuationCorrectionHistory =
@@ -1734,7 +1712,7 @@ Value Search::Worker::search(
 moves_loop:  // When in check, search starts here
 
     // Step 12. A small Probcut idea
-    probCutBeta = beta + 180 + depth * 20;
+    probCutBeta = beta + 400;
     //from shashin begin
     bool commonProbcut = (ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 4
                       && ttData.value >= probCutBeta && !is_decisive(beta)
@@ -1849,6 +1827,7 @@ moves_loop:  // When in check, search starts here
         }
         else
         {  // end from Crystal-Shashin
+            (ss + 1)->quietMoveStreak = (!capture && !givesCheck) ? (ss->quietMoveStreak + 1) : 0;
             // Calculate new depth for this move
             newDepth = depth - 1;
 
@@ -1907,16 +1886,17 @@ moves_loop:  // When in check, search starts here
                     int seeHist = std::clamp(captHist / 31, -137 * depth, 125 * depth);
                     if (!pos.see_ge(move, -158 * depth - seeHist))
                     {
-                        bool skip = true;
-                        if (depth > 2 && !capture && givesCheck && alpha < 0
-                            && pos.non_pawn_material(us) == PieceValue[movedPiece]
-                            && PieceValue[movedPiece] >= RookValue
-                            && !(PseudoAttacks[KING][pos.square<KING>(us)] & move.from_sq()))
-                            skip = mp.otherPieceTypesMobile(
-                              type_of(movedPiece),
-                              capturesSearched);  // if the opponent captures last mobile piece it might be stalemate
+                        bool mayStalemateTrap =
+                          depth > 2 && givesCheck && alpha < 0
+                          && !capture  // we consider that captures will likely destroy the stalemate configuration
+                          && pos.non_pawn_material(us) == PieceValue[movedPiece]
+                          && PieceValue[movedPiece] >= RookValue
+                          // it can't be stalemate if we moved a piece adjacent to the king
+                          && !(attacks_bb<KING>(pos.square<KING>(us)) & move.from_sq())
+                          && !mp.can_move_king_or_pawn();
 
-                        if (skip)
+                        // avoid pruning sacrifices of our last piece for stalemate
+                        if (!mayStalemateTrap)
                             continue;
                     }
                 }
@@ -1936,9 +1916,8 @@ moves_loop:  // When in check, search starts here
 
                     lmrDepth += history / 3388;
 
-                    Value futilityValue =
-                      ss->staticEval + (bestMove ? 46 : 138) + 117 * lmrDepth
-                      + 102 * (bestValue < ss->staticEval - 127 && ss->staticEval > alpha - 50);
+                    Value futilityValue = ss->staticEval + (bestMove ? 46 : 138) + 117 * lmrDepth
+                                        + 102 * (ss->staticEval > alpha);
 
                     // Futility pruning: parent node
                     // (*Scaler): Generally, more frequent futility pruning
@@ -1961,91 +1940,86 @@ moves_loop:  // When in check, search starts here
             //from Crystal-shashin end
 
             // Step 15. Extensions
-            // We take care to not overdo to avoid search getting stuck.
-            if (ss->ply < thisThread->rootDepth * 2)
-            {
-                // Shashin-Crystal begin
+            // Singular extension search. If all moves but one
+            // fail low on a search of (alpha-s, beta-s), and just one fails high on
+            // (alpha, beta), then that move is singular and should be extended. To
+            // verify this we do a reduced search on the position excluding the ttMove
+            // and if the result is lower than ttValue minus a margin, then we will
+            // extend the ttMove. Recursive singular search is avoided.
 
-                // Special extension for dynamic positions based on Shashin
-                bool gameCycleExtension = gameCycle && extension >= 0 && (ourMove && PvNode);
+            // (*Scaler) Generally, higher singularBeta (i.e closer to ttValue)
+            // and lower extension margins scale well.
+
+            if (!rootNode && move == ttData.move && !excludedMove
+                && depth >= 6 - (thisThread->completedDepth > 27) + ss->ttPv
+                && is_valid(ttData.value) && !is_decisive(ttData.value)
+                && (ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 3)
+            {
+                // Shashin-Crystal: game cycle extension logic
+                bool gameCycleExtension = gameCycle && extension >= 0 && ourMove && PvNode;
 
                 if (gameCycleExtension && dynamicDerived.isHighTal && depth > 12)
-                    extension = std::min(extension + 1, 2);
-                else
                 {
-                    // Singular extension search. If all moves but one
-                    // fail low on a search of (alpha-s, beta-s), and just one fails high on
-                    // (alpha, beta), then that move is singular and should be extended. To
-                    // verify this we do a reduced search on the position excluding the ttMove
-                    // and if the result is lower than ttValue minus a margin, then we will
-                    // extend the ttMove. Recursive singular search is avoided.
-                    // (*Scaler) Generally, higher singularBeta (i.e closer to ttValue)
-                    // and lower extension margins scale well.
-                    // General condition for singular extension
-                    bool commonExtensionCondition =
-                      !rootNode && move == ttData.move && !excludedMove
-                      && depth >= 6 - (thisThread->completedDepth > 27) + ss->ttPv
-                      && is_valid(ttData.value) && !is_decisive(ttData.value)
-                      && (ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 3;
+                    extension = std::min(extension + 1, 2);
+                }
+                else if (!rootNode && move == ttData.move && !excludedMove
+                         && depth >= 6 - (thisThread->completedDepth > 27) + ss->ttPv
+                         && is_valid(ttData.value) && !is_decisive(ttData.value)
+                         && (ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 3)
+                {
+                    Value singularBeta =
+                      ttData.value - (58 + 76 * (ss->ttPv && !PvNode)) * depth / 57;
+                    Depth singularDepth = newDepth / 2;
 
-                    if (commonExtensionCondition)
+                    ss->excludedMove = move;
+                    value = search<NonPV>(pos, ss, singularBeta - 1, singularBeta, singularDepth,
+                                          cutNode);
+                    ss->excludedMove = Move::none();
+
+                    if (value < singularBeta)
                     {
-                        Value singularBeta =
-                          ttData.value - (58 + 76 * (ss->ttPv && !PvNode)) * depth / 57;
-                        Depth singularDepth = newDepth / 2;
+                        int corrValAdj1      = std::abs(correctionValue) / 248400;
+                        int corrValAdj2      = std::abs(correctionValue) / 249757;
+                        int plyDepthAdjust   = (ss->ply * 2 > thisThread->rootDepth * 3);
+                        int shashinBoostBase = std::min(depth * 3, 150);
 
-                        ss->excludedMove = move;
-                        value            = search<NonPV>(pos, ss, singularBeta - 1, singularBeta,
-                                                         singularDepth, cutNode);
-                        ss->excludedMove = Move::none();
+                        int doubleMargin = -4 + 244 * PvNode - 206 * !ttCapture - corrValAdj1
+                                         - 997 * ttMoveHistory / 131072 - plyDepthAdjust * 47
+                                         + (dynamicDerived.isHighTal ? (80 + shashinBoostBase) : 0);
 
-                        if (value < singularBeta)
-                        {
-                            int corrValAdj1  = std::abs(correctionValue) / 248400;
-                            int corrValAdj2  = std::abs(correctionValue) / 249757;
-                            int doubleMargin = -4 + 244 * PvNode - 206 * !ttCapture - corrValAdj1
-                                             - 997 * ttMoveHistory / 131072;
-                            int tripleMargin =
-                              84 + 269 * PvNode - 253 * !ttCapture + 91 * ss->ttPv - corrValAdj2;
+                        int tripleMargin =
+                          84 + 269 * PvNode - 253 * !ttCapture + 91 * ss->ttPv - corrValAdj2
+                          - plyDepthAdjust * 54
+                          + (dynamicDerived.isHighTal ? (110 + shashinBoostBase) : 0);
 
-                            extension = 1 + (value < singularBeta - doubleMargin)
-                                      + (value < singularBeta - tripleMargin);
-                            depth++;
-                        }
+                        extension = 1 + (value < singularBeta - doubleMargin)
+                                  + (value < singularBeta - tripleMargin);
 
-
-                        // Multi-cut to reduce unuseful searches
-                        // Our ttMove is assumed to fail high based on the bound of the TT entry,
-                        // and if after excluding the ttMove with a reduced search we fail high
-                        // over the original beta, we assume this expected cut-node is not
-                        // singular (multiple moves fail high), and we can prune the whole
-                        // subtree by returning a softbound.
-                        else if (value >= beta && !is_decisive(value))
-                        {
-                            return value;
-                        }
-
-                        // Negative extensions for non singular situations
-                        // If other moves failed high over (ttValue - margin) without the
-                        // ttMove on a reduced search, but we cannot do multi-cut because
-                        // (ttValue - margin) is lower than the original beta, we do not know
-                        // if the ttMove is singular or can do a multi-cut, so we reduce the
-                        // ttMove in favor of other moves based on some conditions:
-
-                        // If the ttMove is assumed to fail high over current beta
-                        else if (ttData.value >= beta)
-                        {
-                            extension = -3;
-                        }
-                        // If we are on a cutNode but the ttMove is not assumed to fail high
-                        // over current beta
-                        else if (cutNode)
-                        {
-                            extension = -2;
-                        }
+                        depth += (dynamicDerived.isAggressive && depth < 24) ? 2 : 1;
                     }
+                    else if (value >= beta && !is_decisive(value))
+                    {
+                        if (dynamicDerived.isTacticalReactive)
+                            return value - (PvNode ? 30 : 50);  // PvNode meno aggressivo
+                        return value;
+                    }
+                    else if (ttData.value >= beta)
+                    {
+                        bool lowMobility = MoveList<LEGAL>(pos).size() < 15;
+                        extension        = (dynamicDerived.isStrategical && lowMobility) ? -1 : -3;
+                    }
+                    else if (cutNode)
+                    {
+                        extension = dynamicDerived.isAggressive ? -1 : -2;
+                    }
+
+                    bool criticalEndgame =
+                      pos.count<ALL_PIECES>() <= 6 && pos.non_pawn_material() <= 2 * QueenValue;
+                    if (criticalEndgame && extension > 0 && depth < MAX_PLY - 2)
+                        extension += 1;
                 }
             }
+
             // Shashin-Crystal end
 
 skipExtensionAndPruning:  // full threads search patch
@@ -2058,7 +2032,6 @@ skipExtensionAndPruning:  // full threads search patch
 
             // Update the current move (this must be done after singular extension search)
             ss->currentMove = move;
-            ss->isTTMove    = (move == ttData.move);
             ss->continuationHistory =
               &thisThread->continuationHistory[ss->inCheck][capture][movedPiece][move.to_sq()];
             ss->continuationCorrectionHistory =
@@ -2075,15 +2048,12 @@ skipExtensionAndPruning:  // full threads search patch
             r -= moveCount * 66;
             r -= std::abs(correctionValue) / 28047;
 
-            if (PvNode && std::abs(bestValue) <= 2078)
-                r -= risk_tolerance(bestValue);
-
             // Increase reduction for cut nodes
             if (cutNode)
                 r += 2864 + 966 * !ttData.move;
 
             // Increase reduction if ttMove is a capture but the current move is not a capture
-            if (ttCapture && !capture)
+            if (ttCapture)
                 r += 1210 + (depth < 8) * 963;
 
             // Increase reduction if next ply has a lot of fail high
@@ -2091,7 +2061,7 @@ skipExtensionAndPruning:  // full threads search patch
                 r += 1036 + allNode * 848;
 
             // For first picked move (ttMove) reduce reduction
-            else if (ss->isTTMove)
+            else if (move == ttData.move)
                 r -= 2006;
 
             if (capture)
@@ -2100,13 +2070,11 @@ skipExtensionAndPruning:  // full threads search patch
                   + thisThread
                       ->captureHistory[movedPiece][move.to_sq()][type_of(pos.captured_piece())]
                   - 5030;
-            else if (ss->inCheck)
-                ss->statScore = thisThread->mainHistory[us][move.from_to()]
-                              + (*contHist[0])[movedPiece][move.to_sq()] - 2766;
             else
                 ss->statScore = 2 * thisThread->mainHistory[us][move.from_to()]
                               + (*contHist[0])[movedPiece][move.to_sq()]
-                              + (*contHist[1])[movedPiece][move.to_sq()] - 3206;
+                              + (*contHist[1])[movedPiece][move.to_sq()] + 1000 * ss->inCheck
+                              - 3206;
 
             // Decrease/increase reduction for moves with a good/bad history
             r -= ss->statScore * 826 / 8192;
@@ -2144,13 +2112,15 @@ skipExtensionAndPruning:  // full threads search patch
                 // Final reduction calculation
                 Depth d = std::max(1, std::min(newDepth - dynamicReduction,
                                                newDepth + !allNode + (PvNode && !bestMove)))
-                        + (!cutNode && (ss - 1)->isPvNode && moveCount < 8);
+                        + ((ss - 1)->isPvNode);
                 ss->reduction = newDepth - d;
                 value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
                 ss->reduction = 0;
 
                 // If the reduced search fails high, attempt full-depth search
                 // Do a full-depth search when reduced LMR search fails high
+                // (*Scaler) Usually doing more shallower searches
+                // doesn't scale well to longer TCs
                 if (value > alpha && d < newDepth)
                 {
 
@@ -2166,11 +2136,7 @@ skipExtensionAndPruning:  // full threads search patch
                     update_continuation_histories(ss, movedPiece, move.to_sq(), 1508);
                 }
                 else if (value > alpha && value < bestValue + 9)
-                {
                     newDepth--;
-                    if (value < bestValue + 4)
-                        newDepth--;
-                }
             }
             //shashin-crystal end
 
@@ -2182,8 +2148,6 @@ skipExtensionAndPruning:  // full threads search patch
                     r += 1128;
 
                 r -= ttMoveHistory / 8;
-                if (cutNode)
-                    r += 520;
                 // Note that if expected reduction is high, we reduce search depth here
                 value =
                   -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha,
@@ -2198,7 +2162,7 @@ skipExtensionAndPruning:  // full threads search patch
                 (ss + 1)->pv[0] = Move::none();
 
                 // Extend move from transposition table if we are about to dive into qsearch.
-                if (ss->isTTMove && thisThread->rootDepth > 8)
+                if (move == ttData.move && thisThread->rootDepth > 8)
                     newDepth = std::max(newDepth, 1);
 
                 value = -search<PV>(pos, ss + 1, -beta, -alpha, newDepth, false);
@@ -2352,7 +2316,7 @@ skipExtensionAndPruning:  // full threads search patch
                          ttData.move, moveCount);
         if (!PvNode)
         {
-            int bonus = ss->isTTMove ? 800 : -879;
+            int bonus = bestMove == ttData.move ? 800 : -879;
             ttMoveHistory << bonus;
         }
     }
@@ -2360,11 +2324,10 @@ skipExtensionAndPruning:  // full threads search patch
     // Bonus for prior quiet countermove that caused the fail low
     else if (!priorCapture && prevSq != SQ_NONE)
     {
-        int bonusScale = std::min(-(ss - 1)->statScore / 113, 293);
-        bonusScale += std::min(73 * depth - 347, 184);
-        bonusScale += 33 * !allNode;
+        int bonusScale = -302;
+        bonusScale += std::min(-(ss - 1)->statScore / 103, 323);
+        bonusScale += std::min(73 * depth, 531);
         bonusScale += 174 * ((ss - 1)->moveCount > 8);
-        bonusScale += 86 * (ss - 1)->isTTMove;
         bonusScale += 90 * (ss->cutoffCnt <= 3);
         bonusScale += 144 * (!ss->inCheck && bestValue <= ss->staticEval - 104);
         bonusScale += 128 * (!(ss - 1)->inCheck && bestValue <= -(ss - 1)->staticEval - 82);
@@ -2828,8 +2791,8 @@ void update_all_stats(const Position&      pos,
                       int                  moveCount) {
 
     CapturePieceToHistory& captureHistory = workerThread.captureHistory;
-    Piece                  moved_piece    = pos.moved_piece(bestMove);
-    PieceType              captured;
+    Piece                  movedPiece     = pos.moved_piece(bestMove);
+    PieceType              capturedPiece;
 
     int bonus = std::min(143 * depth - 89, 1496) + 302 * (bestMove == ttMove);
     int malus = std::min(737 * depth - 179, 3141) - 30 * moveCount;
@@ -2845,21 +2808,21 @@ void update_all_stats(const Position&      pos,
     else
     {
         // Increase stats for the best move in case it was a capture move
-        captured = type_of(pos.piece_on(bestMove.to_sq()));
-        captureHistory[moved_piece][bestMove.to_sq()][captured] << bonus * 1213 / 1024;
+        capturedPiece = type_of(pos.piece_on(bestMove.to_sq()));
+        captureHistory[movedPiece][bestMove.to_sq()][capturedPiece] << bonus * 1213 / 1024;
     }
 
     // Extra penalty for a quiet early move that was not a TT move in
     // previous ply when it gets refuted.
     if (prevSq != SQ_NONE && ((ss - 1)->moveCount == 1 + (ss - 1)->ttHit) && !pos.captured_piece())
-        update_continuation_histories(ss - 1, pos.piece_on(prevSq), prevSq, -malus * 980 / 1024);
+        update_continuation_histories(ss - 1, pos.piece_on(prevSq), prevSq, -malus * 580 / 1024);
 
     // Decrease stats for all non-best capture moves
     for (Move move : capturesSearched)
     {
-        moved_piece = pos.moved_piece(move);
-        captured    = type_of(pos.piece_on(move.to_sq()));
-        captureHistory[moved_piece][move.to_sq()][captured] << -malus * 1388 / 1024;
+        movedPiece    = pos.moved_piece(move);
+        capturedPiece = type_of(pos.piece_on(move.to_sq()));
+        captureHistory[movedPiece][move.to_sq()][capturedPiece] << -malus * 1388 / 1024;
     }
 }
 

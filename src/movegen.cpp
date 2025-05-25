@@ -21,7 +21,6 @@
 #include <cassert>
 #include <initializer_list>
 
-#include "bitboard.h"
 #include "position.h"
 
 namespace ShashChess {

@@ -19,8 +19,8 @@
 #include "movepick.h"
 
 #include <cassert>
-#include <cstddef>
 #include <limits>
+#include <utility>
 #include <cmath>  //for ShashChess
 #include "misc.h"
 //for ShashChess
@@ -114,153 +114,133 @@ MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceTo
           + !(ttm && pos.capture_stage(ttm) && pos.pseudo_legal(ttm) && pos.see_ge(ttm, threshold));
 }
 
-// Assigns a numerical value to each move in a list, used for sorting.
-// Captures are ordered by Most Valuable Victim (MVV), preferring captures
-// with a good history. Quiets moves are ordered using the history tables.
 template<GenType Type>
 void MovePicker::score() {
 
     static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
-    [[maybe_unused]] Bitboard threatenedPieces, threatByLesser[4];
+    Color      us       = pos.side_to_move();
+    const bool fortress = MoveConfig::isFortress;  // Recupera lo stato della fortezza
+
+    [[maybe_unused]] Bitboard threatenedPieces, threatByLesser[QUEEN + 1];
     if constexpr (Type == QUIETS)
     {
-        Color us = pos.side_to_move();
-
-        threatByLesser[0] = threatByLesser[1] = pos.attacks_by<PAWN>(~us);
-        threatByLesser[2] =
-          pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<BISHOP>(~us) | threatByLesser[0];
-        threatByLesser[3] = pos.attacks_by<ROOK>(~us) | threatByLesser[2];
-
-        // Pieces threatened by pieces of lesser material value
-        threatenedPieces = (pos.pieces(us, QUEEN) & threatByLesser[3])
-                         | (pos.pieces(us, ROOK) & threatByLesser[2])
-                         | (pos.pieces(us, KNIGHT, BISHOP) & threatByLesser[0]);
+        threatByLesser[KNIGHT] = threatByLesser[BISHOP] = pos.attacks_by<PAWN>(~us);
+        threatByLesser[ROOK] =
+          pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<BISHOP>(~us) | threatByLesser[KNIGHT];
+        threatByLesser[QUEEN] = pos.attacks_by<ROOK>(~us) | threatByLesser[ROOK];
     }
-    //fortress by Shashin begin
-    // Compute a scaling factor for the Shashin bonus.
-    static double precomputedShashinScaling =
-      std::min(1.0, static_cast<double>(pos.game_ply()) / 20.0);
-    double dynamicBonus = std::log(1.0 + precomputedShashinScaling * 9.0) / std::log(10.0);
-    // Read the fortress flag (set in initDynamicRootShashinState using the root position)
-    const bool fortress            = MoveConfig::isFortress;
-    const bool useMoveShashinLogic = MoveConfig::useMoveShashinLogic;
-    const bool isStrategical       = MoveConfig::isStrategical;
-    const bool isAggressive        = MoveConfig::isAggressive;
 
-    // Iterate over each move in the list
+    // Precalcolo bonus dinamico per Shashin
+    const int phase           = std::clamp(pos.game_ply() / 25, 0, 3);
+    const int breakingPenalty = 18000 + 6000 * phase;
+    const int preservingBonus = 9000 + 3000 * (3 - phase);
+
     for (auto& m : *this)
     {
-        // Apply Shashin logic: Adjust bonus based on position type,
-        // using the dynamic (log-scaled) bonus factor.
-        Piece  movedPiece = pos.moved_piece(m);
-        Square to         = m.to_sq();
-        int    baseValue = 0, shashinBonus = 0, fortressPenalty = 0;
+        const Square    from = m.from_sq();
+        const Square    to   = m.to_sq();
+        const Piece     pc   = pos.moved_piece(m);
+        const PieceType pt   = type_of(pc);
 
-        if (useMoveShashinLogic)
-        {
-            shashinBonus = isStrategical ? static_cast<int>(600 * dynamicBonus)
-                         : isAggressive  ? static_cast<int>(1200 * dynamicBonus)
-                                         : 0;
-        }
         if constexpr (Type == CAPTURES)
         {
-            baseValue =
-              (2
-                 * (pos.blockers_for_king(~pos.side_to_move()) & m.from_sq()
-                    && !aligned(m.from_sq(), m.to_sq(), pos.square<KING>(~pos.side_to_move())))
-               + 7)
-                * int(PieceValue[pos.piece_on(m.to_sq())])
-              + (*captureHistory)[movedPiece][to][type_of(pos.piece_on(to))];
-            if (isAggressive)
-                baseValue += 5000;  // extra bonus for aggressive captures
+            // Logica base di Stockfish
+            m.value = (*captureHistory)[pc][to][type_of(pos.piece_on(to))]
+                    + 7 * int(PieceValue[pos.piece_on(to)])
+                    + 1024 * bool(pos.check_squares(pt) & to);
+
+            // Aggiunta specifica ShashChess
+            if (MoveConfig::isAggressive)
+                m.value += 5000;  // Extra bonus per catture aggressive
         }
+
         else if constexpr (Type == QUIETS)
         {
-            PieceType pt   = type_of(movedPiece);
-            Square    from = m.from_sq();
+            // Logica base di Stockfish
+            m.value = 2 * (*mainHistory)[us][m.from_to()]
+                    + 2 * (*pawnHistory)[pawn_structure_index(pos)][pc][to];
 
-            // histories
-            int continuationBonus = 0;
-            for (int i = 0; i < 6; ++i)
-                continuationBonus += (i == 4) ? 0 : (*continuationHistory[i])[movedPiece][to];
+            for (int i : {0, 1, 2, 3, 5})  // Loop ottimizzato
+                m.value += (*continuationHistory[i])[pc][to];
 
-            baseValue = 2 * (*mainHistory)[pos.side_to_move()][m.from_to()]
-                      + 2 * (*pawnHistory)[pawn_structure_index(pos)][movedPiece][to]
-                      + continuationBonus;
+            m.value += (bool(pos.check_squares(pt) & to) && pos.see_ge(m, -75)) * 16384;
 
-            // bonus for checks
-            baseValue += (bool(pos.check_squares(pt) & to) && pos.see_ge(m, -75)) * 16384;
-
-            // penalty for moving to a square threatened by a lesser piece
-            // or bonus for escaping an attack by a lesser piece.
             if (KNIGHT <= pt && pt <= QUEEN)
             {
-                int i = pt - 2;  // KNIGHT=2→i=0, BISHOP→1, ROOK→2, QUEEN→3
-                // v = +100 se fuggi da i, -95 se entri in attacco di i
-                int v = (threatByLesser[i] & to ? -95 : 100 * bool(threatByLesser[i] & from));
-                static constexpr int bonus[4] = {144, 144, 256, 517};
-                baseValue += bonus[i] * v;
+                static constexpr int bonus[QUEEN + 1] = {0, 0, 144, 144, 256, 517};
+                int v = (threatByLesser[pt] & to ? -95 : 100 * bool(threatByLesser[pt] & from));
+                m.value += bonus[pt] * v;
             }
 
-            // Bonus for first depths based on the history table
             if (ply < LOW_PLY_HISTORY_SIZE)
-                baseValue += 8 * (*lowPlyHistory)[ply][m.from_to()] / (1 + 2 * ply);
-            if (isStrategical)
-                baseValue += 2000;  // bonus for safe, positional moves
-        }
-        else
-        {  // EVASIONS
-            if (pos.capture_stage(m))
-                baseValue = PieceValue[pos.piece_on(m.to_sq())] + (1 << 28);
-            else
-                baseValue = (*mainHistory)[pos.side_to_move()][m.from_to()]
-                          + (*continuationHistory[0])[pos.moved_piece(m)][to];
+                m.value += 8 * (*lowPlyHistory)[ply][m.from_to()] / (1 + ply);
+
+            // Aggiunte ShashChess
+            if (MoveConfig::isStrategical)
+                m.value += 2000;  // Bonus per mosse posizionali
         }
 
-        // If in a fortress, penalize moves that break the defensive setup
-        // and give a slight bonus for moves that preserve it.
+        else  // EVASIONS
+        {
+            // Logica base di Stockfish
+            if (pos.capture_stage(m))
+                m.value = PieceValue[pos.piece_on(to)] + (1 << 28);
+            else
+            {
+                m.value = (*mainHistory)[us][m.from_to()] + (*continuationHistory[0])[pc][to];
+                if (ply < LOW_PLY_HISTORY_SIZE)
+                    m.value += 2 * (*lowPlyHistory)[ply][m.from_to()] / (1 + ply);
+            }
+        }
+
+        // Sezione fortezze - ShashChess Core
         if (fortress)
         {
-            const int phase           = std::clamp(static_cast<int>(pos.game_ply()) / 25, 0, 3);
-            const int breakingPenalty = 18000 + 6000 * phase;
-            const int preservingBonus = 9000 + 3000 * (3 - phase);
-
             if (is_fortress_breaking_move(pos, m))
             {
-                baseValue -= breakingPenalty;
+                m.value -= breakingPenalty;
+                if (is_fortress_key_piece(pc))
+                    m.value -= 4500;
 
-                if (is_fortress_key_piece(movedPiece))
-                    baseValue -= 4500;
-
-                if (king_safety_score(pos, pos.side_to_move()) > 120)
-                    baseValue += 3000;
+                if (king_safety_score(pos, us) > 120)
+                    m.value += 3000;
             }
             else if (is_fortress_preserving_move(pos, m))
             {
-                baseValue += preservingBonus;
+                m.value += preservingBonus;
 
-                Bitboard pawns = pos.pieces(PAWN, pos.side_to_move());
-                File     f     = file_of(m.to_sq());
-                Bitboard adjacentPawns =
-                  pos.pieces(PAWN, pos.side_to_move())
-                  & ((f > FILE_A ? pawns << 1 : 0) | (f < FILE_H ? pawns >> 1 : 0));
-
-                if (popcount(adjacentPawns) >= 2)
-                    baseValue += 5000;
-
-                if (phase == 3 && type_of(movedPiece) == KING)
-                    baseValue += 2000;
+                if (type_of(pc) == KING && phase == 3)
+                    m.value += 2000;
             }
 
-            if (no_progress_for(pos, 15))
-                baseValue = baseValue * 5 / 4;
-            else if (!has_safe_waiting_moves(pos))
-                baseValue = baseValue * 3 / 4;
+            // Gestione pedoni adiacenti
+            if (is_fortress_preserving_move(pos, m))
+            {
+                File     f             = file_of(to);
+                Bitboard adjacentPawns = pos.pieces(PAWN, us)
+                                       & ((f > FILE_A ? file_bb(File(f - 1)) : 0)
+                                          | (f < FILE_H ? file_bb(File(f + 1)) : 0));
+
+                if (popcount(adjacentPawns) >= 2)
+                    m.value += 5000;
+            }
+
+            // Regolazione finale
+            m.value = no_progress_for(pos, 15)     ? m.value * 5 / 4
+                    : !has_safe_waiting_moves(pos) ? m.value * 3 / 4
+                                                   : m.value;
         }
 
-        // Compute the final move value
-        m.value = baseValue + shashinBonus - fortressPenalty;
+        // Applica bonus dinamico globale
+        if (MoveConfig::useMoveShashinLogic)
+        {
+            const double dynamicFactor =
+              std::log(1.0 + std::min(pos.game_ply() / 20.0, 1.0) * 9.0) / std::log(10.0);
+            m.value += MoveConfig::isStrategical ? static_cast<int>(600 * dynamicFactor)
+                     : MoveConfig::isAggressive  ? static_cast<int>(1200 * dynamicFactor)
+                                                 : 0;
+        }
     }
 }
 //From Shashin end
@@ -289,8 +269,6 @@ Move MovePicker::select(Pred filter) {
 // picking the move with the highest score from a list of generated moves.
 Move MovePicker::next_move() {
 
-    auto quiet_threshold = [](Depth d) { return -3560 * d; };
-
 top:
     switch (stage)
     {
@@ -315,9 +293,10 @@ top:
 
     case GOOD_CAPTURE :
         if (select([&]() {
-                // Move losing capture to endBadCaptures to be tried later
-                return pos.see_ge(*cur, -cur->value / 18) ? true
-                                                          : (*endBadCaptures++ = *cur, false);
+                if (pos.see_ge(*cur, -cur->value / 18))
+                    return true;
+                std::swap(*endBadCaptures++, *cur);
+                return false;
             }))
             return *(cur - 1);
 
@@ -327,25 +306,21 @@ top:
     case QUIET_INIT :
         if (!skipQuiets)
         {
-            cur      = endBadCaptures;
-            endMoves = beginBadQuiets = endBadQuiets = generate<QUIETS>(pos, cur);
+            cur = endBadQuiets = endBadCaptures;
+            endMoves           = generate<QUIETS>(pos, cur);
 
             score<QUIETS>();
-            partial_insertion_sort(cur, endMoves, quiet_threshold(depth));
+            partial_insertion_sort(cur, endMoves, -3560 * depth);
         }
 
         ++stage;
         [[fallthrough]];
 
     case GOOD_QUIET :
-        if (!skipQuiets && select([]() { return true; }))
-        {
-            if ((cur - 1)->value > -7998 || (cur - 1)->value <= quiet_threshold(depth))
-                return *(cur - 1);
-
-            // Remaining quiets are bad
-            beginBadQuiets = cur - 1;
-        }
+        if (!skipQuiets && select([&]() {
+                return cur->value > -14000 ? true : (*endBadQuiets++ = *cur, false);
+            }))
+            return *(cur - 1);
 
         // Prepare the pointers to loop over the bad captures
         cur      = moves;
@@ -359,7 +334,7 @@ top:
             return *(cur - 1);
 
         // Prepare the pointers to loop over the bad quiets
-        cur      = beginBadQuiets;
+        cur      = endBadCaptures;
         endMoves = endBadQuiets;
 
         ++stage;
@@ -394,29 +369,16 @@ top:
 
 void MovePicker::skip_quiet_moves() { skipQuiets = true; }
 
-bool MovePicker::otherPieceTypesMobile(PieceType pt, ValueList<Move, 32>& capturesSearched) {
-    if (stage != GOOD_QUIET && stage != BAD_QUIET)
-        return true;
+// this function must be called after all quiet moves and captures have been generated
+bool MovePicker::can_move_king_or_pawn() {
+    assert(stage == GOOD_QUIET || stage == BAD_QUIET || stage == EVASION);
 
-    // verify good captures
-    for (std::size_t i = 0; i < capturesSearched.size(); i++)
-        if (type_of(pos.moved_piece(capturesSearched[i])) != pt)
-        {
-            if (type_of(pos.moved_piece(capturesSearched[i])) != KING)
-                return true;
-            if (pos.legal(capturesSearched[i]))
-                return true;
-        }
-
-    // now verify bad captures and quiets
-    for (ExtMove* c = moves; c < endBadQuiets; ++c)
-        if (type_of(pos.moved_piece(*c)) != pt)
-        {
-            if (type_of(pos.moved_piece(*c)) != KING)
-                return true;
-            if (pos.legal(*c))
-                return true;
-        }
+    for (ExtMove* m = moves; m < endMoves; ++m)
+    {
+        PieceType movedPieceType = type_of(pos.moved_piece(*m));
+        if ((movedPieceType == PAWN || movedPieceType == KING) && pos.legal(*m))
+            return true;
+    }
     return false;
 }
 

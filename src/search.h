@@ -82,8 +82,8 @@ struct Stack {
     bool                        ttHit;
     int                         cutoffCnt;
     int                         reduction;
-    bool                        isTTMove;
     bool                        isPvNode;
+    int                         quietMoveStreak;
     //from Crystal-shashin begin
     bool secondaryLine = false;
     bool mainLine      = false;

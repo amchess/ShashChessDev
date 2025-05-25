@@ -635,12 +635,10 @@ inline bool MonteCarlo::is_terminal(mctsNodeInfo* node) const {
 void MonteCarlo::do_move(const Move m) {
 
     assert(ply < MAX_PLY);
-    auto [ttHit, ttData, ttWriter] = tt.probe(pos.key());
-    stack[ply].ply                 = ply;
-    stack[ply].currentMove         = m;
-    stack[ply].isTTMove            = (m == ttData.move);
-    stack[ply].inCheck             = pos.checkers();
-    const bool capture             = pos.capture(m);
+    stack[ply].ply         = ply;
+    stack[ply].currentMove = m;
+    stack[ply].inCheck     = pos.checkers();
+    const bool capture     = pos.capture(m);
 
     stack[ply].continuationHistory =
       &thisThread->continuationHistory[stack[ply].inCheck][capture][pos.moved_piece(m)][m.to_sq()];
