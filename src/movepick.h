@@ -20,8 +20,8 @@
 #define MOVEPICK_H_INCLUDED
 
 #include "history.h"
-#include "shashin/shashin_position.h"
 //from shashin begin
+#include "shashin/shashin_position.h"
 #include "shashin/moveconfig.h"
 #include "bitboard.h"
 //from shashin end
@@ -60,7 +60,7 @@ class MovePicker {
     template<GenType>
     void     score();
     ExtMove* begin() { return cur; }
-    ExtMove* end() { return endMoves; }
+    ExtMove* end() { return endCur; }
 
     const Position&              pos;
     const ButterflyHistory*      mainHistory;
@@ -69,7 +69,7 @@ class MovePicker {
     const PieceToHistory**       continuationHistory;
     const PawnHistory*           pawnHistory;
     Move                         ttMove;
-    ExtMove *                    cur, *endMoves, *endBadCaptures, *endBadQuiets;
+    ExtMove *                    cur, *endCur, *endBadCaptures, *endBadQuiets;
     int                          stage;
     int                          threshold;
     Depth                        depth;

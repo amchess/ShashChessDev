@@ -99,10 +99,6 @@ namespace {
 // so changing them or adding conditions that are similar requires
 // tests at these types of time controls.
 
-constexpr int futility_move_count(bool improving, Depth depth) {
-    return (3 + depth * depth) / (2 - improving);
-}
-
 int correction_value(const Worker& w, const Position& pos, const Stack* const ss) {
     const Color us    = pos.side_to_move();
     const auto  m     = (ss - 1)->currentMove;
@@ -980,7 +976,9 @@ void Search::Worker::iterative_deepening() {
             fallingEval = std::clamp(fallingEval, 0.5786, 1.6752);
 
             // If the bestMove is stable over several iterations, reduce time accordingly
-            timeReduction = lastBestMoveDepth + 8 < completedDepth ? 1.4857 : 0.7046;
+            double k      = 0.527;
+            double center = lastBestMoveDepth + 11;
+            timeReduction = 0.8 + 0.84 / (1.077 + std::exp(-k * (completedDepth - center)));
             double reduction =
               (1.4540 + mainThread->previousTimeReduction) / (2.1593 * timeReduction);
             double bestMoveInstability = 0.9929 + 1.8519 * totBestMoveChanges / threads.size();
@@ -1290,9 +1288,7 @@ Value Search::Worker::search(
                     return ttData.value;
             }
             else
-            {
                 return ttData.value;
-            }
         }
     }
     // from Kelly begin
@@ -1666,7 +1662,7 @@ Value Search::Worker::search(
         assert(probCutBeta < VALUE_INFINITE && probCutBeta > beta);
 
         MovePicker mp(pos, ttData.move, probCutBeta - ss->staticEval, &thisThread->captureHistory);
-        Depth      probCutDepth = std::max(depth - 4, 0);
+        Depth      probCutDepth = std::max(depth - (4 + cutNode), 0);
 
         while ((move = mp.next_move()) != Move::none())
         {
@@ -1861,7 +1857,7 @@ moves_loop:  // When in check, search starts here
             if (applyPruning)
             {
                 // Skip quiet moves if movecount exceeds our FutilityMoveCount threshold
-                if (moveCount >= futility_move_count(improving, depth))
+                if (moveCount >= (3 + depth * depth) / (2 - improving))
                     mp.skip_quiet_moves();
 
                 // Reduced depth of the next LMR search
@@ -1887,9 +1883,7 @@ moves_loop:  // When in check, search starts here
                     if (!pos.see_ge(move, -158 * depth - seeHist))
                     {
                         bool mayStalemateTrap =
-                          depth > 2 && givesCheck && alpha < 0
-                          && !capture  // we consider that captures will likely destroy the stalemate configuration
-                          && pos.non_pawn_material(us) == PieceValue[movedPiece]
+                          depth > 2 && alpha < 0
                           && PieceValue[movedPiece] >= RookValue
                           // it can't be stalemate if we moved a piece adjacent to the king
                           && !(attacks_bb<KING>(pos.square<KING>(us)) & move.from_sq())
@@ -1916,7 +1910,8 @@ moves_loop:  // When in check, search starts here
 
                     lmrDepth += history / 3388;
 
-                    Value futilityValue = ss->staticEval + (bestMove ? 46 : 138) + 117 * lmrDepth
+                    Value baseFutility  = (bestMove ? 46 : 138 + std::abs(history / 300));
+                    Value futilityValue = ss->staticEval + baseFutility + 117 * lmrDepth
                                         + 102 * (ss->staticEval > alpha);
 
                     // Futility pruning: parent node
@@ -1978,23 +1973,25 @@ moves_loop:  // When in check, search starts here
 
                     if (value < singularBeta)
                     {
-                        int corrValAdj1      = std::abs(correctionValue) / 248400;
-                        int corrValAdj2      = std::abs(correctionValue) / 249757;
-                        int plyDepthAdjust   = (ss->ply * 2 > thisThread->rootDepth * 3);
-                        int shashinBoostBase = std::min(depth * 3, 150);
+                        int  corrValAdj1      = std::abs(correctionValue) / 248400;
+                        int  corrValAdj2      = std::abs(correctionValue) / 249757;
+                        bool plyDoubleCut     = (ss->ply > thisThread->rootDepth);
+                        bool plyTripleCut     = (ss->ply * 2 > thisThread->rootDepth * 3);
+                        int  shashinBoostBase = std::min(depth * 3, 150);
+                        bool isHighTal        = dynamicDerived.isHighTal;
+                        bool deepPosition     = (depth >= 8);
+                        bool kingUnderAttack  = (staticState.kingSafetyScore < -30);
+                        bool criticalHighTal  = isHighTal && (deepPosition || kingUnderAttack);
+                        int  doubleMargin     = -4 + 244 * PvNode - 206 * !ttCapture - corrValAdj1
+                                         - (997 * ttMoveHistory) / 131072 - plyDoubleCut * 47
+                                         + (criticalHighTal ? (90 + shashinBoostBase) : 0);
 
-                        int doubleMargin = -4 + 244 * PvNode - 206 * !ttCapture - corrValAdj1
-                                         - 997 * ttMoveHistory / 131072 - plyDepthAdjust * 47
-                                         + (dynamicDerived.isHighTal ? (80 + shashinBoostBase) : 0);
-
-                        int tripleMargin =
-                          84 + 269 * PvNode - 253 * !ttCapture + 91 * ss->ttPv - corrValAdj2
-                          - plyDepthAdjust * 54
-                          + (dynamicDerived.isHighTal ? (110 + shashinBoostBase) : 0);
+                        int tripleMargin = 84 + 269 * PvNode - 253 * !ttCapture + 91 * ss->ttPv
+                                         - corrValAdj2 - plyTripleCut * 54
+                                         + (criticalHighTal ? (120 + shashinBoostBase) : 0);
 
                         extension = 1 + (value < singularBeta - doubleMargin)
                                   + (value < singularBeta - tripleMargin);
-
                         depth += (dynamicDerived.isAggressive && depth < 24) ? 2 : 1;
                     }
                     else if (value >= beta && !is_decisive(value))
@@ -2052,7 +2049,7 @@ skipExtensionAndPruning:  // full threads search patch
             if (cutNode)
                 r += 2864 + 966 * !ttData.move;
 
-            // Increase reduction if ttMove is a capture but the current move is not a capture
+            // Increase reduction if ttMove is a capture
             if (ttCapture)
                 r += 1210 + (depth < 8) * 963;
 
@@ -2061,7 +2058,7 @@ skipExtensionAndPruning:  // full threads search patch
                 r += 1036 + allNode * 848;
 
             // For first picked move (ttMove) reduce reduction
-            else if (move == ttData.move)
+            if (move == ttData.move)
                 r -= 2006;
 
             if (capture)
@@ -2112,7 +2109,7 @@ skipExtensionAndPruning:  // full threads search patch
                 // Final reduction calculation
                 Depth d = std::max(1, std::min(newDepth - dynamicReduction,
                                                newDepth + !allNode + (PvNode && !bestMove)))
-                        + ((ss - 1)->isPvNode);
+                        + (ss - 1)->isPvNode;
                 ss->reduction = newDepth - d;
                 value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
                 ss->reduction = 0;
@@ -2315,10 +2312,7 @@ skipExtensionAndPruning:  // full threads search patch
         update_all_stats(pos, ss, *this, bestMove, prevSq, quietsSearched, capturesSearched, depth,
                          ttData.move, moveCount);
         if (!PvNode)
-        {
-            int bonus = bestMove == ttData.move ? 800 : -879;
-            ttMoveHistory << bonus;
-        }
+            ttMoveHistory << (bestMove == ttData.move ? 800 : -879);
     }
 
     // Bonus for prior quiet countermove that caused the fail low

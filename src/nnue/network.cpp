@@ -244,7 +244,7 @@ void Network<Arch, Transformer>::verify(std::string                             
             std::string msg3 = "The UCI option EvalFile might need to specify the full path, "
                                "including the directory name, to the network file.";
             std::string msg4 = "The default net can be downloaded from: "
-                               "https://tests.shashchesschess.org/api/nn/"
+                               "https://tests.stockfishchess.org/api/nn/"
                              + evalFile.defaultName;
             std::string msg5 = "The engine will be terminated now.";
 
