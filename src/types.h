@@ -407,6 +407,8 @@ class Move {
 
     constexpr MoveType type_of() const { return MoveType(data & (3 << 14)); }
 
+    constexpr Move reverse() const { return Move(to_sq(), from_sq()); } //patch joergster
+
     constexpr PieceType promotion_type() const { return PieceType(((data >> 12) & 3) + KNIGHT); }
 
     constexpr bool is_ok() const { return none().data != data && null().data != data; }
