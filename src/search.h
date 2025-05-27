@@ -229,7 +229,8 @@ class SearchManager: public ISearchManager {
     void pv(Search::Worker&           worker,
             const ThreadPool&         threads,
             const TranspositionTable& tt,
-            Depth                     depth);
+            Depth                     depth,
+            bool                      updateShashin);//shashin
 
     ShashChess::TimeManagement tm;
     double                     originalTimeAdjust;
@@ -294,7 +295,8 @@ class Worker {
     Depth                           completedDepth;                        //mcts
     bool            nmpGuard = false, nmpGuardV = false, nmpSide = false;  //from Crystal-shashin
     ShashinManager& getShashinManager();                                   //from crystal-Shashin
-    int lastShashinUpdatedDepth = 0;
+    int             lastShashinUpdatedDepth = 0;
+
    private:
     void iterative_deepening();
 

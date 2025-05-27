@@ -646,7 +646,7 @@ void Search::Worker::start_searching() {
     // Send again PV info if we have a new best thread
     if (bestThread != this)
     {  //Kelly
-        main_manager()->pv(*bestThread, threads, tt, bestThread->completedDepth);
+        main_manager()->pv(*bestThread, threads, tt, bestThread->completedDepth, true);//shashin
     }  //Kelly
 
     std::string ponder;
@@ -877,7 +877,7 @@ void Search::Worker::iterative_deepening() {
                 if (mainThread && multiPV == 1 && (bestValue <= alpha || bestValue >= beta)
                     && nodes > 10000000)
                 {  //no warning
-                    main_manager()->pv(*this, threads, tt, rootDepth);
+                    main_manager()->pv(*this, threads, tt, rootDepth, false);//shashin
                 }  //no warning
                 // In case of failing low/high increase aspiration window and re-search,
                 // otherwise exit the loop.
@@ -915,7 +915,7 @@ void Search::Worker::iterative_deepening() {
                 // thread (from the previous iteration).
                 && !(threads.abortedSearch && is_loss(rootMoves[0].uciScore)))
             {  //no warning
-                main_manager()->pv(*this, threads, tt, rootDepth);
+                main_manager()->pv(*this, threads, tt, rootDepth, true);//shashin
             }  //no warning
             if (threads.stop)
                 break;
@@ -3130,7 +3130,8 @@ void syzygy_extend_pv(const OptionsMap&         options,
 void SearchManager::pv(Search::Worker&           worker,
                        const ThreadPool&         threads,
                        const TranspositionTable& tt,
-                       Depth                     depth) {
+                       Depth                     depth,
+                       bool                      updateShashin) {//shashin
 
     const auto nodes     = threads.nodes_searched();
     auto&      rootMoves = worker.rootMoves;
@@ -3163,7 +3164,8 @@ void SearchManager::pv(Search::Worker&           worker,
             syzygy_extend_pv(worker.options, worker.limits, pos, rootMoves[i], v);
         //from shashin begin
         // Update the root Shashin state only for the main (first) PV line.
-        if (i == 0 && d > worker.lastShashinUpdatedDepth) {
+        if (updateShashin && (i == 0) && d > worker.lastShashinUpdatedDepth)
+        {
             worker.getShashinManager().updateRootShashinState(v, pos, d);
             worker.lastShashinUpdatedDepth = d;
         }
