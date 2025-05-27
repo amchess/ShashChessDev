@@ -3163,8 +3163,10 @@ void SearchManager::pv(Search::Worker&           worker,
             syzygy_extend_pv(worker.options, worker.limits, pos, rootMoves[i], v);
         //from shashin begin
         // Update the root Shashin state only for the main (first) PV line.
-        if (i == 0)
+        if (i == 0 && d > worker.lastShashinUpdatedDepth) {
             worker.getShashinManager().updateRootShashinState(v, pos, d);
+            worker.lastShashinUpdatedDepth = d;
+        }
         //from shashin end
         std::string pv;
         for (Move m : rootMoves[i].pv)

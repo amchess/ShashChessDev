@@ -36,17 +36,18 @@
 #include "nnue/network.h"
 #include "nnue/nnue_accumulator.h"
 #include "numa.h"
-#include "shashin/shashin_position.h"  //shashin
 #include "score.h"
 #include "syzygy/tbprobe.h"
 #include "timeman.h"
+#include "types.h"
 //from Shashin begin
+#include "shashin/shashin_position.h"
 #include "evaluate.h"
 #include "book/book_manager.h"
 #include <memory>
 #include "shashin/shashin_manager.h"
 //from Shashin end
-#include "types.h"
+
 
 namespace ShashChess {
 
@@ -293,7 +294,7 @@ class Worker {
     Depth                           completedDepth;                        //mcts
     bool            nmpGuard = false, nmpGuardV = false, nmpSide = false;  //from Crystal-shashin
     ShashinManager& getShashinManager();                                   //from crystal-Shashin
-
+    int lastShashinUpdatedDepth = 0;
    private:
     void iterative_deepening();
 
