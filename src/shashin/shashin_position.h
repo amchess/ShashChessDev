@@ -1,5 +1,5 @@
-#ifndef SHASH_CHESS_SHASHIN_POSITION_H
-#define SHASH_CHESS_SHASHIN_POSITION_H
+#ifndef SHASHIN_POSITION_H
+#define SHASHIN_POSITION_H
 
 #include "../position.h"
 #include "shashin_params.h"
@@ -241,4 +241,4 @@ inline bool is_sacrifice(const Position& pos, Move m) noexcept {
 }  // namespace Shashin
 }  // namespace ShashChess
 
-#endif  // SHASH_CHESS_SHASHIN_POSITION_H
+#endif  // SHASHIN_POSITION_H
