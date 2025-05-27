@@ -230,7 +230,7 @@ class SearchManager: public ISearchManager {
             const ThreadPool&         threads,
             const TranspositionTable& tt,
             Depth                     depth,
-            bool                      updateShashin);//shashin
+            bool                      updateShashin);  //shashin
 
     ShashChess::TimeManagement tm;
     double                     originalTimeAdjust;

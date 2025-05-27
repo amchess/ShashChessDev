@@ -645,8 +645,8 @@ void Search::Worker::start_searching() {
 
     // Send again PV info if we have a new best thread
     if (bestThread != this)
-    {  //Kelly
-        main_manager()->pv(*bestThread, threads, tt, bestThread->completedDepth, true);//shashin
+    {                                                                                    //Kelly
+        main_manager()->pv(*bestThread, threads, tt, bestThread->completedDepth, true);  //shashin
     }  //Kelly
 
     std::string ponder;
@@ -876,8 +876,8 @@ void Search::Worker::iterative_deepening() {
                 // at nodes > 10M (rather than depth N, which can be reached quickly)
                 if (mainThread && multiPV == 1 && (bestValue <= alpha || bestValue >= beta)
                     && nodes > 10000000)
-                {  //no warning
-                    main_manager()->pv(*this, threads, tt, rootDepth, false);//shashin
+                {                                                              //no warning
+                    main_manager()->pv(*this, threads, tt, rootDepth, false);  //shashin
                 }  //no warning
                 // In case of failing low/high increase aspiration window and re-search,
                 // otherwise exit the loop.
@@ -914,8 +914,8 @@ void Search::Worker::iterative_deepening() {
                 // we suppress this output and below pick a proven score/PV for this
                 // thread (from the previous iteration).
                 && !(threads.abortedSearch && is_loss(rootMoves[0].uciScore)))
-            {  //no warning
-                main_manager()->pv(*this, threads, tt, rootDepth, true);//shashin
+            {                                                             //no warning
+                main_manager()->pv(*this, threads, tt, rootDepth, true);  //shashin
             }  //no warning
             if (threads.stop)
                 break;
@@ -3131,7 +3131,7 @@ void SearchManager::pv(Search::Worker&           worker,
                        const ThreadPool&         threads,
                        const TranspositionTable& tt,
                        Depth                     depth,
-                       bool                      updateShashin) {//shashin
+                       bool                      updateShashin) {  //shashin
 
     const auto nodes     = threads.nodes_searched();
     auto&      rootMoves = worker.rootMoves;

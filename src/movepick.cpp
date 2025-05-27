@@ -120,7 +120,7 @@ void MovePicker::score() {
     static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
     Color      us       = pos.side_to_move();
-    const bool fortress = MoveConfig::isFortress;  // Recupera lo stato della fortezza
+    const bool fortress = MoveConfig::isFortress;  // Recupera lo stato della fortezza by shashin
 
     [[maybe_unused]] Bitboard threatenedPieces, threatByLesser[QUEEN + 1];
     if constexpr (Type == QUIETS)
@@ -197,6 +197,7 @@ void MovePicker::score() {
         // Sezione fortezze - ShashChess Core
         if (fortress)
         {
+            bool preserve = is_fortress_preserving_move(pos, m);
             if (is_fortress_breaking_move(pos, m))
             {
                 m.value -= breakingPenalty;
@@ -206,7 +207,7 @@ void MovePicker::score() {
                 if (king_safety_score(pos, us) > 120)
                     m.value += 3000;
             }
-            else if (is_fortress_preserving_move(pos, m))
+            else if (preserve)
             {
                 m.value += preservingBonus;
 
@@ -215,7 +216,7 @@ void MovePicker::score() {
             }
 
             // Gestione pedoni adiacenti
-            if (is_fortress_preserving_move(pos, m))
+            if (preserve)
             {
                 File     f             = file_of(to);
                 Bitboard adjacentPawns = pos.pieces(PAWN, us)
@@ -243,7 +244,6 @@ void MovePicker::score() {
         }
     }
 }
-//From Shashin end
 
 // Returns the next move satisfying a predicate function.
 // This never returns the TT move, as it was emitted before.
