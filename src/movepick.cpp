@@ -116,11 +116,10 @@ MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceTo
 
 template<GenType Type>
 void MovePicker::score() {
-
     static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
     Color      us       = pos.side_to_move();
-    const bool fortress = MoveConfig::isFortress;  // Recupera lo stato della fortezza by shashin
+    const bool fortress = MoveConfig::isFortress;
 
     [[maybe_unused]] Bitboard threatenedPieces, threatByLesser[QUEEN + 1];
     if constexpr (Type == QUIETS)
@@ -131,10 +130,7 @@ void MovePicker::score() {
         threatByLesser[QUEEN] = pos.attacks_by<ROOK>(~us) | threatByLesser[ROOK];
     }
 
-    // Precalcolo bonus dinamico per Shashin
-    const int phase           = std::clamp(pos.game_ply() / 25, 0, 3);
-    const int breakingPenalty = 18000 + 6000 * phase;
-    const int preservingBonus = 9000 + 3000 * (3 - phase);
+    const int phaseIdx = Shashin::phase_index(pos);
 
     for (auto& m : *this)
     {
@@ -145,23 +141,19 @@ void MovePicker::score() {
 
         if constexpr (Type == CAPTURES)
         {
-            // Logica base di Stockfish
             m.value = (*captureHistory)[pc][to][type_of(pos.piece_on(to))]
                     + 7 * int(PieceValue[pos.piece_on(to)])
                     + 1024 * bool(pos.check_squares(pt) & to);
 
-            // Aggiunta specifica ShashChess
             if (MoveConfig::isAggressive)
-                m.value += 5000;  // Extra bonus per catture aggressive
+                m.value += 500;
         }
-
         else if constexpr (Type == QUIETS)
         {
-            // Logica base di Stockfish
             m.value = 2 * (*mainHistory)[us][m.from_to()]
                     + 2 * (*pawnHistory)[pawn_structure_index(pos)][pc][to];
 
-            for (int i : {0, 1, 2, 3, 5})  // Loop ottimizzato
+            for (int i : {0, 1, 2, 3, 5})
                 m.value += (*continuationHistory[i])[pc][to];
 
             m.value += (bool(pos.check_squares(pt) & to) && pos.see_ge(m, -75)) * 16384;
@@ -176,14 +168,11 @@ void MovePicker::score() {
             if (ply < LOW_PLY_HISTORY_SIZE)
                 m.value += 8 * (*lowPlyHistory)[ply][m.from_to()] / (1 + ply);
 
-            // Aggiunte ShashChess
             if (MoveConfig::isStrategical)
-                m.value += 2000;  // Bonus per mosse posizionali
+                m.value += 200;
         }
-
-        else  // EVASIONS
-        {
-            // Logica base di Stockfish
+        else
+        {  // EVASIONS
             if (pos.capture_stage(m))
                 m.value = PieceValue[pos.piece_on(to)] + (1 << 28);
             else
@@ -193,47 +182,38 @@ void MovePicker::score() {
                     m.value += 2 * (*lowPlyHistory)[ply][m.from_to()] / (1 + ply);
             }
         }
-
-        // Sezione fortezze - ShashChess Core
         if (fortress)
         {
-            bool preserve = is_fortress_preserving_move(pos, m);
-            if (is_fortress_breaking_move(pos, m))
+            const int breakingPenalty = 300 + 100 * phaseIdx;
+            const int preservingBonus = 200 + 50 * (3 - phaseIdx);
+            const int kingSafetyBonus = (king_safety_score(pos, us) > 120) ? 300 : 0;
+
+            const bool breaking = is_fortress_breaking_move(pos, m);
+            const bool preserve = is_fortress_preserving_move(pos, m);
+            if (breaking)
             {
                 m.value -= breakingPenalty;
-                if (is_fortress_key_piece(pc))
-                    m.value -= 4500;
 
-                if (king_safety_score(pos, us) > 120)
-                    m.value += 3000;
+                if (is_fortress_key_piece(pc))
+                    m.value -= 400;
+                m.value += kingSafetyBonus;
             }
             else if (preserve)
             {
                 m.value += preservingBonus;
 
-                if (type_of(pc) == KING && phase == 3)
-                    m.value += 2000;
+                if (type_of(pc) == KING && phaseIdx == 3)
+                    m.value += 150;
             }
 
-            // Gestione pedoni adiacenti
             if (preserve)
             {
                 File     f             = file_of(to);
-                Bitboard adjacentPawns = pos.pieces(PAWN, us)
-                                       & ((f > FILE_A ? file_bb(File(f - 1)) : 0)
-                                          | (f < FILE_H ? file_bb(File(f + 1)) : 0));
-
-                if (popcount(adjacentPawns) >= 2)
-                    m.value += 5000;
+                Bitboard adjacentPawns = pos.pieces(PAWN, us) & safe_adjacent_files_bb(f);
+                m.value += 30 * popcount(adjacentPawns);
             }
-
-            // Regolazione finale
-            m.value = no_progress_for(pos, 15)     ? m.value * 5 / 4
-                    : !has_safe_waiting_moves(pos) ? m.value * 3 / 4
-                                                   : m.value;
         }
 
-        // Applica bonus dinamico globale
         if (MoveConfig::useMoveShashinLogic)
         {
             const double dynamicFactor =

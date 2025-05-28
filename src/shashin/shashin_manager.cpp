@@ -240,8 +240,8 @@ bool ShashinManager::isFortress(const Position& pos) {
     currentPosHash        = newHash;
 
     // Logica di determinazione della fortezza
-    int MinPly         = params.minPlyFortress;
-    int DefenderPieces = params.defenderPieces;
+    const int MinPly         = params.minPlyFortress;
+    const int DefenderPieces = params.defenderPieces;
 
     const int   gameStage  = pos.game_ply();
     const Color us         = pos.side_to_move();
@@ -259,7 +259,6 @@ bool ShashinManager::isFortress(const Position& pos) {
                           && enoughMaterial && compactStructure && kingSafety
                           && (pos.non_pawn_material(us) > 2 * pos.non_pawn_material(~us));
 
-    // Verifica aggiuntiva sulla mobilità nemica
     if (positionCache.fortress)
     {
         const Bitboard ourPieces = pos.pieces(us);

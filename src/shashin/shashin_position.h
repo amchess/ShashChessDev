@@ -186,13 +186,12 @@ inline bool is_sacrifice(const Position& pos, Move m) noexcept {
      Bitboard pawnShield = pawn_attacks(pos.side_to_move(), from) & pos.pieces(pos.side_to_move(), PAWN);
      return pawnShield && !(pawn_attacks(pos.side_to_move(), to) & pos.pieces(pos.side_to_move(), PAWN));
  }
- [[nodiscard]]
- inline bool is_fortress_key_piece(Piece p) noexcept {
-     if (p == NO_PIECE)
-         return false;
-     const PieceType pt = type_of(p);
-     return pt == ROOK || pt == KNIGHT || pt == BISHOP;
- }
+ // Funzione per determinare i pezzi chiave
+[[nodiscard]]
+inline bool is_fortress_key_piece(Piece pc) noexcept {
+    PieceType pt = type_of(pc);
+    return pt == ROOK || pt == BISHOP || pt == KNIGHT;
+}
  [[nodiscard]]
  inline bool is_fortress_breaking_move(const Position& pos, const Move& m)  {
      Square from = m.from_sq(), to = m.to_sq();
@@ -230,7 +229,25 @@ inline bool is_sacrifice(const Position& pos, Move m) noexcept {
  inline bool no_progress_for(const Position& pos,int moves) {
      return pos.rule50_count() >= moves;
  }
- //For fortresses by Shashin end
+ [[nodiscard]]
+ inline int game_phase(const Position& pos) {
+    return 24 * (pos.count<KNIGHT>() + pos.count<BISHOP>())
+         + 40 * pos.count<ROOK>()
+         + 72 * pos.count<QUEEN>();
+}
+[[nodiscard]]
+inline int phase_index(const Position& pos) noexcept {
+    return std::min(game_phase(pos) / 64, 3);
+}
+// Helper per file adiacenti sicuri
+[[nodiscard]]
+inline Bitboard safe_adjacent_files_bb(File f) noexcept {
+    Bitboard result = 0;
+    if (f > FILE_A) result |= file_bb(File(f - 1));
+    if (f < FILE_H) result |= file_bb(File(f + 1));
+    return result;
+}
+//For fortresses by Shashin end
  //perhaps to do begin
  //is_isolated(), is_doubled() â†’ Struttura pedonale (Capablanca/Petrosian).
  //pawn_structure_score() â†’ Se vogliamo migliorare la valutazione posizionale.
