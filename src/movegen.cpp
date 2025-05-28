@@ -196,7 +196,7 @@ ExtMove* generate_all(const Position& pos, ExtMove* moveList) {
         Square to = pop_lsb(b);
 
         // Add crystal logic only if active
-        if (!MoveConfig::useMoveShashinLogic || (pos.attackers_to(to) & pos.pieces(~Us)) == 0)
+        if (!MoveConfig::useMoveShashinLogic || !(pos.attackers_to(to) & pos.pieces(~Us)))
             *moveList++ = Move(ksq, to);
     }
     //from shashin end
