@@ -229,19 +229,16 @@ void ShashinManager::setDynamicDerivedState() {
 bool ShashinManager::isFortress(const Position& pos) {
     const uint64_t newHash = computePositionHash(pos);
 
-    // Cache hit: restituisci il valore memorizzato
     if (newHash == currentPosHash && positionCache.posHash == newHash)
     {
         return positionCache.fortress;
     }
 
-    // Cache miss: calcola e salva
     positionCache.posHash = newHash;
     currentPosHash        = newHash;
 
-    // Logica di determinazione della fortezza
-    const int MinPly         = params.minPlyFortress;
-    const int DefenderPieces = params.defenderPieces;
+    int MinPly         = params.minPlyFortress;
+    int DefenderPieces = params.defenderPieces;
 
     const int   gameStage  = pos.game_ply();
     const Color us         = pos.side_to_move();

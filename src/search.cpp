@@ -1080,22 +1080,32 @@ Value Search::Worker::search(
     auto&                   localShashinManager = *this->shashinManager;
     const RootShashinState& rootShashinState    = localShashinManager.getState();  //for ShashChess
     // From Shashin fortress begin
-    if (!rootNode && !PvNode && localShashinManager.isFortress(rootPos))
+    if (localShashinManager.isFortress(rootPos))
     {
-        const Depth reduction = std::min(depth / 5, 4);
-        depth                 = std::max(depth - reduction, 1);
-        const int progress    = pos.rule50_count();
-        if (progress >= 35)
+        constexpr Depth BaseReduction    = 2;
+        Depth           scaled_reduction = std::min(depth / 4, Depth(5));
+        depth = std::max(depth - (BaseReduction + scaled_reduction), Depth(10));
+        constexpr int Official50MoveRule = 50;
+        constexpr int SafetyMargin       = 10;
+        const int     progress           = pos.rule50_count();
+        const int     dynamic_window   = std::min(15, Official50MoveRule - progress - SafetyMargin);
+        const int     transition_start = Official50MoveRule - dynamic_window;
+
+        if (progress >= transition_start)
         {
-            const double weight    = (progress - 35) / 15.0;
-            const Value  drawValue = VALUE_DRAW;
-            ss->staticEval =
-              static_cast<Value>((1.0 - 0.3 * weight) * ss->staticEval + 0.3 * weight * drawValue);
-            if (game_phase(pos) < 64)
-            {  // Fase finale
-                depth = std::max(depth - 1, 1);
-            }
+            double x      = static_cast<double>(progress - transition_start) / dynamic_window;
+            double weight = 0.5 * (1.0 + tanh(6.0 * (x - 0.5)));
+
+            Value current_eval = evaluate(pos);
+            Value draw_influence =
+              static_cast<Value>(current_eval * (1.0 - weight) + VALUE_DRAW * weight);
+
+            constexpr Value DrawBoundary = VALUE_DRAW / 2;
+            return std::clamp(draw_influence, DrawBoundary, VALUE_DRAW);
         }
+
+        if (depth < 15)
+            ss->staticEval += 22 * (15 - depth);
     }
     // From Shashin fortress end
     // Dive into quiescence search when the depth reaches zero
