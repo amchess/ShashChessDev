@@ -2476,8 +2476,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         && (ttData.depth >= ADJUSTED_QS_DEPTH) && (ttData.depth > MIN_DEPTH_FOR_QS_CUTOFF)
         && !dynamicDerived.isStrategical && staticState.legalMoveCount < 35
         && (!staticState.kingExposed || ttData.depth > DEPTH_QS + 4)
-        && std::abs(ttData.value) > VALUE_DRAW + 60
-        && (!staticState.kingExposed || ttData.depth > DEPTH_QS + 3))
+        && std::abs(ttData.value) > VALUE_DRAW + 60)
         return ttData.value;
     //from Shashin-Crystal end
 
