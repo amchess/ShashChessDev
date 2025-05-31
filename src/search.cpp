@@ -1080,34 +1080,54 @@ Value Search::Worker::search(
     auto&                   localShashinManager = *this->shashinManager;
     const RootShashinState& rootShashinState    = localShashinManager.getState();  //for ShashChess
     // From Shashin fortress begin
-    if (localShashinManager.isFortress(rootPos))
+    if (localShashinManager.isFortress(rootPos) && depth > 16)
     {
-        constexpr Depth BaseReduction    = 2;
-        Depth           scaled_reduction = std::min(depth / 4, Depth(5));
-        depth = std::max(depth - (BaseReduction + scaled_reduction), Depth(10));
-        constexpr int Official50MoveRule = 50;
-        constexpr int SafetyMargin       = 10;
-        const int     progress           = pos.rule50_count();
-        const int     dynamic_window   = std::min(15, Official50MoveRule - progress - SafetyMargin);
-        const int     transition_start = Official50MoveRule - dynamic_window;
+        static constexpr Depth RedTableAggressive[32] = {
+            /*0–15*/   7, 7, 7, 7, 7, 7, 7, 7,
+                    7, 7, 7, 7, 7, 7, 7, 7,
+            /*16–31*/  5, 5, 5, 5, 5, 5, 5, 5,
+                    5, 5, 5, 5, 5, 5, 5, 5
+        };
+        constexpr Depth BaseReduction = 2;
+        Depth reduction = BaseReduction + RedTableAggressive[std::min<int>(depth, 31)];
+        depth = std::max(depth - reduction, Depth(10));
 
-        if (progress >= transition_start)
+        int progress = pos.rule50_count();
+        if (progress < 29)
         {
-            double x      = static_cast<double>(progress - transition_start) / dynamic_window;
-            double weight = 0.5 * (1.0 + tanh(6.0 * (x - 0.5)));
+            return ss->staticEval;
+        }
+        if (pos.count<ALL_PIECES>() > 12)
+        {
+            return ss->staticEval;
+        }
+        int window = std::min(15, 50 - progress - 10);
+        if (progress >= (50 - window))
+        {
+            double weight = (progress - (50 - window)) / double(window);
+            if (weight < 0.0)   weight = 0.0;
+            else if (weight > 1.0) weight = 1.0;
 
-            Value current_eval = evaluate(pos);
-            Value draw_influence =
-              static_cast<Value>(current_eval * (1.0 - weight) + VALUE_DRAW * weight);
+            bool useNNUE = (nodeType != NonPV) && (depth > 25);
+            Value baseEval = useNNUE ? evaluate(pos) : ss->staticEval;
 
-            constexpr Value DrawBoundary = VALUE_DRAW / 2;
-            return std::clamp(draw_influence, DrawBoundary, VALUE_DRAW);
+            Value drawInf = static_cast<Value>((1.0 - weight) * baseEval + weight * VALUE_DRAW);
+            constexpr Value DrawBoundary = VALUE_DRAW - 384;
+            if (drawInf >= DrawBoundary)
+                return std::clamp(drawInf, DrawBoundary, VALUE_DRAW);
         }
 
         if (depth < 15)
-            ss->staticEval += 22 * (15 - depth);
+        {
+            static constexpr int Bonus[16] = {
+                330,308,286,264,242,220,198,176,
+                154,132,110, 88, 66, 44, 22,  0
+            };
+            ss->staticEval += Bonus[depth];
+        }
     }
     // From Shashin fortress end
+
     // Dive into quiescence search when the depth reaches zero
     if (depth <= 0)
     {

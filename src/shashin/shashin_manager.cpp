@@ -228,46 +228,115 @@ void ShashinManager::setDynamicDerivedState() {
 
 bool ShashinManager::isFortress(const Position& pos) {
     const uint64_t newHash = computePositionHash(pos);
-
-    if (newHash == currentPosHash && positionCache.posHash == newHash)
-    {
+    if (positionCache.posHash == newHash && currentPosHash == newHash) {
         return positionCache.fortress;
     }
+    bool fortress = false;
 
-    positionCache.posHash = newHash;
-    currentPosHash        = newHash;
-
-    int MinPly         = params.minPlyFortress;
-    int DefenderPieces = params.defenderPieces;
-
-    const int   gameStage  = pos.game_ply();
+    const int   MinPly     = params.minPlyFortress;    // ad es. 28
     const Color us         = pos.side_to_move();
     const int   ourPawns   = popcount(pos.pieces(PAWN, us));
     const int   theirPawns = popcount(pos.pieces(PAWN, ~us));
 
-    const bool enoughMaterial =
-      (pos.count<ROOK>(us) + pos.count<KNIGHT>(us) + pos.count<BISHOP>(us)) >= DefenderPieces;
-    const bool compactStructure = (ourPawns >= 4) && (ourPawns >= theirPawns);
-    const bool kingSafety       = (king_safety_score(pos, us) > 150)
-                         && (distance(pos.square<KING>(us), pos.square<KING>(~us)) > 3);
-
-    positionCache.fortress = (gameStage >= MinPly) && (!has_pawn_breaks(pos))
-                          && is_king_cutoff(pos, us) && has_safe_waiting_moves(pos)
-                          && enoughMaterial && compactStructure && kingSafety
-                          && (pos.non_pawn_material(us) > 2 * pos.non_pawn_material(~us));
-
-    if (positionCache.fortress)
-    {
-        const Bitboard ourPieces = pos.pieces(us);
-        const Bitboard enemyMobility =
-          pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<BISHOP>(~us) | pos.attacks_by<ROOK>(~us);
-        const int overlapping = popcount(enemyMobility & ourPieces);
-        positionCache.fortress =
-          (overlapping < 3) && (popcount(enemyMobility) < params.highDepthLimit);
+    if (pos.rule50_count() < MinPly + 1) {
+        positionCache.posHash  = newHash;
+        positionCache.fortress = false;
+        currentPosHash         = newHash;
+        return false;
     }
 
-    return positionCache.fortress;
+    if (ourPawns < 4 || ourPawns < theirPawns) {
+        positionCache.posHash  = newHash;
+        positionCache.fortress = false;
+        currentPosHash         = newHash;
+        return false;
+    }
+
+    if (pos.count<ALL_PIECES>() > 12) {
+        positionCache.posHash  = newHash;
+        positionCache.fortress = false;
+        currentPosHash         = newHash;
+        return false;
+    }
+
+    const Square ourKing   = pos.square<KING>(us);
+    const Square theirKing = pos.square<KING>(~us);
+    const int   kingDist   = distance(ourKing, theirKing);
+    if (kingDist <= 3) {
+        positionCache.posHash  = newHash;
+        positionCache.fortress = false;
+        currentPosHash         = newHash;
+        return false;
+    }
+
+    if (pos.non_pawn_material(~us) > 3000 || popcount(pos.pieces(QUEEN)) > 0) {
+        positionCache.posHash  = newHash;
+        positionCache.fortress = false;
+        currentPosHash         = newHash;
+        return false;
+    }
+
+    const bool enoughMaterial =
+        (pos.count<ROOK>(us) + pos.count<KNIGHT>(us) + pos.count<BISHOP>(us)) 
+        >= params.defenderPieces;
+    const int  kingSafetyScore = king_safety_score(pos, us);
+    const bool kingSafety      = kingSafetyScore > 150;
+    if (!enoughMaterial || !kingSafety) {
+        positionCache.posHash  = newHash;
+        positionCache.fortress = false;
+        currentPosHash         = newHash;
+        return false;
+    }
+
+    if (has_pawn_breaks(pos) || !is_king_cutoff(pos, us)) {
+        positionCache.posHash  = newHash;
+        positionCache.fortress = false;
+        currentPosHash         = newHash;
+        return false;
+    }
+
+    if (!has_safe_waiting_moves(pos)) {
+        positionCache.posHash  = newHash;
+        positionCache.fortress = false;
+        currentPosHash         = newHash;
+        return false;
+    }
+
+    if (pos.non_pawn_material(us) <= 2 * pos.non_pawn_material(~us)) {
+        positionCache.posHash  = newHash;
+        positionCache.fortress = false;
+        currentPosHash         = newHash;
+        return false;
+    }
+
+    const Bitboard ourPieces   = pos.pieces(us);
+    Bitboard       enemyMobility = 0;
+    int            mobilityCount  = 0;
+
+    auto processPieceType = [&](PieceType pt) {
+        Bitboard pieces = pos.pieces(~us, pt);
+        while (pieces) {
+            Square s      = pop_lsb(pieces);
+            Bitboard atks = attacks_bb(pt, s, pos.pieces());
+            enemyMobility |= atks;
+            mobilityCount  += popcount(atks);
+        }
+    };
+
+    processPieceType(KNIGHT);
+    processPieceType(BISHOP);
+    processPieceType(ROOK); 
+
+    const int overlapping = popcount(enemyMobility & ourPieces);
+    fortress = (overlapping < 3) && (mobilityCount < params.highDepthLimit);
+
+    positionCache.posHash  = newHash;
+    positionCache.fortress = fortress;
+    currentPosHash         = newHash;
+    return fortress;
 }
+
+
 
 Value ShashinManager::static_value(const Eval::NNUE::Networks&   networks,
                                    Eval::NNUE::AccumulatorStack& accumulators,
