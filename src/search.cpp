@@ -2486,29 +2486,42 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     else
     {
         const auto correctionValue = correction_value(*thisThread, pos, ss);
-
         if (ss->ttHit)
         {
-            // Never assume anything about values stored in TT
             unadjustedStaticEval = ttData.eval;
             if (!is_valid(unadjustedStaticEval))
                 unadjustedStaticEval = evaluate(pos);
             ss->staticEval = bestValue =
               to_corrected_static_eval(unadjustedStaticEval, correctionValue);
-            //from Shashin begin
-            int penalty = 0;
-            if (staticState.isSacrificial)
-                penalty += std::min(4, static_cast<int>(staticState.legalMoveCount / 8));
-            if (staticState.kingExposed)
-                penalty += std::min(3, std::abs(staticState.kingSafetyScore) / 20);
-            penalty = std::min(penalty, 12);
-            if (bestValue > alpha - 15)
-                penalty = penalty * 90 / 100;  // Riduzione del 10%
-            bestValue = std::max(bestValue, alpha - penalty);
-            // from Shashin end
+            if (!rootNode)
+            {
+                int penalty = 0;
+
+                if (staticState.isSacrificial)
+                {
+                    int sacrificialPenalty = static_cast<int>(staticState.legalMoveCount) / 8;
+                    penalty += std::min(4, sacrificialPenalty);
+                }
+                if (staticState.kingExposed)
+                {
+                    int exposurePenalty = std::abs(staticState.kingSafetyScore) / 20;
+                    penalty += std::min(3, exposurePenalty);
+                }
+
+                if (bestValue > alpha - 15)
+                {
+                    penalty = penalty * 9 / 10;  // riduzione del 10%
+                }
+                penalty   = std::clamp(penalty, 0, 12);
+                bestValue = std::max(bestValue, alpha - penalty);
+            }
             if (is_valid(ttData.value) && !is_decisive(ttData.value)
                 && (ttData.bound & (ttData.value > bestValue ? BOUND_LOWER : BOUND_UPPER)))
+            {
                 bestValue = ttData.value;
+            }
+            ss->staticEval = bestValue;
+            return bestValue;
         }
         else
         {
