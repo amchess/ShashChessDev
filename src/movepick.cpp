@@ -128,7 +128,6 @@ void MovePicker::score() {
 
     int kingSafetyScore = king_safety_score(pos, us);
 
-    Bitboard pawnBB = pos.pieces(PAWN, us);
     static constexpr uint8_t AdjPawnCount[8] = {0, 1, 2, 2, 2, 2, 1, 0};
 
     [[maybe_unused]] Bitboard threatenedPieces, threatByLesser[QUEEN + 1];
