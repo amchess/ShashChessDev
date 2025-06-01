@@ -228,31 +228,35 @@ void ShashinManager::setDynamicDerivedState() {
 
 bool ShashinManager::isFortress(const Position& pos) {
     const uint64_t newHash = computePositionHash(pos);
-    if (positionCache.posHash == newHash && currentPosHash == newHash) {
+    if (positionCache.posHash == newHash && currentPosHash == newHash)
+    {
         return positionCache.fortress;
     }
     bool fortress = false;
 
-    const int   MinPly     = params.minPlyFortress;    // ad es. 28
+    const int   MinPly     = params.minPlyFortress;  // ad es. 28
     const Color us         = pos.side_to_move();
     const int   ourPawns   = popcount(pos.pieces(PAWN, us));
     const int   theirPawns = popcount(pos.pieces(PAWN, ~us));
 
-    if (pos.rule50_count() < MinPly + 1) {
+    if (pos.rule50_count() < MinPly + 1)
+    {
         positionCache.posHash  = newHash;
         positionCache.fortress = false;
         currentPosHash         = newHash;
         return false;
     }
 
-    if (ourPawns < 4 || ourPawns < theirPawns) {
+    if (ourPawns < 4 || ourPawns < theirPawns)
+    {
         positionCache.posHash  = newHash;
         positionCache.fortress = false;
         currentPosHash         = newHash;
         return false;
     }
 
-    if (pos.count<ALL_PIECES>() > 12) {
+    if (pos.count<ALL_PIECES>() > 12)
+    {
         positionCache.posHash  = newHash;
         positionCache.fortress = false;
         currentPosHash         = newHash;
@@ -261,15 +265,17 @@ bool ShashinManager::isFortress(const Position& pos) {
 
     const Square ourKing   = pos.square<KING>(us);
     const Square theirKing = pos.square<KING>(~us);
-    const int   kingDist   = distance(ourKing, theirKing);
-    if (kingDist <= 3) {
+    const int    kingDist  = distance(ourKing, theirKing);
+    if (kingDist <= 3)
+    {
         positionCache.posHash  = newHash;
         positionCache.fortress = false;
         currentPosHash         = newHash;
         return false;
     }
 
-    if (pos.non_pawn_material(~us) > 3000 || popcount(pos.pieces(QUEEN)) > 0) {
+    if (pos.non_pawn_material(~us) > 3000 || popcount(pos.pieces(QUEEN)) > 0)
+    {
         positionCache.posHash  = newHash;
         positionCache.fortress = false;
         currentPosHash         = newHash;
@@ -277,65 +283,69 @@ bool ShashinManager::isFortress(const Position& pos) {
     }
 
     const bool enoughMaterial =
-        (pos.count<ROOK>(us) + pos.count<KNIGHT>(us) + pos.count<BISHOP>(us)) 
-        >= params.defenderPieces;
+      (pos.count<ROOK>(us) + pos.count<KNIGHT>(us) + pos.count<BISHOP>(us))
+      >= params.defenderPieces;
     const int  kingSafetyScore = king_safety_score(pos, us);
     const bool kingSafety      = kingSafetyScore > 150;
-    if (!enoughMaterial || !kingSafety) {
+    if (!enoughMaterial || !kingSafety)
+    {
         positionCache.posHash  = newHash;
         positionCache.fortress = false;
         currentPosHash         = newHash;
         return false;
     }
 
-    if (has_pawn_breaks(pos) || !is_king_cutoff(pos, us)) {
+    if (has_pawn_breaks(pos) || !is_king_cutoff(pos, us))
+    {
         positionCache.posHash  = newHash;
         positionCache.fortress = false;
         currentPosHash         = newHash;
         return false;
     }
 
-    if (!has_safe_waiting_moves(pos)) {
+    if (!has_safe_waiting_moves(pos))
+    {
         positionCache.posHash  = newHash;
         positionCache.fortress = false;
         currentPosHash         = newHash;
         return false;
     }
 
-    if (pos.non_pawn_material(us) <= 2 * pos.non_pawn_material(~us)) {
+    if (pos.non_pawn_material(us) <= 2 * pos.non_pawn_material(~us))
+    {
         positionCache.posHash  = newHash;
         positionCache.fortress = false;
         currentPosHash         = newHash;
         return false;
     }
 
-    const Bitboard ourPieces   = pos.pieces(us);
+    const Bitboard ourPieces     = pos.pieces(us);
     Bitboard       enemyMobility = 0;
-    int            mobilityCount  = 0;
+    int            mobilityCount = 0;
 
     auto processPieceType = [&](PieceType pt) {
         Bitboard pieces = pos.pieces(~us, pt);
-        while (pieces) {
-            Square s      = pop_lsb(pieces);
+        while (pieces)
+        {
+            Square   s    = pop_lsb(pieces);
             Bitboard atks = attacks_bb(pt, s, pos.pieces());
             enemyMobility |= atks;
-            mobilityCount  += popcount(atks);
+            mobilityCount += popcount(atks);
         }
     };
 
     processPieceType(KNIGHT);
     processPieceType(BISHOP);
-    processPieceType(ROOK); 
+    processPieceType(ROOK);
 
     const int overlapping = popcount(enemyMobility & ourPieces);
-    fortress = (overlapping < 3) && (mobilityCount < params.highDepthLimit);
+    fortress              = (overlapping < 3) && (mobilityCount < params.highDepthLimit);
 
     positionCache.posHash  = newHash;
     positionCache.fortress = fortress;
     currentPosHash         = newHash;
     return fortress;
 }
-
 
 
 Value ShashinManager::static_value(const Eval::NNUE::Networks&   networks,

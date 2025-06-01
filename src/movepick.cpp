@@ -116,36 +116,37 @@ MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceTo
 
 template<GenType Type>
 void MovePicker::score() {
-    static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS,
-                  "Wrong type");
+    static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
-    Color us = pos.side_to_move();
+    Color      us       = pos.side_to_move();
     const bool fortress = MoveConfig::isFortress;
 
-    int phase = std::clamp(pos.game_ply() / 25, 0, 3);
+    int phase           = std::clamp(pos.game_ply() / 25, 0, 3);
     int breakingPenalty = 1800 + 600 * phase;
-    int preservingBonus =  900 + 300 * (3 - phase);
+    int preservingBonus = 900 + 300 * (3 - phase);
 
     int kingSafetyScore = king_safety_score(pos, us);
 
     static constexpr uint8_t AdjPawnCount[8] = {0, 1, 2, 2, 2, 2, 1, 0};
 
     [[maybe_unused]] Bitboard threatenedPieces, threatByLesser[QUEEN + 1];
-    if constexpr (Type == QUIETS) {
+    if constexpr (Type == QUIETS)
+    {
         threatByLesser[KNIGHT] = threatByLesser[BISHOP] = pos.attacks_by<PAWN>(~us);
-        threatByLesser[ROOK]   = pos.attacks_by<KNIGHT>(~us)
-                                | pos.attacks_by<BISHOP>(~us)
-                                | threatByLesser[KNIGHT];
-        threatByLesser[QUEEN]  = pos.attacks_by<ROOK>(~us) | threatByLesser[ROOK];
+        threatByLesser[ROOK] =
+          pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<BISHOP>(~us) | threatByLesser[KNIGHT];
+        threatByLesser[QUEEN] = pos.attacks_by<ROOK>(~us) | threatByLesser[ROOK];
     }
 
-    for (auto& m : *this) {
-        const Square from = m.from_sq();
-        const Square to   = m.to_sq();
-        const Piece  pc   = pos.moved_piece(m);
-        const PieceType pt = type_of(pc);
+    for (auto& m : *this)
+    {
+        const Square    from = m.from_sq();
+        const Square    to   = m.to_sq();
+        const Piece     pc   = pos.moved_piece(m);
+        const PieceType pt   = type_of(pc);
 
-        if constexpr (Type == CAPTURES) {
+        if constexpr (Type == CAPTURES)
+        {
             m.value = (*captureHistory)[pc][to][type_of(pos.piece_on(to))]
                     + 7 * int(PieceValue[pos.piece_on(to)])
                     + 1024 * bool(pos.check_squares(pt) & to);
@@ -153,16 +154,17 @@ void MovePicker::score() {
             if (MoveConfig::isAggressive)
                 m.value += 500;
         }
-        else if constexpr (Type == QUIETS) {
+        else if constexpr (Type == QUIETS)
+        {
             m.value = 2 * (*mainHistory)[us][m.from_to()]
                     + 2 * (*pawnHistory)[pawn_structure_index(pos)][pc][to];
             for (int i : {0, 1, 2, 3, 5})
                 m.value += (*continuationHistory[i])[pc][to];
             m.value += (bool(pos.check_squares(pt) & to) && pos.see_ge(m, -75)) * 16384;
-            if (KNIGHT <= pt && pt <= QUEEN) {
+            if (KNIGHT <= pt && pt <= QUEEN)
+            {
                 static constexpr int bonus[QUEEN + 1] = {0, 0, 144, 144, 256, 517};
-                int v = (threatByLesser[pt] & to) ? -95
-                       : 100 * bool(threatByLesser[pt] & from);
+                int v = (threatByLesser[pt] & to) ? -95 : 100 * bool(threatByLesser[pt] & from);
                 m.value += bonus[pt] * v;
             }
             if (ply < LOW_PLY_HISTORY_SIZE)
@@ -171,33 +173,40 @@ void MovePicker::score() {
             if (MoveConfig::isStrategical)
                 m.value += 200;
         }
-        else {  // EVASIONS
-            if (pos.capture_stage(m)) {
+        else
+        {  // EVASIONS
+            if (pos.capture_stage(m))
+            {
                 m.value = PieceValue[pos.piece_on(to)] + (1 << 28);
-            } else {
-                m.value = (*mainHistory)[us][m.from_to()]
-                        + (*continuationHistory[0])[pc][to];
+            }
+            else
+            {
+                m.value = (*mainHistory)[us][m.from_to()] + (*continuationHistory[0])[pc][to];
                 if (ply < LOW_PLY_HISTORY_SIZE)
                     m.value += 2 * (*lowPlyHistory)[ply][m.from_to()] / (1 + ply);
             }
         }
 
-        if (fortress) {
+        if (fortress)
+        {
             bool preserve = is_fortress_preserving_move(pos, m);
-            if (is_fortress_breaking_move(pos, m)) {
-                m.value -= breakingPenalty;      
+            if (is_fortress_breaking_move(pos, m))
+            {
+                m.value -= breakingPenalty;
                 if (is_fortress_key_piece(pc))
-                    m.value -=  450;             
+                    m.value -= 450;
                 if (kingSafetyScore > 120)
-                    m.value +=  300;             
+                    m.value += 300;
             }
-            else if (preserve) {
-                m.value += preservingBonus;      
+            else if (preserve)
+            {
+                m.value += preservingBonus;
                 if (type_of(pc) == KING && phase == 3)
-                    m.value +=  200;             
+                    m.value += 200;
             }
 
-            if (preserve) {
+            if (preserve)
+            {
                 m.value += 500 * AdjPawnCount[file_of(to)];
             }
 
@@ -206,14 +215,14 @@ void MovePicker::score() {
             else if (!has_safe_waiting_moves(pos))
                 m.value = m.value * 3 / 4;
         }
-        if (MoveConfig::useMoveShashinLogic) {
+        if (MoveConfig::useMoveShashinLogic)
+        {
             const double dynamicFactor =
-                std::log(1.0 + std::min(pos.game_ply() / 20.0, 1.0) * 9.0)
-                / std::log(10.0);
+              std::log(1.0 + std::min(pos.game_ply() / 20.0, 1.0) * 9.0) / std::log(10.0);
             if (MoveConfig::isStrategical)
-                m.value += static_cast<int>( 60 * dynamicFactor);  
+                m.value += static_cast<int>(60 * dynamicFactor);
             else if (MoveConfig::isAggressive)
-                m.value += static_cast<int>(120 * dynamicFactor);  
+                m.value += static_cast<int>(120 * dynamicFactor);
         }
     }
 }

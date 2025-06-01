@@ -1083,14 +1083,11 @@ Value Search::Worker::search(
     if (localShashinManager.isFortress(rootPos) && depth > 16)
     {
         static constexpr Depth RedTableAggressive[32] = {
-            /*0–15*/   7, 7, 7, 7, 7, 7, 7, 7,
-                    7, 7, 7, 7, 7, 7, 7, 7,
-            /*16–31*/  5, 5, 5, 5, 5, 5, 5, 5,
-                    5, 5, 5, 5, 5, 5, 5, 5
-        };
+          /*0–15*/ 7,  7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
+          /*16–31*/ 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5};
         constexpr Depth BaseReduction = 2;
-        Depth reduction = BaseReduction + RedTableAggressive[std::min<int>(depth, 31)];
-        depth = std::max(depth - reduction, Depth(10));
+        Depth           reduction = BaseReduction + RedTableAggressive[std::min<int>(depth, 31)];
+        depth                     = std::max(depth - reduction, Depth(10));
 
         int progress = pos.rule50_count();
         if (progress < 29)
@@ -1105,10 +1102,12 @@ Value Search::Worker::search(
         if (progress >= (50 - window))
         {
             double weight = (progress - (50 - window)) / double(window);
-            if (weight < 0.0)   weight = 0.0;
-            else if (weight > 1.0) weight = 1.0;
+            if (weight < 0.0)
+                weight = 0.0;
+            else if (weight > 1.0)
+                weight = 1.0;
 
-            bool useNNUE = (nodeType != NonPV) && (depth > 25);
+            bool  useNNUE  = (nodeType != NonPV) && (depth > 25);
             Value baseEval = useNNUE ? evaluate(pos) : ss->staticEval;
 
             Value drawInf = static_cast<Value>((1.0 - weight) * baseEval + weight * VALUE_DRAW);
@@ -1119,10 +1118,8 @@ Value Search::Worker::search(
 
         if (depth < 15)
         {
-            static constexpr int Bonus[16] = {
-                330,308,286,264,242,220,198,176,
-                154,132,110, 88, 66, 44, 22,  0
-            };
+            static constexpr int Bonus[16] = {330, 308, 286, 264, 242, 220, 198, 176,
+                                              154, 132, 110, 88,  66,  44,  22,  0};
             ss->staticEval += Bonus[depth];
         }
     }
@@ -2477,7 +2474,9 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         && !dynamicDerived.isStrategical && staticState.legalMoveCount < 35
         && (!staticState.kingExposed || ttData.depth > DEPTH_QS + 4)
         && std::abs(ttData.value) > VALUE_DRAW + 60)
+    {
         return ttData.value;
+    }
     //from Shashin-Crystal end
 
     // Step 4. Static evaluation of the position
