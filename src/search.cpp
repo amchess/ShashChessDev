@@ -2493,28 +2493,27 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                 unadjustedStaticEval = evaluate(pos);
             ss->staticEval = bestValue =
               to_corrected_static_eval(unadjustedStaticEval, correctionValue);
-            if (!rootNode)
+            //From shashin begin
+            int penalty = 0;
+
+            if (staticState.isSacrificial)
             {
-                int penalty = 0;
-
-                if (staticState.isSacrificial)
-                {
-                    int sacrificialPenalty = static_cast<int>(staticState.legalMoveCount) / 8;
-                    penalty += std::min(4, sacrificialPenalty);
-                }
-                if (staticState.kingExposed)
-                {
-                    int exposurePenalty = std::abs(staticState.kingSafetyScore) / 20;
-                    penalty += std::min(3, exposurePenalty);
-                }
-
-                if (bestValue > alpha - 15)
-                {
-                    penalty = penalty * 9 / 10;  // riduzione del 10%
-                }
-                penalty   = std::clamp(penalty, 0, 12);
-                bestValue = std::max(bestValue, alpha - penalty);
+                int sacrificialPenalty = static_cast<int>(staticState.legalMoveCount) / 8;
+                penalty += std::min(4, sacrificialPenalty);
             }
+            if (staticState.kingExposed)
+            {
+                int exposurePenalty = std::abs(staticState.kingSafetyScore) / 20;
+                penalty += std::min(3, exposurePenalty);
+            }
+
+            if (bestValue > alpha - 15)
+            {
+                penalty = penalty * 90 / 100;  // riduzione del 10%
+            }
+            penalty   = std::clamp(penalty, 0, 12);
+            bestValue = std::max(bestValue, alpha - penalty);
+            //from shashin end
             if (is_valid(ttData.value) && !is_decisive(ttData.value)
                 && (ttData.bound & (ttData.value > bestValue ? BOUND_LOWER : BOUND_UPPER)))
             {
