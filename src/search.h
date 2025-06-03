@@ -85,10 +85,10 @@ struct Stack {
     int                         reduction;
     bool                        isPvNode;
     int                         quietMoveStreak;
-    //from Crystal-shashin begin
+    //from Shashin Crystal-shashin begin
     bool secondaryLine = false;
     bool mainLine      = false;
-    //from Crystal-shashin end
+    //from Shashin Crystal-shashin end
 };
 
 

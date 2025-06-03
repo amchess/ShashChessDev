@@ -1165,7 +1165,7 @@ Value Search::Worker::search(
     //from shashin crystal end
     int   priorReduction;
     Piece movedPiece;
-    bool  ourMove = false;  // from Crystal
+    bool  ourMove = false;  // from Shashin Crystal
 
     ValueList<Move, 32> capturesSearched;
     ValueList<Move, 32> quietsSearched;
@@ -1581,7 +1581,7 @@ Value Search::Worker::search(
                                   && (ss->ply >= thisThread->nmpMinPly) && !is_loss(beta);
 
     //only from Stockfish end
-    //only from crystal begin
+    //only from shashin crystal begin
     ourMove                      = !(ss->ply & 1);
     nullParity                   = (ourMove == thisThread->nmpSide);
     kingDanger                   = !ourMove && king_danger(pos, us);
@@ -1590,7 +1590,7 @@ Value Search::Worker::search(
     allowNullMoveOnlyFromCrystal = !thisThread->nmpGuard && !gameCycle && (eval >= ss->staticEval)
                                 && positionSafe
                                 && (rootDepth < 11 || ourMove || (MoveList<LEGAL>(pos).size() > 5));
-    //only from crystal end
+    //only from shashin crystal end
     useNullMoveByShashinForStockfish = localShashinManager.useNullMoveByShashinForStockfish();
 
     if (commonNullMoveConditions
