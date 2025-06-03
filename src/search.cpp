@@ -2496,13 +2496,15 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             //from Shashin begin
             int penalty = 0;
             if (staticState.isSacrificial)
-                penalty += std::min(4, static_cast<int>(staticState.legalMoveCount / 8));
+                penalty += std::min(9, static_cast<int>(staticState.legalMoveCount / 4));
             if (staticState.kingExposed)
-                penalty += std::min(3, std::abs(staticState.kingSafetyScore) / 20);
+                penalty += std::min(6, std::abs(staticState.kingSafetyScore) / 25);
             penalty = std::min(penalty, 12);
-            if (bestValue > alpha - 15)
-                penalty = penalty * 90 / 100;  // Riduzione del 10%
-            bestValue = std::max(bestValue, alpha - penalty);
+            if (bestValue > alpha - 50)
+            {
+                penalty = penalty * 80 / 100;  // Riduzione del 10%
+            }
+            bestValue -= std::min(penalty, 25);
             // from Shashin end
             if (is_valid(ttData.value) && !is_decisive(ttData.value)
                 && (ttData.bound & (ttData.value > bestValue ? BOUND_LOWER : BOUND_UPPER)))
