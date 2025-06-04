@@ -1507,7 +1507,7 @@ Value Search::Worker::search(
     //from Shashin begin
     int  nullThreshold;
     bool commonNullMoveConditions, useNullMoveByShashinForStockfish, positionSafe,
-      allowNullMoveOnlyFromStockfish, allowNullMoveOnlyFromCrystal;
+      allowNullMoveOnlyFromStockfish, shallowRoot, lowRootMobility;
     //from Shashin end
     // full threads patch begin
     if (thisThread->fullSearch)
@@ -1571,43 +1571,43 @@ Value Search::Worker::search(
             return beta + (eval - beta) / 3;
     }
 
-    // Step 9. Null move search with verification search – Shashin-Crystal version
-    // If the position is critical (e.g., exposed King or sacrificial position), reduce null move aggressiveness.
-    //common null move conditions begin
-    nullThreshold            = beta - 19 * depth + 389;
-    commonNullMoveConditions = cutNode && !disableNMAndPC && ss->staticEval >= nullThreshold
-                            && !excludedMove && pos.non_pawn_material(us) && eval >= beta;
-    //common null move conditions end
-    //only from Stockfish begin
+    // Step 9. Null move search with verification search
+    commonNullMoveConditions = cutNode && !disableNMAndPC
+                            && ss->staticEval >= (beta - 19 * depth + 389) && !excludedMove
+                            && pos.non_pawn_material(us) && eval >= beta;
     allowNullMoveOnlyFromStockfish = ((ss - 1)->currentMove != Move::null())
                                   && (ss->ply >= thisThread->nmpMinPly) && !is_loss(beta);
-
-    //only from Stockfish end
-    //only from shashin crystal begin
-    ourMove                      = !(ss->ply & 1);
-    nullParity                   = (ourMove == thisThread->nmpSide);
-    kingDanger                   = !ourMove && king_danger(pos, us);
-    quietKingSafe                = !staticState.isSacrificial && !staticState.kingExposed;
-    positionSafe                 = !kingDanger && quietKingSafe;  // King is safe during quiet moves
-    allowNullMoveOnlyFromCrystal = !thisThread->nmpGuard && !gameCycle && (eval >= ss->staticEval)
-                                && positionSafe
-                                && (rootDepth < 11 || ourMove || (MoveList<LEGAL>(pos).size() > 5));
-    //only from shashin crystal end
-    useNullMoveByShashinForStockfish = localShashinManager.useNullMoveByShashinForStockfish();
-
+    shallowRoot     = (rootDepth < 11);
+    lowRootMobility = (staticState.legalMoveCount <= 5);
+    positionSafe =
+      !staticState.stmKingDanger && !staticState.isSacrificial && (shallowRoot || lowRootMobility);
+    useNullMoveByShashinForStockfish = localShashinManager.useNullMoveByShashinForStockfish()
+                                    && positionSafe && !thisThread->nmpGuard && !gameCycle
+                                    && (eval >= ss->staticEval);
     if (commonNullMoveConditions
-        && (allowNullMoveOnlyFromCrystal
-            || (allowNullMoveOnlyFromStockfish && useNullMoveByShashinForStockfish)))
+        && (allowNullMoveOnlyFromStockfish || useNullMoveByShashinForStockfish))
     {
         assert(eval - beta >= 0);
-        thisThread->nmpSide = ourMove;  // Null move signal for Shashin
-
-        Depth R = std::min(int(eval - beta) / 213, 6) + depth / 3 + 5;
-        if (allowNullMoveOnlyFromCrystal)
+        thisThread->nmpSide     = !(ss->ply & 1);
+        Depth      R            = std::min(int(eval - beta) / 213, 6) + depth / 3 + 5;
+        const bool isTal        = localShashinManager.isTal();
+        const bool isPetrosian  = localShashinManager.isPetrosian();
+        const bool isCapablanca = localShashinManager.isCapablanca();
+        if (isTal && staticState.allPiecesCount > 12 && staticState.legalMoveCount > 20
+            /*&& !((ss - 1)->secondaryLine) // scommenta se vuoi meno riduzione nelle secondarie */
+        )
         {
-            if (!ourMove && (ss - 1)->secondaryLine)
-                R = std::min(R, 8);
+            R += 1;  // +1 ply di riduzione → LMR più aggressivo
         }
+        else if (isPetrosian && staticState.allPiecesCount <= 12)
+        {
+            R = std::max<Depth>(1, R - 1);
+        }
+        else if (isCapablanca && staticState.allPiecesCount < 10 && staticState.legalMoveCount < 20)
+        {
+            R = std::max<Depth>(2, R - 2);
+        }
+
         ss->currentMove                   = Move::null();
         ss->continuationHistory           = &thisThread->continuationHistory[0][0][NO_PIECE][0];
         ss->continuationCorrectionHistory = &thisThread->continuationCorrectionHistory[NO_PIECE][0];
@@ -1623,9 +1623,6 @@ Value Search::Worker::search(
         {
             if (thisThread->nmpMinPly || depth < 16)
                 return nullValue;
-
-            assert(!thisThread->nmpMinPly);  // Recursive verification is not allowed
-
             // Do verification search at high depths, with null move pruning disabled
             // until ply exceeds nmpMinPly.
             thisThread->nmpMinPly = ss->ply + 3 * (depth - R) / 4;
@@ -1638,9 +1635,8 @@ Value Search::Worker::search(
                 return nullValue;
         }
     }
-    // End of Crystal-Shashin logic
-
     improving |= ss->staticEval >= beta + 94;
+
 
     // Step 10. Internal iterative reductions
     // For PV nodes without a ttMove as well as for deep enough cutNodes, we decrease depth.
