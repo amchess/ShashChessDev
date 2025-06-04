@@ -92,6 +92,7 @@ struct StaticState {
     bool    kingExposed;
     bool    highMaterial;
     bool    kingDanger;
+    bool    stmKingDanger;
     bool    pawnsNearPromotion;
     uint8_t allPiecesCount;
     int16_t kingSafetyScore;
@@ -102,6 +103,7 @@ struct StaticState {
         kingExposed(false),
         highMaterial(false),
         kingDanger(false),
+        stmKingDanger(false),
         pawnsNearPromotion(false),
         allPiecesCount(0),
         kingSafetyScore(0) {}

@@ -153,13 +153,13 @@ struct SharedState {
                 ThreadPool&                                     threadPool,
                 TranspositionTable&                             transpositionTable,
                 const LazyNumaReplicated<Eval::NNUE::Networks>& nets,
-                const ShashChess::ShashinConfig&                shCfg) ://Shashin 
+                const ShashChess::ShashinConfig&                shCfg) :  //Shashin
         bookMan(bm),
         options(optionsMap),
         threads(threadPool),
         tt(transpositionTable),
         networks(nets),
-        shashinConfig(shCfg) {} //shashin
+        shashinConfig(shCfg) {}  //shashin
 
     BookManager& bookMan;
     //from Polyfish end
@@ -167,7 +167,7 @@ struct SharedState {
     ThreadPool&                                     threads;
     TranspositionTable&                             tt;
     const LazyNumaReplicated<Eval::NNUE::Networks>& networks;
-    const ShashChess::ShashinConfig                 shashinConfig; //Shashin 
+    const ShashChess::ShashinConfig                 shashinConfig;  //Shashin
 };
 
 class Worker;

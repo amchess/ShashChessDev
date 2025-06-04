@@ -1080,7 +1080,9 @@ Value Search::Worker::search(
     auto&                   localShashinManager = *this->shashinManager;
     const RootShashinState& rootShashinState    = localShashinManager.getState();  //for ShashChess
     // From Shashin fortress begin
-    if (localShashinManager.isFortress(rootPos) && depth > 16)
+
+    bool isFortressNode = localShashinManager.isFortress(rootPos);
+    if (isFortressNode && depth > 16)
     {
         static constexpr Depth RedTableAggressive[32] = {
           /*0–15*/ 7,  7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
@@ -2092,54 +2094,73 @@ skipExtensionAndPruning:  // full threads search patch
 
             // Decrease/increase reduction for moves with a good/bad history
             r -= ss->statScore * 826 / 8192;
-
             // Step 17. Late moves reduction / extension (LMR)
             // Shashin-Crystal begin
-            bool useCrystalLMR = localShashinManager.useMoveGenAndStep17CrystalLogic();
-            if (doLMRStep && moveCount > std::max(sibs, static_cast<int>(1))
-                && ((depth >= 2 && !useCrystalLMR)
-                    || ((allowLMR && (!capture || lmrCapture)) && useCrystalLMR)))
+            const bool useCrystalLMR   = localShashinManager.useMoveGenAndStep17CrystalLogic();
+            bool       canUseShashin   = (useCrystalLMR && allowLMR && (!capture || lmrCapture));
+            const bool highDepth       = (depth >= 4);
+            const bool useShashinLogic = useCrystalLMR && highDepth && !staticState.stmKingDanger;
+
+            if (doLMRStep && moveCount > std::max(sibs, 1) && depth >= 2)
             {
                 // In general we want to cap the LMR depth search at newDepth, but when
                 // reduction is negative, we allow this move a limited search extension
                 // beyond the first move depth.
                 // To prevent problems when the max value is less than the min value,
                 // std::clamp has been replaced by a more robust implementation.
-
-                // Base reduction calculation
-                int baseMultiplier   = useCrystalLMR ? 6 : 7;
-                int dynamicReduction = (r + moveCount * baseMultiplier) / 1024;
-                // Tactical positions -> Reduce less (avoid excessive pruning)
-                if (dynamicDerived.isAggressive || dynamicDerived.isTacticalReactive)
-                    dynamicReduction = std::max(1, dynamicReduction - 2);
-
-                // Passive positions (Petrosian style) -> Even stronger pruning
-                if (localShashinManager.isPetrosian())
-                {
-                    if (value > alpha + 15)  // If evaluation is improving, reduce less
-                        dynamicReduction = std::min(dynamicReduction + 1, 4);
-                    else if (value < alpha - 10)  // If evaluation is worsening, prune aggressively
-                        dynamicReduction = std::min(dynamicReduction + 3, 6);
-                }
-
-                // Compute final reduction depth
-                // Final reduction calculation
-                Depth d = std::max(1, std::min(newDepth - dynamicReduction,
+                Depth d = std::max(1, std::min(newDepth - r / 1024,
                                                newDepth + !allNode + (PvNode && !bestMove)))
                         + (ss - 1)->isPvNode;
+
+                //Shashin logic adjustement begin
+                if (useShashinLogic)
+                {
+                    const bool isTal        = localShashinManager.isTal();
+                    const bool isPetrosian  = localShashinManager.isPetrosian();
+                    const bool isCapablanca = localShashinManager.isCapablanca();
+                    const bool pnPromo      = staticState.pawnsNearPromotion;
+                    const int  pcCount      = staticState.allPiecesCount;
+                    if (isTal)
+                    {
+                        d = std::min(d + 1, newDepth);
+                    }
+                    else if (isPetrosian)
+                    {
+                        if (staticState.stmKingDanger)
+                        {
+                            d = std::min<Depth>(d + 1, newDepth);
+                        }
+                        else if (!pnPromo && moveCount >= 6)
+                        {
+                            d = std::max<Depth>(1, d - 1);
+                        }
+                    }
+                    else if (isCapablanca)
+                    {
+                        if (pcCount < 12)
+                        {
+                            d = std::min<Depth>(d + 1, newDepth);
+                        }
+                        else if (moveCount > 25)
+                        {
+                            d = std::max<Depth>(1, d - 1);
+                        }
+                    }
+                }
+                //Shashin logic adjustement end
                 ss->reduction = newDepth - d;
                 value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
                 ss->reduction = 0;
-
-                // If the reduced search fails high, attempt full-depth search
                 // Do a full-depth search when reduced LMR search fails high
                 // (*Scaler) Usually doing more shallower searches
                 // doesn't scale well to longer TCs
                 if (value > alpha && d < newDepth)
                 {
-
+                    // Adjust full-depth search based on LMR results - if the result was
+                    // good enough search deeper, if it was bad enough search shallower.
                     const bool doDeeperSearch    = value > (bestValue + 42 + 2 * newDepth);
                     const bool doShallowerSearch = value < bestValue + 9;
+
                     newDepth += doDeeperSearch - doShallowerSearch;
 
                     if (newDepth > d)
@@ -2153,7 +2174,6 @@ skipExtensionAndPruning:  // full threads search patch
                     newDepth--;
             }
             //shashin-crystal end
-
             // Step 18. Full-depth search when LMR is skipped
             else if (!PvNode || moveCount > 1)
             {

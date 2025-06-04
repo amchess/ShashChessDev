@@ -7,11 +7,11 @@
 
 namespace ShashChess {
 
-    template<typename E>
-    constexpr auto to_underlying(E e) noexcept 
-        -> std::enable_if_t<std::is_enum_v<E>, std::underlying_type_t<E>> {
-        return static_cast<std::underlying_type_t<E>>(e);
-    }    
+template<typename E>
+constexpr auto to_underlying(E e) noexcept
+  -> std::enable_if_t<std::is_enum_v<E>, std::underlying_type_t<E>> {
+    return static_cast<std::underlying_type_t<E>>(e);
+}
 // =============================================
 // Template Metaprogramming Utilities
 // =============================================
@@ -24,8 +24,7 @@ using are_all_shashin = std::conjunction<std::is_same<Ts, ShashinPosition>...>;
 // =============================================
 
 template<typename... Args>
-__attribute__((always_inline))
-constexpr bool anyOf(ShashinPosition value, Args... ranges) {
+__attribute__((always_inline)) constexpr bool anyOf(ShashinPosition value, Args... ranges) {
     static_assert((std::is_same_v<ShashinPosition, Args> && ...),
                   "All ranges must be ShashinPosition");
 

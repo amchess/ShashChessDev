@@ -162,6 +162,8 @@ bool ShashinManager::isTal() const {
       {ShashinPosition::LOW_TAL, ShashinPosition::MIDDLE_TAL, ShashinPosition::HIGH_TAL});
 }
 
+bool ShashinManager::isCapablanca() const { return inRange<ShashinPosition::CAPABLANCA>(); }
+
 void ShashinManager::initDynamicBaseState(Value                currentValue,
                                           Position&            rootPos,
                                           const ShashinConfig& config) {
@@ -402,6 +404,7 @@ void ShashinManager::setStaticState(const Position& rootPos) {
     staticState.highMaterial = (nonPawnMaterial > 2400);
 
     staticState.kingDanger         = king_danger(rootPos, WHITE) || king_danger(rootPos, BLACK);
+    staticState.stmKingDanger      = king_danger(rootPos, rootPos.side_to_move());
     staticState.pawnsNearPromotion = isPawnNearPromotion(rootPos);
     staticState.allPiecesCount     = rootPos.count<ALL_PIECES>();
     staticState.kingSafetyScore    = king_safety_score(rootPos, rootPos.side_to_move());

@@ -48,11 +48,11 @@ class ShashinManager {
 
     // Evaluation
     Value static_value(const Eval::NNUE::Networks&   networks,
-        Eval::NNUE::AccumulatorStack& accumulators,
-        Eval::NNUE::AccumulatorCaches refreshTable,
-        Position&                     rootPos,
-        Search::Stack*                ss,
-        Value                         optimism);
+                       Eval::NNUE::AccumulatorStack& accumulators,
+                       Eval::NNUE::AccumulatorCaches refreshTable,
+                       Position&                     rootPos,
+                       Search::Stack*                ss,
+                       Value                         optimism);
 
     // Initialization
     void initDynamicRootShashinState(const Eval::NNUE::Networks&   networks,
@@ -86,6 +86,7 @@ class ShashinManager {
     bool isMCTSApplicableByValue() const;
     bool isMCTSExplorationApplicable() const;
     bool isTal() const;
+    bool isCapablanca() const;
     bool isHighPieceDensityCapablancaPosition() const;
     bool isTacticalReduction() const;
     bool avoidStep10() const;
@@ -105,7 +106,7 @@ class ShashinManager {
 
     inline __attribute__((always_inline)) bool isPassive() const {
         return anyOf(state.dynamicBase.currentRange, ShashinPosition::MIDDLE_HIGH_PETROSIAN,
-                          ShashinPosition::HIGH_PETROSIAN);
+                     ShashinPosition::HIGH_PETROSIAN);
     }
 
     inline __attribute__((always_inline)) bool isTactical() const {
@@ -117,11 +118,13 @@ class ShashinManager {
                                ShashinPosition::HIGH_PETROSIAN});
     }
 
-    inline __attribute__((always_inline)) bool isHighPieceDensity() const { return state.staticState.allPiecesCount > 14; }
+    inline __attribute__((always_inline)) bool isHighPieceDensity() const {
+        return state.staticState.allPiecesCount > 14;
+    }
 
     inline __attribute__((always_inline)) bool isAggressive() const {
         return anyOf(state.dynamicBase.currentRange, ShashinPosition::MIDDLE_LOW_TAL,
-                          ShashinPosition::MIDDLE_TAL);
+                     ShashinPosition::MIDDLE_TAL);
     }
 
     inline __attribute__((always_inline)) bool isInRange(ShashinPosition position) const {
@@ -129,23 +132,23 @@ class ShashinManager {
     }
 
    private:
-   ShashinParams        params;
-   struct PositionCache {
-    uint64_t posHash = 0;
-    bool fortress = false;
-    bool pawnNearPromo = false;
-    bool sacrificial = false;
-    };    
+    ShashinParams params;
+    struct PositionCache {
+        uint64_t posHash       = 0;
+        bool     fortress      = false;
+        bool     pawnNearPromo = false;
+        bool     sacrificial   = false;
+    };
     RootShashinState state;
-    PositionCache positionCache; 
-    uint64_t currentPosHash = 0;
+    PositionCache    positionCache;
+    uint64_t         currentPosHash = 0;
     // Helper to calculate the position hash
     uint64_t computePositionHash(const Position& pos) {
         return Shashin::shashin_position_hash(pos);
     }
     // Helper to invalidate caches when position changes
     void invalidateCaches() {
-        currentPosHash = 0; // It invalidates all at the position change
+        currentPosHash = 0;  // It invalidates all at the position change
     }
 };
 
