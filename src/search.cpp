@@ -1505,7 +1505,6 @@ Value Search::Worker::search(
               << bonus * 1266 / 1024;
     }
     //from Shashin begin
-    int  nullThreshold;
     bool commonNullMoveConditions, useNullMoveByShashinForStockfish, positionSafe,
       allowNullMoveOnlyFromStockfish, shallowRoot, lowRootMobility;
     //from Shashin end
@@ -1753,18 +1752,7 @@ moves_loop:  // When in check, search starts here
 
     int moveCount = 0;
 
-    //from Crystal-Shashin begin
-    //for step 17 begin
-    bool lmrCapture = cutNode && (ss - 1)->moveCount > 1;
-
-    bool kingDangerThem = ourMove && king_danger(pos, ~us);
-
-    bool allowLMR =
-      depth > 1 && !gameCycle && (!kingDangerThem || ss->ply > 6) && (!PvNode || ss->ply > 1);
-    //for step 17 end
-    bool doLMP = ss->ply > 2 && !PvNode;  //for step 14
-
-    //from Crystal-Shashin end
+    bool doLMP = ss->ply > 2 && !PvNode;  //for step 14, Crystal-Shashin
 
     // Step 13. Loop through all pseudo-legal moves until no moves remain
     // or a beta cutoff occurs.
@@ -2093,7 +2081,6 @@ skipExtensionAndPruning:  // full threads search patch
             // Step 17. Late moves reduction / extension (LMR)
             // Shashin-Crystal begin
             const bool useCrystalLMR   = localShashinManager.useMoveGenAndStep17CrystalLogic();
-            bool       canUseShashin   = (useCrystalLMR && allowLMR && (!capture || lmrCapture));
             const bool highDepth       = (depth >= 4);
             const bool useShashinLogic = useCrystalLMR && highDepth && !staticState.stmKingDanger;
 
