@@ -1167,8 +1167,13 @@ Value Search::Worker::search(
     //from shashin crystal end
     int   priorReduction;
     Piece movedPiece;
-    bool  ourMove = false;  // from Shashin Crystal
-
+    //from Shashin-Crystal begin
+    bool ourMove = false, stockfishActivation = false, crystalActivation = false;
+    bool isComplexPosition = localShashinManager.isComplexPosition();
+    bool isTal             = localShashinManager.isTal();
+    bool isPetrosian       = localShashinManager.isPetrosian();
+    bool isCapablanca      = localShashinManager.isCapablanca();
+    //from Shashin-Crystal end
     ValueList<Move, 32> capturesSearched;
     ValueList<Move, 32> quietsSearched;
     // from Kelly begin
@@ -1204,13 +1209,17 @@ Value Search::Worker::search(
     // Used to send selDepth info to GUI (selDepth counts from 1, ply from 0)
     if (PvNode && thisThread->selDepth < ss->ply + 1)
         thisThread->selDepth = ss->ply + 1;
+    //from shashin-crystal begin
     const auto& dynamicDerived = rootShashinState.dynamicDerived;
     const auto& staticState    = rootShashinState.staticState;
+    const bool  pnPromo        = staticState.pawnsNearPromotion;
+    const int   pcCount        = staticState.allPiecesCount;
+    //from Shashin-Crystal end
     if (!rootNode)
     {
         // from Crystal-Shashin begin
         bool allowCycleDetection =
-          (dynamicDerived.isStrategical && localShashinManager.isComplexPosition())
+          (dynamicDerived.isStrategical && isComplexPosition)
           || (localShashinManager.isTacticalDefensive() && localShashinManager.isLowActivity());
 
         if (allowCycleDetection && !ss->excludedMove)
@@ -1504,10 +1513,6 @@ Value Search::Worker::search(
             thisThread->pawnHistory[pawn_structure_index(pos)][pos.piece_on(prevSq)][prevSq]
               << bonus * 1266 / 1024;
     }
-    //from Shashin begin
-    bool commonNullMoveConditions, useNullMoveByShashinForStockfish, positionSafe,
-      allowNullMoveOnlyFromStockfish, shallowRoot, lowRootMobility;
-    //from Shashin end
     // full threads patch begin
     if (thisThread->fullSearch)
         goto moves_loop;  // full threads patch
@@ -1571,41 +1576,12 @@ Value Search::Worker::search(
     }
 
     // Step 9. Null move search with verification search
-    commonNullMoveConditions = cutNode && !disableNMAndPC
-                            && ss->staticEval >= (beta - 19 * depth + 389) && !excludedMove
-                            && pos.non_pawn_material(us) && eval >= beta;
-    allowNullMoveOnlyFromStockfish = ((ss - 1)->currentMove != Move::null())
-                                  && (ss->ply >= thisThread->nmpMinPly) && !is_loss(beta);
-    shallowRoot     = (rootDepth < 11);
-    lowRootMobility = (staticState.legalMoveCount <= 5);
-    positionSafe =
-      !staticState.stmKingDanger && !staticState.isSacrificial && (shallowRoot || lowRootMobility);
-    useNullMoveByShashinForStockfish = localShashinManager.useNullMoveByShashinForStockfish()
-                                    && positionSafe && !thisThread->nmpGuard && !gameCycle
-                                    && (eval >= ss->staticEval);
-    if (commonNullMoveConditions
-        && (allowNullMoveOnlyFromStockfish || useNullMoveByShashinForStockfish))
-    {
-        assert(eval - beta >= 0);
-        thisThread->nmpSide     = !(ss->ply & 1);
-        Depth      R            = std::min(int(eval - beta) / 213, 6) + depth / 3 + 5;
-        const bool isTal        = localShashinManager.isTal();
-        const bool isPetrosian  = localShashinManager.isPetrosian();
-        const bool isCapablanca = localShashinManager.isCapablanca();
-        if (isTal && staticState.allPiecesCount > 12 && staticState.legalMoveCount > 20
-            /*&& !((ss - 1)->secondaryLine) // scommenta se vuoi meno riduzione nelle secondarie */
-        )
-        {
-            R += 1;  // +1 ply di riduzione → LMR più aggressivo
-        }
-        else if (isPetrosian && staticState.allPiecesCount <= 12)
-        {
-            R = std::max<Depth>(1, R - 1);
-        }
-        else if (isCapablanca && staticState.allPiecesCount < 10 && staticState.legalMoveCount < 20)
-        {
-            R = std::max<Depth>(2, R - 2);
-        }
+    //from Shashin-Crystal begin
+    static auto performNullMoveSearchStatic =
+      [&](Position& pos, Stack* ss, StateInfo& st, Depth depth, Depth R, Value beta,
+          Search::Worker* thisThread) -> std::pair<bool, Value> {
+        if (depth - R < 3)
+            return {false, 0};
 
         ss->currentMove                   = Move::null();
         ss->continuationHistory           = &thisThread->continuationHistory[0][0][NO_PIECE][0];
@@ -1613,28 +1589,107 @@ Value Search::Worker::search(
 
         do_null_move(pos, st);
         thisThread->nmpGuard = true;
-        Value nullValue      = -search<NonPV>(pos, ss + 1, -beta, -beta + 1, depth - R, false);
+        Value nullValue =
+          -thisThread->search<NonPV>(pos, ss + 1, -beta, -beta + 1, depth - R, false);
         thisThread->nmpGuard = false;
         undo_null_move(pos);
-
         // Do not return unproven mate or TB scores
-        if (nullValue >= beta && !is_win(nullValue))
+        if (nullValue < beta || is_win(nullValue))
         {
-            if (thisThread->nmpMinPly || depth < 16)
-                return nullValue;
-            // Do verification search at high depths, with null move pruning disabled
-            // until ply exceeds nmpMinPly.
-            thisThread->nmpMinPly = ss->ply + 3 * (depth - R) / 4;
-            thisThread->nmpGuardV = true;
-            Value v               = search<NonPV>(pos, ss, beta - 1, beta, depth - R, false);
-            thisThread->nmpGuardV = false;
-            thisThread->nmpMinPly = 0;
+            return {false, 0};
+        }
+        if (thisThread->nmpMinPly || depth < 16)
+        {
+            return {true, nullValue};
+        }
+        assert(!thisThread->nmpMinPly);  // Recursive verification is not allowed
+        // Do verification search at high depths, with null move pruning disabled
+        // until ply exceeds nmpMinPly.
+        thisThread->nmpMinPly = ss->ply + 3 * (depth - R) / 4;
+        thisThread->nmpGuardV = true;
+        Value v = thisThread->search<NonPV>(pos, ss, beta - 1, beta, depth - R, false);
+        thisThread->nmpGuardV = false;
+        thisThread->nmpMinPly = 0;
 
-            if (v >= beta)
-                return nullValue;
+        if (v >= beta)
+        {
+            return {true, nullValue};
+        }
+        return {false, 0};
+    };
+
+    ourMove = !(ss->ply & 1);
+    stockfishActivation =
+      cutNode && !disableNMAndPC && ss->staticEval >= beta - 19 * depth + 389 && !excludedMove
+      && pos.non_pawn_material(us) && eval >= beta && ((ss - 1)->currentMove != Move::null())
+      && (ss->ply >= thisThread->nmpMinPly) && !is_loss(beta) && !isComplexPosition;
+    crystalActivation = cutNode && !thisThread->nmpGuard && !disableNMAndPC
+                     && ss->staticEval >= beta - 19 * depth + 389 && !excludedMove
+                     && pos.non_pawn_material(us) && eval >= beta && !staticState.stmKingDanger
+                     && !gameCycle && (eval >= ss->staticEval)
+                     && (rootDepth < 11 || ourMove || staticState.legalMoveCount > 5)
+                     && (isComplexPosition || localShashinManager.isTal());
+    if (stockfishActivation || crystalActivation)
+    {
+        // Null move dynamic reduction based on depth and eval
+        Depth R_base = std::min(int(eval - beta) / 213, 6) + depth / 3 + 5;
+        if (!ourMove && (ss - 1)->secondaryLine)
+        {
+            R_base = std::min<Depth>(R_base, 8);
+        }
+        bool isEndgameLight =
+          (staticState.allPiecesCount > 20) || (staticState.legalMoveCount <= 10);
+
+        if ((depth < 10) || isEndgameLight)
+        {
+            auto [found, val] =
+              performNullMoveSearchStatic(pos, ss, st, depth, R_base, beta, thisThread);
+            if (found)
+                return val;
+        }
+        else
+        {
+            Depth      R            = R_base;
+            const bool isTal        = localShashinManager.isTal();
+            const bool isPetrosian  = localShashinManager.isPetrosian();
+            const bool isCapablanca = localShashinManager.isCapablanca();
+            if (isComplexPosition)
+            {
+                R = std::max<Depth>(1, R - 1);
+            }
+            if (isTal)
+            {
+                R = std::max<Depth>(1, R - 1);
+                if (!ourMove && (ss - 1)->secondaryLine)
+                {
+                    R = std::min<Depth>(R, 7);
+                }
+            }
+            else if (isPetrosian && staticState.allPiecesCount <= 12)
+            {
+                R = std::max<Depth>(1, R - 1);
+                if (!ourMove && (ss - 1)->secondaryLine)
+                {
+                    R = std::min<Depth>(R, 7);
+                }
+            }
+            else if (isCapablanca && staticState.allPiecesCount < 10
+                     && staticState.legalMoveCount < 20)
+            {
+                R = std::max<Depth>(1, R - 1);
+                if (!ourMove && (ss - 1)->secondaryLine)
+                {
+                    R = std::min<Depth>(R, 7);
+                }
+            }
+            auto [found, val] =
+              performNullMoveSearchStatic(pos, ss, st, depth, R, beta, thisThread);
+            if (found)
+                return val;
         }
     }
-    improving |= ss->staticEval >= beta + 94;
+    improving |= (ss->staticEval >= beta + 94);
+    //from Shashin-Crystal end
 
 
     // Step 10. Internal iterative reductions
@@ -2098,11 +2153,6 @@ skipExtensionAndPruning:  // full threads search patch
                 //Shashin logic adjustement begin
                 if (useShashinLogic)
                 {
-                    const bool isTal        = localShashinManager.isTal();
-                    const bool isPetrosian  = localShashinManager.isPetrosian();
-                    const bool isCapablanca = localShashinManager.isCapablanca();
-                    const bool pnPromo      = staticState.pawnsNearPromotion;
-                    const int  pcCount      = staticState.allPiecesCount;
                     if (isTal)
                     {
                         d = std::min(d + 1, newDepth);
