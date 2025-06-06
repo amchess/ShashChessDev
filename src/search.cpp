@@ -1572,7 +1572,7 @@ Value Search::Worker::search(
     }
 
     // Step 9. Null move search with verification search – Shashin-Crystal version
-    // If the position is critical (e.g., exposed King or sacrificial position), reduce null move aggressiveness.
+    //crystal-shashin logic begin
     //common null move conditions begin
     nullThreshold            = beta - 19 * depth + 389;
     commonNullMoveConditions = cutNode && !disableNMAndPC && ss->staticEval >= nullThreshold
