@@ -78,12 +78,14 @@ struct DynamicDerivedState {
     bool isStrategical;
     bool isTacticalReactive;
     bool isHighTal;
+    bool useMoveGenAndStep17CrystalLogic;
 
     DynamicDerivedState() :
         isAggressive(false),
         isStrategical(false),
         isTacticalReactive(false),
-        isHighTal(false) {}
+        isHighTal(false),
+        useMoveGenAndStep17CrystalLogic(false) {}
 };
 
 struct StaticState {

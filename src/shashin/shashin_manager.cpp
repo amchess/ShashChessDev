@@ -190,7 +190,7 @@ void ShashinManager::initDynamicRootShashinState(const Eval::NNUE::Networks&   n
       static_value(alignedNetworks, accumulators, refreshTable, rootPos, ss, optimism), rootPos,
       config);
     setDynamicDerivedState();
-    MoveConfig::useMoveShashinLogic = useMoveGenAndStep17CrystalLogic();
+    MoveConfig::useMoveShashinLogic = state.dynamicDerived.useMoveGenAndStep17CrystalLogic;
     MoveConfig::isStrategical       = isStrategical();
     MoveConfig::isAggressive        = state.dynamicDerived.isAggressive;
 }
@@ -221,11 +221,12 @@ void ShashinManager::updateRootShashinState(Value score, const Position& rootPos
 }
 
 void ShashinManager::setDynamicDerivedState() {
-    auto& derived              = state.dynamicDerived;
-    derived.isStrategical      = isStrategical();
-    derived.isAggressive       = isAggressive();
-    derived.isTacticalReactive = isTacticalReactive();
-    derived.isHighTal          = isInRange(ShashinPosition::HIGH_TAL);
+    auto& derived                           = state.dynamicDerived;
+    derived.isStrategical                   = isStrategical();
+    derived.isAggressive                    = isAggressive();
+    derived.isTacticalReactive              = isTacticalReactive();
+    derived.isHighTal                       = isInRange(ShashinPosition::HIGH_TAL);
+    derived.useMoveGenAndStep17CrystalLogic = useMoveGenAndStep17CrystalLogic();
 }
 
 bool ShashinManager::isFortress(const Position& pos) {

@@ -1506,8 +1506,9 @@ Value Search::Worker::search(
     }
     //from Shashin begin
     int  nullThreshold;
-    bool commonNullMoveConditions, useNullMoveByShashinForStockfish, positionSafe,
-      allowNullMoveOnlyFromStockfish, allowNullMoveOnlyFromCrystal;
+    bool commonNullMoveConditions, useNullMoveByShashinForStockfish, nullMoveFromCrystal,
+      nullMoveFromStockfish, positionSafe, allowNullMoveOnlyFromStockfish,
+      allowNullMoveOnlyFromCrystal;
     //from Shashin end
     // full threads patch begin
     if (thisThread->fullSearch)
@@ -1571,7 +1572,7 @@ Value Search::Worker::search(
             return beta + (eval - beta) / 3;
     }
 
-    // Step 9. Null move search with verification search – Shashin-Crystal version
+    // Step 9. Null move search with verification search
     //crystal-shashin logic begin
     //common null move conditions begin
     nullThreshold            = beta - 19 * depth + 389;
@@ -1594,16 +1595,15 @@ Value Search::Worker::search(
                                 && (rootDepth < 11 || ourMove || (MoveList<LEGAL>(pos).size() > 5));
     //only from shashin crystal end
     useNullMoveByShashinForStockfish = localShashinManager.useNullMoveByShashinForStockfish();
-
-    if (commonNullMoveConditions
-        && (allowNullMoveOnlyFromCrystal
-            || (allowNullMoveOnlyFromStockfish && useNullMoveByShashinForStockfish)))
+    nullMoveFromCrystal   = allowNullMoveOnlyFromCrystal && !useNullMoveByShashinForStockfish;
+    nullMoveFromStockfish = allowNullMoveOnlyFromStockfish && useNullMoveByShashinForStockfish;
+    if (commonNullMoveConditions && (nullMoveFromCrystal || nullMoveFromStockfish))
     {
         assert(eval - beta >= 0);
         thisThread->nmpSide = ourMove;  // Null move signal for Shashin
 
         Depth R = std::min(int(eval - beta) / 213, 6) + depth / 3 + 5;
-        if (allowNullMoveOnlyFromCrystal)
+        if (nullMoveFromCrystal)
         {
             if (!ourMove && (ss - 1)->secondaryLine)
                 R = std::min(R, 8);
@@ -1759,8 +1759,8 @@ moves_loop:  // When in check, search starts here
 
     //from Crystal-Shashin begin
     //for step 17 begin
-    bool lmrCapture = cutNode && (ss - 1)->moveCount > 1;
-
+    bool lmrCapture     = cutNode && (ss - 1)->moveCount > 1;
+    bool allowExt       = (depth + ss->ply + 2 < MAX_PLY) && (ss->ply < 2 * rootDepth);
     bool kingDangerThem = ourMove && king_danger(pos, ~us);
 
     bool allowLMR =
@@ -2096,12 +2096,11 @@ skipExtensionAndPruning:  // full threads search patch
             r -= ss->statScore * 826 / 8192;
             // Step 17. Late moves reduction / extension (LMR)
             // Shashin-Crystal begin
-            const bool useCrystalLMR   = localShashinManager.useMoveGenAndStep17CrystalLogic();
-            bool       canUseShashin   = (useCrystalLMR && allowLMR && (!capture || lmrCapture));
-            const bool highDepth       = (depth >= 4);
-            const bool useShashinLogic = useCrystalLMR && highDepth && !staticState.stmKingDanger;
-
-            if (doLMRStep && moveCount > std::max(sibs, 1) && depth >= 2)
+            const bool commonLMRConditions = doLMRStep && moveCount > std::max(sibs, 1);
+            const bool useCrystalLMR       = dynamicDerived.useMoveGenAndStep17CrystalLogic;
+            const bool stockfishStyle      = depth >= 2 && !useCrystalLMR;
+            const bool crystalStyle        = useCrystalLMR && allowLMR && (!capture || lmrCapture);
+            if (commonLMRConditions && (stockfishStyle || crystalStyle))
             {
                 // In general we want to cap the LMR depth search at newDepth, but when
                 // reduction is negative, we allow this move a limited search extension
@@ -2112,42 +2111,6 @@ skipExtensionAndPruning:  // full threads search patch
                                                newDepth + !allNode + (PvNode && !bestMove)))
                         + (ss - 1)->isPvNode;
 
-                //Shashin logic adjustement begin
-                if (useShashinLogic)
-                {
-                    const bool isTal        = localShashinManager.isTal();
-                    const bool isPetrosian  = localShashinManager.isPetrosian();
-                    const bool isCapablanca = localShashinManager.isCapablanca();
-                    const bool pnPromo      = staticState.pawnsNearPromotion;
-                    const int  pcCount      = staticState.allPiecesCount;
-                    if (isTal)
-                    {
-                        d = std::min(d + 1, newDepth);
-                    }
-                    else if (isPetrosian)
-                    {
-                        if (staticState.stmKingDanger)
-                        {
-                            d = std::min<Depth>(d + 1, newDepth);
-                        }
-                        else if (!pnPromo && moveCount >= 6)
-                        {
-                            d = std::max<Depth>(1, d - 1);
-                        }
-                    }
-                    else if (isCapablanca)
-                    {
-                        if (pcCount < 12)
-                        {
-                            d = std::min<Depth>(d + 1, newDepth);
-                        }
-                        else if (moveCount > 25)
-                        {
-                            d = std::max<Depth>(1, d - 1);
-                        }
-                    }
-                }
-                //Shashin logic adjustement end
                 ss->reduction = newDepth - d;
                 value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
                 ss->reduction = 0;
@@ -2158,9 +2121,9 @@ skipExtensionAndPruning:  // full threads search patch
                 {
                     // Adjust full-depth search based on LMR results - if the result was
                     // good enough search deeper, if it was bad enough search shallower.
-                    const bool doDeeperSearch    = value > (bestValue + 42 + 2 * newDepth);
-                    const bool doShallowerSearch = value < bestValue + 9;
-
+                    bool doDeeperSearch =
+                      (value > bestValue + 42 + 2 * newDepth) && (!crystalStyle || allowExt);
+                    bool doShallowerSearch = value < bestValue + 9;
                     newDepth += doDeeperSearch - doShallowerSearch;
 
                     if (newDepth > d)
@@ -2171,7 +2134,9 @@ skipExtensionAndPruning:  // full threads search patch
                     update_continuation_histories(ss, movedPiece, move.to_sq(), 1508);
                 }
                 else if (value > alpha && value < bestValue + 9)
+                {
                     newDepth--;
+                }
             }
             //shashin-crystal end
             // Step 18. Full-depth search when LMR is skipped
