@@ -1204,13 +1204,18 @@ Value Search::Worker::search(
     // Used to send selDepth info to GUI (selDepth counts from 1, ply from 0)
     if (PvNode && thisThread->selDepth < ss->ply + 1)
         thisThread->selDepth = ss->ply + 1;
-    const auto& dynamicDerived = rootShashinState.dynamicDerived;
-    const auto& staticState    = rootShashinState.staticState;
+    //from crystal shashin begin
+    const auto& dynamicDerived     = rootShashinState.dynamicDerived;
+    const auto& staticState        = rootShashinState.staticState;
+    bool        isStrategical      = dynamicDerived.isStrategical;
+    bool        isAggressive       = dynamicDerived.isAggressive;
+    bool        isTacticalReactive = dynamicDerived.isTacticalReactive;
+    //from crystal shashin end
     if (!rootNode)
     {
         // from Crystal-Shashin begin
         bool allowCycleDetection =
-          (dynamicDerived.isStrategical && localShashinManager.isComplexPosition())
+          (isStrategical && localShashinManager.isComplexPosition())
           || (localShashinManager.isTacticalDefensive() && localShashinManager.isLowActivity());
 
         if (allowCycleDetection && !ss->excludedMove)
@@ -1541,15 +1546,14 @@ Value Search::Worker::search(
     // Step 7. Razoring Optimization
     baseRazoringMargin = 486 + 325 * depth * depth;
     // Razoring optimization based on position's type
-    if (dynamicDerived.isAggressive)
+    if (isAggressive)
         baseRazoringMargin -= 75;
-    else if (dynamicDerived.isStrategical || dynamicDerived.isTacticalReactive)
+    else if (isStrategical || isTacticalReactive)
         baseRazoringMargin += 40;
 
     if (!PvNode && eval < alpha - baseRazoringMargin
-        && !(dynamicDerived.isAggressive && staticState.legalMoveCount >= 30)
-        && (localShashinManager.isTacticalInitiative() || dynamicDerived.isTacticalReactive
-            || dynamicDerived.isStrategical))
+        && !(isAggressive && staticState.legalMoveCount >= 30)
+        && (localShashinManager.isTacticalInitiative() || isTacticalReactive || isStrategical))
     {
         return qsearch<NonPV>(pos, ss, alpha, beta);
     }
@@ -1657,9 +1661,9 @@ Value Search::Worker::search(
 
         if (ttUpperBoundReduction)
         {
-            if (dynamicDerived.isAggressive || dynamicDerived.isTacticalReactive)
+            if (isAggressive || isTacticalReactive)
                 depth = std::max(1, depth - 1);
-            else if (dynamicDerived.isStrategical)
+            else if (isStrategical)
                 depth = std::max(1, depth - 2);
             else
                 depth = std::max(1, depth - 1);
@@ -1772,6 +1776,7 @@ moves_loop:  // When in check, search starts here
 
     // Step 13. Loop through all pseudo-legal moves until no moves remain
     // or a beta cutoff occurs.
+    bool isHighTal = dynamicDerived.isHighTal;
     while ((move = mp.next_move()) != Move::none())
     {
         assert(move.is_ok());
@@ -1824,7 +1829,7 @@ moves_loop:  // When in check, search starts here
             undo_move(pos, move);
         }
         uint64_t nodeCount = 0;
-        if (dynamicDerived.isHighTal && isMate)
+        if (isHighTal && isMate)
         {
             ss->currentMove = move;
             ss->continuationHistory =
@@ -1870,8 +1875,7 @@ moves_loop:  // When in check, search starts here
             // Depth conditions are important for mate finding.
             //from crystal-shashin begin
             applyPruning =
-              commonPruningConditions
-              && ((doLMP && dynamicDerived.isHighTal) || (!rootNode && !dynamicDerived.isHighTal));
+              commonPruningConditions && ((doLMP && isHighTal) || (!rootNode && !isHighTal));
 
             if (applyPruning)
             {
@@ -1963,7 +1967,7 @@ moves_loop:  // When in check, search starts here
 
             // (*Scaler) Generally, higher singularBeta (i.e closer to ttValue)
             // and lower extension margins scale well.
-
+            //shashin crystal begin
             if (!rootNode && move == ttData.move && !excludedMove
                 && depth >= 6 - (thisThread->completedDepth > 27) + ss->ttPv
                 && is_valid(ttData.value) && !is_decisive(ttData.value)
@@ -1972,17 +1976,14 @@ moves_loop:  // When in check, search starts here
                 // Shashin-Crystal: game cycle extension logic
                 bool gameCycleExtension = gameCycle && extension >= 0 && ourMove && PvNode;
 
-                if (gameCycleExtension && dynamicDerived.isHighTal && depth > 12)
+                if (gameCycleExtension && isHighTal && depth > 12)
                 {
                     extension = std::min(extension + 1, 2);
                 }
-                else if (!rootNode && move == ttData.move && !excludedMove
-                         && depth >= 6 - (thisThread->completedDepth > 27) + ss->ttPv
-                         && is_valid(ttData.value) && !is_decisive(ttData.value)
-                         && (ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 3)
+                else
                 {
-                    Value singularBeta =
-                      ttData.value - (58 + 76 * (ss->ttPv && !PvNode)) * depth / 57;
+                    int   marginBase    = 58 + 76 * (ss->ttPv && !PvNode);
+                    Value singularBeta  = ttData.value - marginBase * depth / 57;
                     Depth singularDepth = newDepth / 2;
 
                     ss->excludedMove = move;
@@ -1997,7 +1998,6 @@ moves_loop:  // When in check, search starts here
                         bool plyDoubleCut     = (ss->ply > thisThread->rootDepth);
                         bool plyTripleCut     = (ss->ply * 2 > thisThread->rootDepth * 3);
                         int  shashinBoostBase = std::min(depth * 3, 150);
-                        bool isHighTal        = dynamicDerived.isHighTal;
                         bool deepPosition     = (depth >= 8);
                         bool kingUnderAttack  = (staticState.kingSafetyScore < -30);
                         bool criticalHighTal  = isHighTal && (deepPosition || kingUnderAttack);
@@ -2011,22 +2011,36 @@ moves_loop:  // When in check, search starts here
 
                         extension = 1 + (value < singularBeta - doubleMargin)
                                   + (value < singularBeta - tripleMargin);
-                        depth += (dynamicDerived.isAggressive && depth < 24) ? 2 : 1;
+                        depth += (isAggressive && depth < 24) ? 2 : 1;
                     }
+                    // Multi-cut pruning
+                    // Our ttMove is assumed to fail high based on the bound of the TT entry,
+                    // and if after excluding the ttMove with a reduced search we fail high
+                    // over the original beta, we assume this expected cut-node is not
+                    // singular (multiple moves fail high), and we can prune the whole
+                    // subtree by returning a softbound.
                     else if (value >= beta && !is_decisive(value))
                     {
-                        if (dynamicDerived.isTacticalReactive)
+                        if (isTacticalReactive)
                             return value - (PvNode ? 30 : 50);  // PvNode meno aggressivo
                         return value;
                     }
+                    // Negative extensions
+                    // If other moves failed high over (ttValue - margin) without the
+                    // ttMove on a reduced search, but we cannot do multi-cut because
+                    // (ttValue - margin) is lower than the original beta, we do not know
+                    // if the ttMove is singular or can do a multi-cut, so we reduce the
+                    // ttMove in favor of other moves based on some conditions:
+
+                    // If the ttMove is assumed to fail high over current beta
                     else if (ttData.value >= beta)
                     {
                         bool lowMobility = MoveList<LEGAL>(pos).size() < 15;
-                        extension        = (dynamicDerived.isStrategical && lowMobility) ? -1 : -3;
+                        extension        = (isStrategical && lowMobility) ? -1 : -3;
                     }
                     else if (cutNode)
                     {
-                        extension = dynamicDerived.isAggressive ? -1 : -2;
+                        extension = isAggressive ? -1 : -2;
                     }
 
                     bool criticalEndgame =
@@ -2035,9 +2049,7 @@ moves_loop:  // When in check, search starts here
                         extension += 1;
                 }
             }
-
             // Shashin-Crystal end
-
 skipExtensionAndPruning:  // full threads search patch
             // Step 16. Make the move
             do_move(pos, move, st, givesCheck);
