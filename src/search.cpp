@@ -1162,8 +1162,7 @@ Value Search::Worker::search(
     bool givesCheck, improving = false, priorCapture, opponentWorsening = false,
                      expTTHit = false;  //shashin
     //from Shashin-Crystal begin
-    bool isMate, gameCycle, capture, ttCapture, kingDanger, quietKingSafe = false,
-                                                            nullParity = false;
+    bool isMate, gameCycle, capture, ttCapture, kingDanger, quietKingSafe = false;
     //from shashin crystal end
     int   priorReduction;
     Piece movedPiece;
@@ -1590,14 +1589,12 @@ Value Search::Worker::search(
     //only from Stockfish end
     //only from shashin crystal begin
     ourMove                      = !(ss->ply & 1);
-    nullParity                   = (ourMove == thisThread->nmpSide);
     kingDanger                   = !ourMove && king_danger(pos, us);
     quietKingSafe                = !staticState.isSacrificial && !staticState.kingExposed;
     positionSafe                 = !kingDanger && quietKingSafe;  // King is safe during quiet moves
     allowNullMoveOnlyFromCrystal = !thisThread->nmpGuard && !gameCycle && (eval >= ss->staticEval)
                                 && positionSafe
                                 && (rootDepth < 11 || ourMove || (MoveList<LEGAL>(pos).size() > 5));
-    //only from shashin crystal end
     useNullMoveByShashinForStockfish = localShashinManager.useNullMoveByShashinForStockfish();
     nullMoveFromCrystal   = allowNullMoveOnlyFromCrystal && !useNullMoveByShashinForStockfish;
     nullMoveFromStockfish = allowNullMoveOnlyFromStockfish && useNullMoveByShashinForStockfish;
@@ -1633,16 +1630,14 @@ Value Search::Worker::search(
             // Do verification search at high depths, with null move pruning disabled
             // until ply exceeds nmpMinPly.
             thisThread->nmpMinPly = ss->ply + 3 * (depth - R) / 4;
-            thisThread->nmpGuardV = true;
             Value v               = search<NonPV>(pos, ss, beta - 1, beta, depth - R, false);
-            thisThread->nmpGuardV = false;
             thisThread->nmpMinPly = 0;
 
             if (v >= beta)
                 return nullValue;
         }
     }
-    // End of Crystal-Shashin logic
+    //only from shashin crystal end
 
     improving |= ss->staticEval >= beta + 94;
 
@@ -2478,19 +2473,23 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     pvHit        = ttHit && ttData.is_pv;
 
     // At non-PV nodes we check for an early TT cutoff
-    //from Shashin-Crystal begin
-    const auto& staticState    = rootShashinState.staticState;
-    const auto& dynamicDerived = rootShashinState.dynamicDerived;
+    //from crystal shashin begin
+    const auto&   staticState    = rootShashinState.staticState;
+    const auto&   dynamicDerived = rootShashinState.dynamicDerived;
+    const uint8_t legalMoveCount = staticState.legalMoveCount;
+    const bool    kingExposed    = staticState.kingExposed;
+    // Costanti definite correttamente per qsearch
+
+    // Usiamo ttData.depth invece di 'depth' non disponibile
     if (!PvNode && ttHit && is_valid(ttData.value)
         && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER))
         && (ttData.depth >= ADJUSTED_QS_DEPTH) && (ttData.depth > MIN_DEPTH_FOR_QS_CUTOFF)
-        && !dynamicDerived.isStrategical && staticState.legalMoveCount < 35
-        && (!staticState.kingExposed || ttData.depth > DEPTH_QS + 4)
-        && std::abs(ttData.value) > VALUE_DRAW + 60)
+        && !dynamicDerived.isStrategical && legalMoveCount < 35
+        && (!kingExposed || ttData.depth > DEPTH_QS + 4) && std::abs(ttData.value) > 60)
     {
         return ttData.value;
     }
-    //from Shashin-Crystal end
+    //from crystal shashin end
 
     // Step 4. Static evaluation of the position
     Value unadjustedStaticEval = VALUE_NONE;
@@ -2510,7 +2509,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             int penalty = 0;
             if (staticState.isSacrificial)
                 penalty += std::min(9, static_cast<int>(staticState.legalMoveCount / 4));
-            if (staticState.kingExposed)
+            if (kingExposed)
                 penalty += std::min(6, std::abs(staticState.kingSafetyScore) / 25);
             penalty = std::min(penalty, 12);
             if (bestValue > alpha - 50)

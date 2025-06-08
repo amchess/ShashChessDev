@@ -291,11 +291,11 @@ class Worker {
     CorrectionHistory<NonPawn>      nonPawnCorrectionHistory;
     CorrectionHistory<Continuation> continuationCorrectionHistory;
     TTMoveHistory                   ttMoveHistory;
-    RootMoves                       rootMoves;                             //mcts
-    Depth                           completedDepth;                        //mcts
-    bool            nmpGuard = false, nmpGuardV = false, nmpSide = false;  //from Crystal-shashin
-    ShashinManager& getShashinManager();                                   //from crystal-Shashin
-    int             lastShashinUpdatedDepth = 0;
+    RootMoves                       rootMoves;                          //mcts
+    Depth                           completedDepth;                     //mcts
+    bool                            nmpGuard = false, nmpSide = false;  //from Crystal-shashin
+    ShashinManager&                 getShashinManager();                //from crystal-Shashin
+    int                             lastShashinUpdatedDepth = 0;
 
    private:
     void iterative_deepening();

@@ -295,10 +295,8 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
             th->worker->limits = limits;
             //from Shashin Crystal begin
             (th->worker->nodes =
-               (th->worker->tbHits =
-                  (th->worker->nmpGuardV =
-                     (th->worker->nmpGuard =
-                        (th->worker->nmpMinPly = th->worker->bestMoveChanges = 0)))));
+               (th->worker->tbHits = (th->worker->nmpGuard = (th->worker->nmpMinPly =
+                                                                th->worker->bestMoveChanges = 0))));
             //from Shashin Crystal end
             th->worker->rootDepth = th->worker->completedDepth = 0;
             th->worker->nmpSide                                = 0;  //from crystal
