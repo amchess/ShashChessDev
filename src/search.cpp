@@ -1730,24 +1730,40 @@ Value Search::Worker::search(
 
 moves_loop:  // When in check, search starts here
 
-    // Step 12. A small Probcut idea
+    // Step 12. Enhanced ProbCut with safety checks
     probCutBeta = beta + 400;
-    //from shashin begin
+    //from shashin crystal begin
+    // Common conditions for any ProbCut
     bool commonProbcut = (ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 4
                       && ttData.value >= probCutBeta && !is_decisive(beta)
+                      && is_valid(ttData.value)  // Essential safety check
                       && !is_decisive(ttData.value);
-    bool fromCrystalProbcutConditions = ss->inCheck && !PvNode && ttCapture && ourMove && !gameCycle
-                                     && !excludedMove && !kingDanger && !(ss - 1)->secondaryLine
-                                     && !(thisThread->nmpGuard && nullParity)
-                                     && !(thisThread->nmpGuardV && nullParity);
-    bool fromStockfishProbcutConditions = is_valid(ttData.value);
-    if (commonProbcut
-        && ((localShashinManager.allowCrystalProbCut() && fromCrystalProbcutConditions)
-            || (localShashinManager.allowStockfishProbCut() && fromStockfishProbcutConditions)))
+
+    if (commonProbcut)
     {
-        return probCutBeta;
+        // Crystal-inspired ProbCut (specialized for tactical positions)
+        if (localShashinManager.allowCrystalProbCut())
+        {
+            const bool fromCrystalProbcutConditions = ss->inCheck && !PvNode && ttCapture
+                                                   && !kingDanger && !(ss - 1)->secondaryLine
+                                                   && !gameCycle;
+
+            // More aggressive reduction in deep tactical positions
+            if (fromCrystalProbcutConditions && depth >= 8)
+            {
+                const int probCutDepth = (depth >= 12) ? depth - 5 : depth - 4;
+                if (ttData.depth >= probCutDepth)
+                    return probCutBeta;
+            }
+        }
+
+        // Standard Stockfish ProbCut (safe fallback)
+        if (localShashinManager.allowStockfishProbCut())
+        {
+            return probCutBeta;
+        }
     }
-    //from shashin end
+    //from shashin crystal end
 
     const PieceToHistory* contHist[] = {
       (ss - 1)->continuationHistory, (ss - 2)->continuationHistory, (ss - 3)->continuationHistory,
