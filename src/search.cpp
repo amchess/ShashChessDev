@@ -1781,7 +1781,7 @@ moves_loop:  // When in check, search starts here
     {
         assert(move.is_ok());
 
-        if (move == excludedMove || !pos.legal(move))  //ShashChess
+        if (move == excludedMove)
             continue;
 
         // Check for legality
