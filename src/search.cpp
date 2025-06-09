@@ -1298,16 +1298,12 @@ Value Search::Worker::search(
                 do_move(pos, ttData.move, st);
                 Key nextPosKey                             = pos.key();
                 auto [ttHitNext, ttDataNext, ttWriterNext] = tt.probe(nextPosKey);
-                ttDataNext.value =
-                  ttHitNext ? value_from_tt(ttDataNext.value, ss->ply + 1, pos.rule50_count())
-                            : VALUE_NONE;
                 undo_move(pos, ttData.move);
 
+                // Check that the ttValue after the tt move would also trigger a cutoff
                 if (!is_valid(ttDataNext.value))
                     return ttData.value;
-                if (ttData.value >= beta && -ttDataNext.value >= beta)
-                    return ttData.value;
-                if (ttData.value <= alpha && -ttDataNext.value <= alpha)
+                if ((ttData.value >= beta) == (-ttDataNext.value >= beta))
                     return ttData.value;
             }
             else
@@ -1357,16 +1353,11 @@ Value Search::Worker::search(
                     do_move(pos, expTTMove, st);
                     Key nextPosKey                             = pos.key();
                     auto [ttHitNext, ttDataNext, ttWriterNext] = tt.probe(nextPosKey);
-                    ttDataNext.value =
-                      ttHitNext ? value_from_tt(ttDataNext.value, ss->ply + 1, pos.rule50_count())
-                                : VALUE_NONE;
                     undo_move(pos, expTTMove);
 
                     if (!is_valid(ttDataNext.value))
                         return expTTValue;
                     if (expTTValue >= beta && -ttDataNext.value >= beta)
-                        return expTTValue;
-                    if (expTTValue <= alpha && -ttDataNext.value <= alpha)
                         return expTTValue;
                 }
                 else
@@ -1444,10 +1435,7 @@ Value Search::Worker::search(
         goto moves_loop;
     }
     else if (excludedMove)
-    {
-        // Providing the hint that this node's accumulator will be used often
         unadjustedStaticEval = eval = ss->staticEval;
-    }
     else if (ss->ttHit)
     {
         // Never assume anything about values stored in TT
@@ -1499,8 +1487,7 @@ Value Search::Worker::search(
     // from Kelly end
 
     // Use static evaluation difference to improve quiet move ordering
-    if (((ss - 1)->currentMove).is_ok() && !(ss - 1)->inCheck && !priorCapture
-        && (ttData.depth - 2) <= depth)
+    if (((ss - 1)->currentMove).is_ok() && !(ss - 1)->inCheck && !priorCapture && !ttHit)
     {
         int bonus = std::clamp(-10 * int((ss - 1)->staticEval + ss->staticEval), -1858, 1492) + 661;
         thisThread->mainHistory[~us][((ss - 1)->currentMove).from_to()] << bonus * 1057 / 1024;
@@ -1643,11 +1630,10 @@ Value Search::Worker::search(
 
     // Step 10. Internal iterative reductions
     // For PV nodes without a ttMove as well as for deep enough cutNodes, we decrease depth.
-    // (* Scaler) Especially if they make IIR more aggressive.
+    // (*Scaler) Especially if they make IIR less aggressive.
     if (!localShashinManager.avoidStep10() && quietKingSafe)
     {
-        const bool standardReductionCondition =
-          (!allNode && depth >= (PvNode ? 5 : 7)) && !ttData.move;
+        const bool standardReductionCondition = (!allNode && depth >= 6 && !ttData.move);
         const bool ttUpperBoundReduction =
           cutNode && ttData.move && ttData.bound == BOUND_UPPER && depth >= 7;
 
@@ -1672,15 +1658,13 @@ Value Search::Worker::search(
     if (depth >= 3 && !disableNMAndPC
         && !is_decisive(beta)
         // If value from transposition table is lower than probCutBeta, don't attempt
-        // probCut there and in further interactions with transposition table cutoff
-        // depth is set to depth - 3 because probCut search has depth set to depth - 4
-        // but we also do a move before it. So effective depth is equal to depth - 3.
+        // probCut there
         && !(is_valid(ttData.value) && ttData.value < probCutBeta))
     {
         assert(probCutBeta < VALUE_INFINITE && probCutBeta > beta);
 
         MovePicker mp(pos, ttData.move, probCutBeta - ss->staticEval, &thisThread->captureHistory);
-        Depth      probCutDepth = std::max(depth - (4 + cutNode), 0);
+        Depth      probCutDepth = std::max(depth - 5, 0);
 
         while ((move = mp.next_move()) != Move::none())
         {
@@ -1725,7 +1709,7 @@ Value Search::Worker::search(
 
 moves_loop:  // When in check, search starts here
 
-    // Step 12. Enhanced ProbCut with safety checks
+    // Step 12. A small Probcut idea
     probCutBeta = beta + 400;
     //from shashin crystal begin
     // Common conditions for any ProbCut
@@ -2004,20 +1988,19 @@ moves_loop:  // When in check, search starts here
 
                     if (value < singularBeta)
                     {
-                        int  corrValAdj1      = std::abs(correctionValue) / 248400;
-                        int  corrValAdj2      = std::abs(correctionValue) / 249757;
+                        int  corrValAdj       = std::abs(correctionValue) / 248400;
                         bool plyDoubleCut     = (ss->ply > thisThread->rootDepth);
                         bool plyTripleCut     = (ss->ply * 2 > thisThread->rootDepth * 3);
                         int  shashinBoostBase = std::min(depth * 3, 150);
                         bool deepPosition     = (depth >= 8);
                         bool kingUnderAttack  = (staticState.kingSafetyScore < -30);
                         bool criticalHighTal  = isHighTal && (deepPosition || kingUnderAttack);
-                        int  doubleMargin     = -4 + 244 * PvNode - 206 * !ttCapture - corrValAdj1
+                        int  doubleMargin     = -4 + 244 * PvNode - 206 * !ttCapture - corrValAdj
                                          - (997 * ttMoveHistory) / 131072 - plyDoubleCut * 47
                                          + (criticalHighTal ? (90 + shashinBoostBase) : 0);
 
                         int tripleMargin = 84 + 269 * PvNode - 253 * !ttCapture + 91 * ss->ttPv
-                                         - corrValAdj2 - plyTripleCut * 54
+                                         - corrValAdj - plyTripleCut * 54
                                          + (criticalHighTal ? (120 + shashinBoostBase) : 0);
 
                         extension = 1 + (value < singularBeta - doubleMargin)
@@ -2099,6 +2082,9 @@ skipExtensionAndPruning:  // full threads search patch
             if ((ss + 1)->cutoffCnt > 2)
                 r += 1036 + allNode * 848;
 
+            if (!capture && !givesCheck && ss->quietMoveStreak >= 2)
+                r += (ss->quietMoveStreak - 1) * 50;
+
             // For first picked move (ttMove) reduce reduction
             if (move == ttData.move)
                 r -= 2006;
@@ -2132,7 +2118,7 @@ skipExtensionAndPruning:  // full threads search patch
                 // std::clamp has been replaced by a more robust implementation.
                 Depth d = std::max(1, std::min(newDepth - r / 1024,
                                                newDepth + !allNode + (PvNode && !bestMove)))
-                        + (ss - 1)->isPvNode;
+                        + (!cutNode && (ss - 1)->isPvNode && moveCount < 8);
 
                 ss->reduction = newDepth - d;
                 value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
@@ -2278,30 +2264,27 @@ skipExtensionAndPruning:  // full threads search patch
                     assert(value >= beta);  // Fail high
                     break;
                 }
-                else
+                //from crystal-shashin begin
+                bool isSafeZone = beta < VALUE_MAX_EVAL / 16 && alpha > -VALUE_MAX_EVAL / 16;
+
+                // Reduce other moves if we have found at least one score improvement (~2 Elo)
+                if (depth > 2 && depth < 16 && !is_decisive(value))
                 {
-                    //from crystal-shashin begin
-                    bool isSafeZone = beta < VALUE_MAX_EVAL / 16 && alpha > -VALUE_MAX_EVAL / 16;
-
-                    // Reduce other moves if we have found at least one score improvement (~2 Elo)
-                    if (depth > 2 && depth < 16 && !is_decisive(value))
+                    bool useCrystalReduction = !localShashinManager.isTillCategory(
+                      ShashinPosition::MIDDLE_HIGH_PETROSIAN, ShashinPosition::MIDDLE_HIGH_TAL);
+                    if (useCrystalReduction && !gameCycle && !isSafeZone)
                     {
-                        bool useCrystalReduction = !localShashinManager.isTillCategory(
-                          ShashinPosition::MIDDLE_HIGH_PETROSIAN, ShashinPosition::MIDDLE_HIGH_TAL);
-                        if (useCrystalReduction && !gameCycle && !isSafeZone)
-                        {
-                            depth -= 1;  // Crystal logic for tactical zones (minimal reduction)
-                        }
-                        else
-                        {
-                            depth -= 2;  // Default reduction for all other cases
-                        }
+                        depth -= 1;  // Crystal logic for tactical zones (minimal reduction)
                     }
-                    //from crystal-shashin end
-
-                    assert(depth > 0);
-                    alpha = value;  // Update alpha! Always alpha < beta
+                    else
+                    {
+                        depth -= 2;  // Default reduction for all other cases
+                    }
                 }
+                //from crystal-shashin end
+
+                assert(depth > 0);
+                alpha = value;  // Update alpha! Always alpha < beta
             }
         }
 
@@ -2324,7 +2307,7 @@ skipExtensionAndPruning:  // full threads search patch
     assert(moveCount || !ss->inCheck || excludedMove || !MoveList<LEGAL>(pos).size());
 
     // Adjust best value for fail high cases
-    if (bestValue >= beta && !is_decisive(bestValue) && !is_decisive(beta) && !is_decisive(alpha))
+    if (bestValue >= beta && !is_decisive(bestValue) && !is_decisive(alpha))
         bestValue = (bestValue * depth + beta) / (depth + 1);
 
     if (!moveCount)
@@ -2343,11 +2326,10 @@ skipExtensionAndPruning:  // full threads search patch
     // Bonus for prior quiet countermove that caused the fail low
     else if (!priorCapture && prevSq != SQ_NONE)
     {
-        int bonusScale = -302;
+        int bonusScale = -220;
         bonusScale += std::min(-(ss - 1)->statScore / 103, 323);
         bonusScale += std::min(73 * depth, 531);
         bonusScale += 174 * ((ss - 1)->moveCount > 8);
-        bonusScale += 90 * (ss->cutoffCnt <= 3);
         bonusScale += 144 * (!ss->inCheck && bestValue <= ss->staticEval - 104);
         bonusScale += 128 * (!(ss - 1)->inCheck && bestValue <= -(ss - 1)->staticEval - 82);
 
@@ -2528,9 +2510,8 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         }
         else
         {
-            // In case of null move search, use previous static eval with opposite sign
-            unadjustedStaticEval =
-              (ss - 1)->currentMove != Move::null() ? evaluate(pos) : -(ss - 1)->staticEval;
+            unadjustedStaticEval = evaluate(pos);
+
             ss->staticEval = bestValue =
               to_corrected_static_eval(unadjustedStaticEval, correctionValue);
         }

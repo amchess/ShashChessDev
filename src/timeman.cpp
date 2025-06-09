@@ -27,7 +27,6 @@
 #include "ucioption.h"
 
 namespace ShashChess {
-enum Color : int8_t;
 
 TimePoint TimeManagement::optimum() const { return optimumTime; }
 TimePoint TimeManagement::maximum() const { return maximumTime; }

@@ -114,22 +114,25 @@ MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceTo
           + !(ttm && pos.capture_stage(ttm) && pos.pseudo_legal(ttm) && pos.see_ge(ttm, threshold));
 }
 
+// Assigns a numerical value to each move in a list, used for sorting.
+// Captures are ordered by Most Valuable Victim (MVV), preferring captures
+// with a good history. Quiets moves are ordered using the history tables.
 template<GenType Type>
 void MovePicker::score() {
     static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
-    Color      us       = pos.side_to_move();
+    Color us = pos.side_to_move();
+    //for fortress begin
     const bool fortress = MoveConfig::isFortress;
 
     int phase           = std::clamp(pos.game_ply() / 25, 0, 3);
     int breakingPenalty = 1800 + 600 * phase;
     int preservingBonus = 900 + 300 * (3 - phase);
 
-    int kingSafetyScore = king_safety_score(pos, us);
-
-    static constexpr uint8_t AdjPawnCount[8] = {0, 1, 2, 2, 2, 2, 1, 0};
-
-    [[maybe_unused]] Bitboard threatenedPieces, threatByLesser[QUEEN + 1];
+    int  kingSafetyScore = king_safety_score(pos, us);
+    bool isStrategical   = MoveConfig::isStrategical;
+    //for fortress end
+    [[maybe_unused]] Bitboard threatByLesser[QUEEN + 1];
     if constexpr (Type == QUIETS)
     {
         threatByLesser[KNIGHT] = threatByLesser[BISHOP] = pos.attacks_by<PAWN>(~us);
@@ -140,45 +143,56 @@ void MovePicker::score() {
 
     for (auto& m : *this)
     {
-        const Square    from = m.from_sq();
-        const Square    to   = m.to_sq();
-        const Piece     pc   = pos.moved_piece(m);
-        const PieceType pt   = type_of(pc);
+        const Square    from          = m.from_sq();
+        const Square    to            = m.to_sq();
+        const Piece     pc            = pos.moved_piece(m);
+        const PieceType pt            = type_of(pc);
+        const Piece     capturedPiece = pos.piece_on(to);
 
         if constexpr (Type == CAPTURES)
         {
-            m.value = (*captureHistory)[pc][to][type_of(pos.piece_on(to))]
-                    + 7 * int(PieceValue[pos.piece_on(to)])
-                    + 1024 * bool(pos.check_squares(pt) & to);
-
+            m.value = (*captureHistory)[pc][to][type_of(capturedPiece)]
+                    + 7 * int(PieceValue[capturedPiece]) + 1024 * bool(pos.check_squares(pt) & to);
+            //from ShashChess begin
             if (MoveConfig::isAggressive)
                 m.value += 500;
+            //from ShashChess end
         }
         else if constexpr (Type == QUIETS)
         {
-            m.value = 2 * (*mainHistory)[us][m.from_to()]
-                    + 2 * (*pawnHistory)[pawn_structure_index(pos)][pc][to];
-            for (int i : {0, 1, 2, 3, 5})
-                m.value += (*continuationHistory[i])[pc][to];
+            // histories
+            m.value = 2 * (*mainHistory)[us][m.from_to()];
+            m.value += 2 * (*pawnHistory)[pawn_structure_index(pos)][pc][to];
+            m.value += (*continuationHistory[0])[pc][to];
+            m.value += (*continuationHistory[1])[pc][to];
+            m.value += (*continuationHistory[2])[pc][to];
+            m.value += (*continuationHistory[3])[pc][to];
+            m.value += (*continuationHistory[5])[pc][to];
+
+            // bonus for checks
             m.value += (bool(pos.check_squares(pt) & to) && pos.see_ge(m, -75)) * 16384;
+
+            // penalty for moving to a square threatened by a lesser piece
+            // or bonus for escaping an attack by a lesser piece.
             if (KNIGHT <= pt && pt <= QUEEN)
             {
                 static constexpr int bonus[QUEEN + 1] = {0, 0, 144, 144, 256, 517};
-                int v = (threatByLesser[pt] & to) ? -95 : 100 * bool(threatByLesser[pt] & from);
+                int v = threatByLesser[pt] & to ? -95 : 100 * bool(threatByLesser[pt] & from);
                 m.value += bonus[pt] * v;
             }
+
             if (ply < LOW_PLY_HISTORY_SIZE)
                 m.value += 8 * (*lowPlyHistory)[ply][m.from_to()] / (1 + ply);
-
-            if (MoveConfig::isStrategical)
+            //From ShashChess begin
+            if (isStrategical)
                 m.value += 200;
+            //From ShashChess en
         }
-        else
-        {  // EVASIONS
+
+        else  // Type == EVASIONS
+        {
             if (pos.capture_stage(m))
-            {
-                m.value = PieceValue[pos.piece_on(to)] + (1 << 28);
-            }
+                m.value = PieceValue[capturedPiece] + (1 << 28);
             else
             {
                 m.value = (*mainHistory)[us][m.from_to()] + (*continuationHistory[0])[pc][to];
@@ -219,7 +233,7 @@ void MovePicker::score() {
         {
             const double dynamicFactor =
               std::log(1.0 + std::min(pos.game_ply() / 20.0, 1.0) * 9.0) / std::log(10.0);
-            if (MoveConfig::isStrategical)
+            if (isStrategical)
                 m.value += static_cast<int>(60 * dynamicFactor);
             else if (MoveConfig::isAggressive)
                 m.value += static_cast<int>(120 * dynamicFactor);
@@ -227,23 +241,15 @@ void MovePicker::score() {
     }
 }
 
-
 // Returns the next move satisfying a predicate function.
 // This never returns the TT move, as it was emitted before.
 template<typename Pred>
 Move MovePicker::select(Pred filter) {
 
     for (; cur < endCur; ++cur)
-    //from Shashin begin
-    {
-        if (*cur == ttMove)
-            continue;
-        if (!pos.legal(*cur))
-            continue;
-        if (filter())
+        if (*cur != ttMove && filter())
             return *cur++;
-    }
-    //from Shashin end
+
     return Move::none();
 }
 
@@ -356,11 +362,11 @@ top:
 void MovePicker::skip_quiet_moves() { skipQuiets = true; }
 
 // this function must be called after all quiet moves and captures have been generated
-bool MovePicker::can_move_king_or_pawn() {
+bool MovePicker::can_move_king_or_pawn() const {
     // SEE negative captures shouldn't be returned in GOOD_CAPTURE stage
     assert(stage > GOOD_CAPTURE && stage != EVASION_INIT);
 
-    for (ExtMove* m = moves; m < endCur; ++m)
+    for (const ExtMove* m = moves; m < endCur; ++m)
     {
         PieceType movedPieceType = type_of(pos.moved_piece(*m));
         if ((movedPieceType == PAWN || movedPieceType == KING) && pos.legal(*m))

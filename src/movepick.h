@@ -20,12 +20,15 @@
 #define MOVEPICK_H_INCLUDED
 
 #include "history.h"
+#include "movegen.h"
+#include "types.h"
 //from shashin begin
 #include "shashin/shashin_position.h"
 #include "shashin/moveconfig.h"
 #include "bitboard.h"
 //from shashin end
 namespace ShashChess {
+static constexpr uint8_t AdjPawnCount[8] = {0, 1, 2, 2, 2, 2, 1, 0};
 class Position;
 
 
@@ -52,7 +55,7 @@ class MovePicker {
     MovePicker(const Position&, Move, int, const CapturePieceToHistory*);
     Move next_move();
     void skip_quiet_moves();
-    bool can_move_king_or_pawn();
+    bool can_move_king_or_pawn() const;
 
    private:
     template<typename Pred>
