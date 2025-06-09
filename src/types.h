@@ -121,7 +121,7 @@ enum Color : int8_t {
     BLACK,
     COLOR_NB = 2
 };
-//kelly begin
+//learning begin
 constexpr Color Colors[2] = {WHITE, BLACK};
 
 enum CastlingRights : int8_t {
@@ -139,7 +139,7 @@ enum CastlingRights : int8_t {
 
     CASTLING_RIGHT_NB = 16
 };
-////kelly end
+//learning end
 
 enum Bound : int8_t {
     BOUND_NONE,
