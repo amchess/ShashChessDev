@@ -309,16 +309,16 @@ inline uint64_t mul_hi64(uint64_t a, uint64_t b) {
 
 struct CommandLine {
    public:
-    CommandLine(int, char**);  //from Khalid
+    CommandLine(int, char**);  //from learning
 
     int    argc;
     char** argv;
-    //from Khalid begin
+    //from learning begin
     std::string        binaryDirectory;   // path of the executable directory
     std::string        workingDirectory;  // path of the working directory
     static std::string get_working_directory();
     static std::string get_binary_directory(std::string argv0, std::string workingDirectory);
-    //from Khalid end
+    //from learning end
 };
 
 namespace Utility {
@@ -350,7 +350,7 @@ void move_to_front(std::vector<T>& vec, Predicate pred) {
     #define sf_assume(cond)
 #endif
 
-//begin from khalid
+//begin from learning
 #define EMPTY "<empty>"
 
 class Util {
@@ -379,7 +379,7 @@ class Util {
 
     static std::string format_string(const char* const fmt, ...);
 };
-//end from khalid
+//end from learning
 
 }  // namespace ShashChess
 

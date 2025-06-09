@@ -112,10 +112,10 @@ void UCIEngine::loop() {
         is >> std::skipws >> token;
 
         if (token == "quit" || token == "stop")
-        {  //Khalid
+        {  //learning
             engine.stop();
 
-            //Kelly begin
+            //learning begin
             if (token == "quit" && LD.is_enabled() && !LD.is_paused())
             {
                 //Wait for the current search operation (if any) to stop
@@ -133,7 +133,7 @@ void UCIEngine::loop() {
                     LD.persist(engine.get_options());
                 }
             }
-            //Kelly end
+            //learning end
         }
         // The GUI sends 'ponderhit' to tell that the user has played the expected move.
         // So, 'ponderhit' is sent if pondering was done on the same move that the user
@@ -165,7 +165,7 @@ void UCIEngine::loop() {
             pos.set(engine.fen(), engine.get_options()["UCI_Chess960"], &states->back());
         }  //Experience Book
         else if (token == "ucinewgame")
-        //Kelly and Khalid begin
+        //learning begin
         {
             if (LD.is_enabled())
             {
@@ -184,7 +184,7 @@ void UCIEngine::loop() {
             }
             engine.search_clear();
         }
-        //Kelly and Khalid end
+        //learning end
         else if (token == "isready")
             sync_cout << "readyok" << sync_endl;
 
@@ -338,7 +338,7 @@ void UCIEngine::bench(std::istream& args) {
             position(is);
         else if (token == "ucinewgame")
         {
-            //Kelly begin
+            //learning begin
             if (LD.is_enabled())
             {
                 if (LD.learning_mode() == LearningMode::Self && !LD.is_paused())
@@ -347,7 +347,7 @@ void UCIEngine::bench(std::istream& args) {
                 }
                 setStartPoint();
             }
-            //Kelly end
+            //learning end
             engine.search_clear();  // search_clear may take a while
             elapsed = now();
         }
@@ -584,12 +584,12 @@ std::string UCIEngine::format_score(const Score& s) {
 
     return s.visit(format);
 }
-//from Khalid begin
+//from learning begin
 int UCIEngine::getNormalizeToPawnValue(Position& pos) {
     auto [a, b] = WDLModel::win_rate_params(pos);
     return a;
 }
-//from Khalid end
+//from learning end
 
 // Turns a Value to an integer centipawn number,
 // without treatment of mate and similar special scores.

@@ -55,7 +55,7 @@ int            MaxThreads = std::max(1024, 4 * int(get_hardware_concurrency()));
 
 Engine::Engine(std::optional<std::string> path) :
     binaryDirectory(CommandLine::get_binary_directory(
-      path.value_or(""), CommandLine::get_working_directory())),  //khalid
+      path.value_or(""), CommandLine::get_working_directory())),  //learning
     numaContext(NumaConfig::from_system()),
     states(new std::deque<StateInfo>(1)),
     threads(),
@@ -160,7 +160,7 @@ Engine::Engine(std::optional<std::string> path) :
           return thread_binding_information_as_string();
       }));
 
-    // From Kelly
+    // From learning
     options.add("Persisted learning", Option("Off var Off var Standard var Self", "Off",
                                              [this](const Option& o) -> std::optional<std::string> {
                                                  if (!(o == "Off"))
@@ -367,7 +367,7 @@ void Engine::set_position(const std::string& fen, const std::vector<std::string>
 
         if (m == Move::none())
             break;
-        //Kelly begin
+        //learning begin
         if (LD.is_enabled() && LD.learning_mode() != LearningMode::Self && !LD.is_paused())
         {
             PersistedLearningMove persistedLearningMove;
@@ -379,7 +379,7 @@ void Engine::set_position(const std::string& fen, const std::vector<std::string>
             persistedLearningMove.learningMove.performance = WDLModel::get_win_probability(0, pos);
             LD.add_new_learning(persistedLearningMove.key, persistedLearningMove.learningMove);
         }
-        //Kelly end
+        //learning end
         states->emplace_back();
         pos.do_move(m, states->back());
     }

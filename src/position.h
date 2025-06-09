@@ -30,9 +30,9 @@
 #include "movegen.h"  //shashin
 
 namespace ShashChess {
-//Kelly begin
+//learning begin
 extern void setStartPoint();
-//Kelly end
+//learning end
 class TranspositionTable;
 
 // StateInfo struct stores information needed to restore a Position object to
@@ -203,7 +203,7 @@ class Position {
     Color      sideToMove;
     bool       chess960;
 };
-extern void   putQLearningTrajectoryIntoLearningTable();  //kelly
+extern void   putQLearningTrajectoryIntoLearningTable();  //learning
 std::ostream& operator<<(std::ostream& os, const Position& pos);
 
 inline Color Position::side_to_move() const { return sideToMove; }

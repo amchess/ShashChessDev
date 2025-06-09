@@ -38,7 +38,7 @@ int main(int argc, char* argv[]) {
     Position::init();
 
     UCIEngine uci(argc, argv);
-    LD.init(uci.engine_options());  //Kelly
+    LD.init(uci.engine_options());  //learning
     Tune::init(uci.engine_options());
 
     uci.loop();

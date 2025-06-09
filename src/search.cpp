@@ -61,7 +61,7 @@ Local assessments: Penalize or reward based on king's security, tactical complex
 #include "uci.h"
 #include "ucioption.h"
 #include "wdl/win_probability.h"  //livebook +shashin theory
-#include "learn/learn.h"          //Khalid
+#include "learn/learn.h"          //learning
 #include "mcts/montecarlo.h"      //Montecarlo
 //Livebook begin
 #include "livebook/BaseLivebook.h"
@@ -75,11 +75,11 @@ Local assessments: Penalize or reward based on king's security, tactical complex
 //Livebook end
 namespace ShashChess {
 using namespace ShashChess::Shashin;  //shashin
-// Kelly begin
+// learning begin
 bool                       useLearning          = true;
 bool                       enabledLearningProbe = false;
 std::vector<QLearningMove> qLearningTrajectory;
-// Kelly end
+// learning end
 
 namespace TB = Tablebases;
 
@@ -391,10 +391,10 @@ void Search::Worker::start_searching() {
     main_manager()->tm.init(limits, rootPos.side_to_move(), rootPos.game_ply(), options,
                             main_manager()->originalTimeAdjust);
     tt.new_search();
-    // Kelly begin
+    // learning begin
     enabledLearningProbe = false;
     useLearning          = true;
-    // Kelly end
+    // learning end
 
     set_variety(options["Variety"]);  // variety
 
@@ -604,10 +604,10 @@ void Search::Worker::start_searching() {
     main_manager()->bestPreviousAverageScore = bestThread->rootMoves[0].averageScore;
 
 
-    // kelly begin
+    // learning begin
     if (!bookMove)
     {
-        if (bestThread->completedDepth > 4 && LD.is_enabled() && !LD.is_paused())  // from Khalid
+        if (bestThread->completedDepth > 4 && LD.is_enabled() && !LD.is_paused())  // from learning
         {
             PersistedLearningMove plm;
             plm.key                = rootPos.key();
@@ -641,13 +641,13 @@ void Search::Worker::start_searching() {
             useLearning = false;
         }
     }
-    // Kelly end
+    // learning end
 
     // Send again PV info if we have a new best thread
     if (bestThread != this)
-    {                                                                                    //Kelly
+    {                                                                                    //learning
         main_manager()->pv(*bestThread, threads, tt, bestThread->completedDepth, true);  //shashin
-    }  //Kelly
+    }  //learning
 
     std::string ponder;
 
@@ -657,7 +657,7 @@ void Search::Worker::start_searching() {
 
     auto bestmove = UCIEngine::move(bestThread->rootMoves[0].pv[0], rootPos.is_chess960());
     main_manager()->updates.onBestmove(bestmove, ponder);
-    // from Khalid begin
+    // from learning begin
     // Save learning data if game is already decided
     if (!bookMove)
     {
@@ -681,7 +681,7 @@ void Search::Worker::start_searching() {
         }
     }
 
-    // from Khalid end
+    // from learning end
 
     // livebook begin
 #ifdef USE_LIVEBOOK
@@ -1155,10 +1155,10 @@ Value Search::Worker::search(
 
     Key  posKey;
     Move move, excludedMove = Move::none(), bestMove,
-               expTTMove = Move::none();  // from Kelly
+               expTTMove = Move::none();  // from learning
     Depth extension, newDepth;
     Value bestValue, value = VALUE_NONE, eval = VALUE_NONE, maxValue, expTTValue = VALUE_NONE,
-                     probCutBeta = VALUE_NONE;  // from Kelly
+                     probCutBeta = VALUE_NONE;  // from learning
     bool givesCheck, improving = false, priorCapture, opponentWorsening = false,
                      expTTHit = false;  //shashin
     //from Shashin-Crystal begin
@@ -1170,13 +1170,13 @@ Value Search::Worker::search(
 
     ValueList<Move, 32> capturesSearched;
     ValueList<Move, 32> quietsSearched;
-    // from Kelly begin
+    // from learning begin
     bool updatedLearning = false;
     // flags to preserve node types
     bool disableNMAndPC = false;
     bool expectedPVNode = false;
     int  sibs           = 0;
-    // from Kelly end
+    // from learning end
     // Step 1. Initialize node
     Worker* thisThread = this;
     ss->inCheck        = pos.checkers();
@@ -1310,7 +1310,7 @@ Value Search::Worker::search(
                 return ttData.value;
         }
     }
-    // from Kelly begin
+    // from learning begin
     // Step 4Bis. Global Learning Table lookup
     expTTHit        = false;
     updatedLearning = false;
@@ -1319,55 +1319,88 @@ Value Search::Worker::search(
     {
         const LearningMove* learningMove = nullptr;
         sibs                             = LD.probeByMaxDepthAndScore(posKey, learningMove);
-
-        if (learningMove && learningMove->depth > 0)
+        if (learningMove)
         {
-            expTTHit   = true;
-            expTTMove  = learningMove->move;
-            expTTValue = learningMove->score;
+            assert(sibs);
 
-            // 1. Integrazione priorità TT/Learning
-            if (!ttData.move.is_ok()
-                || (learningMove->depth > ttData.depth && is_valid(expTTValue)))
+            enabledLearningProbe = true;
+            expTTHit             = true;
+            if (!ttData.move)
             {
-                ttData.move     = expTTMove;
-                ttData.value    = expTTValue;
-                ttData.depth    = learningMove->depth;
+                ttData.move = learningMove->move;
+            }
+
+            if (learningMove->depth >= depth)
+            {
+                expTTMove       = learningMove->move;
+                expTTValue      = learningMove->score;
                 updatedLearning = true;
             }
 
-            // 2. Gestione alpha/beta con fallback a Stockfish
-            if (updatedLearning)
+            if ((learningMove->depth == 0))
+                updatedLearning = false;
+
+            if (updatedLearning && is_valid(expTTValue))
+
+
             {
-                disableNMAndPC = (expTTValue < alpha);
-                expectedPVNode = (expTTValue > alpha && expTTValue < beta);
-                improving |= expectedPVNode;
+                if (expTTValue < alpha)
+                {
+                    disableNMAndPC = true;
+                }
+                if (expTTValue > alpha && expTTValue < beta)
+                {
+                    expectedPVNode = true;
+                    improving      = true;
+                }
             }
-
-            // 3. Verifica avanzata allineata a Stockfish
-            if (pos.rule50_count() < 90)
+            bool expTTCapture = learningMove->move && pos.capture_stage(expTTMove);
+            // At this point, if excluded, skip straight to step 6, static eval. However,
+            // to save indentation, we list the condition in all code between here and there.
+            // At non-PV nodes we check for an early Global Learning Table cutoff
+            if (!PvNode && !excludedMove && updatedLearning
+                && learningMove->depth > depth - (expTTValue <= beta) && is_valid(expTTValue)
+                && (cutNode == (expTTValue >= beta) || depth > 5))
             {
-                if (depth >= 8 && expTTMove && pos.pseudo_legal(expTTMove) && pos.legal(expTTMove)
-                    && !is_decisive(expTTValue))
+                // If expTTMove is quiet, update move sorting heuristics on Global learning table hit
+                if (expTTMove && expTTValue >= beta)
                 {
-                    do_move(pos, expTTMove, st);
-                    Key nextPosKey                             = pos.key();
-                    auto [ttHitNext, ttDataNext, ttWriterNext] = tt.probe(nextPosKey);
-                    undo_move(pos, expTTMove);
+                    // Bonus for a quiet ttMove that fails high
+                    if (!expTTCapture)
+                        update_quiet_histories(pos, ss, *this, ttData.move,
+                                               std::min(125 * depth - 77, 1157));
 
-                    if (!is_valid(ttDataNext.value))
-                        return expTTValue;
-                    if (expTTValue >= beta && -ttDataNext.value >= beta)
-                        return expTTValue;
+                    // Extra penalty for early quiet moves of
+                    // the previous ply
+                    if (prevSq != SQ_NONE && (ss - 1)->moveCount <= 3 && !priorCapture)
+                        update_continuation_histories(ss - 1, pos.piece_on(prevSq), prevSq, -2301);
                 }
-                else
-                {
-                    return expTTValue;
-                }
+
+                // Partial workaround for the graph history interaction problem
+                // For high rule50 counts don't produce transposition table cutoffs.
+				if (pos.rule50_count() < 90)
+		        {
+		            if (depth >= 8 && ttData.move && pos.pseudo_legal(ttData.move) && pos.legal(ttData.move)
+		                && !is_decisive(expTTValue))
+		            {
+		                do_move(pos, ttData.move, st);
+		                Key nextPosKey                             = pos.key();
+		                auto [ttHitNext, ttDataNext, ttWriterNext] = tt.probe(nextPosKey);
+		                undo_move(pos, ttData.move);
+		
+		                // Check that the ttValue after the tt move would also trigger a cutoff
+		                if (!is_valid(ttDataNext.value))
+		                    return expTTValue;
+		                if ((expTTValue >= beta) == (-ttDataNext.value >= beta))
+		                    return expTTValue;
+		            }
+		            else
+		                return expTTValue;
+		        }
             }
         }
     }
-    // from Kelly end
+    // from learning end
 
     // Step 5. Tablebases probe
     if (!rootNode && !excludedMove && tbConfig.cardinality)
@@ -1452,7 +1485,7 @@ Value Search::Worker::search(
     }
     else
     {
-        //Kelly begin
+        //learning begin
         unadjustedStaticEval = evaluate(pos);
         ss->staticEval = eval = to_corrected_static_eval(unadjustedStaticEval, correctionValue);
 
@@ -1484,7 +1517,7 @@ Value Search::Worker::search(
             }
         }
     }
-    // from Kelly end
+    // from learning end
 
     // Use static evaluation difference to improve quiet move ordering
     if (((ss - 1)->currentMove).is_ok() && !(ss - 1)->inCheck && !priorCapture && !ttHit)
@@ -1505,7 +1538,7 @@ Value Search::Worker::search(
     if (thisThread->fullSearch)
         goto moves_loop;  // full threads patch
     // full threads patch end
-    // from Kelly begin
+    // from learning begin
     if (!expectedPVNode)
     {
         // Set up the improving flag, which is true if current static evaluation is
@@ -1514,7 +1547,7 @@ Value Search::Worker::search(
         // false otherwise. The improving flag is used in various pruning heuristics.
         improving = ss->staticEval > (ss - 2)->staticEval;
     }
-    // from Kelly end
+    // from learning end
     opponentWorsening = ss->staticEval > -(ss - 1)->staticEval;
 
 
@@ -3247,7 +3280,7 @@ bool RootMove::extract_ponder_from_tt(const TranspositionTable& tt, Position& po
 }
 
 
-// Kelly begin
+// learning begin
 void putQLearningTrajectoryIntoLearningTable() {
     const double learning_rate = 0.5;
     const double gamma         = 0.99;
@@ -3278,6 +3311,6 @@ void setStartPoint() {
     useLearning = true;
     LD.resume();
 }
-// Kelly end
+// learning end
 
 }  // namespace ShashChess

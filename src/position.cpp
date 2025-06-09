@@ -111,7 +111,7 @@ std::array<Move, 8192> cuckooMove;
 
 // Initializes at startup the various arrays used to compute hash keys
 void Position::init() {
-    //Kelly begin
+    //learning begin
     Zobrist::psq[1][0]   = 591679071752537765U;
     Zobrist::psq[1][1]   = 11781298203991720739U;
     Zobrist::psq[1][2]   = 17774509420834274491U;
@@ -909,7 +909,7 @@ void Position::init() {
     Zobrist::castling[15] = 7849635286513694150U;
     Zobrist::side         = 11598212307497933772U;
     Zobrist::noPawns      = 11773087935368354602U;
-    //Kelly end
+    //learning end
 
     // Prepare the cuckoo tables
     cuckoo.fill(0);
