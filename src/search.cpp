@@ -1378,25 +1378,25 @@ Value Search::Worker::search(
 
                 // Partial workaround for the graph history interaction problem
                 // For high rule50 counts don't produce transposition table cutoffs.
-				if (pos.rule50_count() < 90)
-		        {
-		            if (depth >= 8 && ttData.move && pos.pseudo_legal(ttData.move) && pos.legal(ttData.move)
-		                && !is_decisive(expTTValue))
-		            {
-		                do_move(pos, ttData.move, st);
-		                Key nextPosKey                             = pos.key();
-		                auto [ttHitNext, ttDataNext, ttWriterNext] = tt.probe(nextPosKey);
-		                undo_move(pos, ttData.move);
-		
-		                // Check that the ttValue after the tt move would also trigger a cutoff
-		                if (!is_valid(ttDataNext.value))
-		                    return expTTValue;
-		                if ((expTTValue >= beta) == (-ttDataNext.value >= beta))
-		                    return expTTValue;
-		            }
-		            else
-		                return expTTValue;
-		        }
+                if (pos.rule50_count() < 90)
+                {
+                    if (depth >= 8 && ttData.move && pos.pseudo_legal(ttData.move)
+                        && pos.legal(ttData.move) && !is_decisive(expTTValue))
+                    {
+                        do_move(pos, ttData.move, st);
+                        Key nextPosKey                             = pos.key();
+                        auto [ttHitNext, ttDataNext, ttWriterNext] = tt.probe(nextPosKey);
+                        undo_move(pos, ttData.move);
+
+                        // Check that the ttValue after the tt move would also trigger a cutoff
+                        if (!is_valid(ttDataNext.value))
+                            return expTTValue;
+                        if ((expTTValue >= beta) == (-ttDataNext.value >= beta))
+                            return expTTValue;
+                    }
+                    else
+                        return expTTValue;
+                }
             }
         }
     }
@@ -1663,10 +1663,10 @@ Value Search::Worker::search(
 
     // Step 10. Internal iterative reductions
     // For PV nodes without a ttMove as well as for deep enough cutNodes, we decrease depth.
-    // (*Scaler) Especially if they make IIR less aggressive.
+    // (* Scaler) Especially if they make IIR more aggressive.
     if (!localShashinManager.avoidStep10() && quietKingSafe)
     {
-        const bool standardReductionCondition = (!allNode && depth >= 6 && !ttData.move);
+        const bool standardReductionCondition = !allNode && depth >= 6 && !ttData.move;
         const bool ttUpperBoundReduction =
           cutNode && ttData.move && ttData.bound == BOUND_UPPER && depth >= 7;
 
@@ -1744,7 +1744,7 @@ moves_loop:  // When in check, search starts here
 
     // Step 12. A small Probcut idea
     probCutBeta = beta + 400;
-    //from shashin crystal begin
+    //from shashin crystal begin: Enhanced ProbCut with safety checks
     // Common conditions for any ProbCut
     bool commonProbcut = (ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 4
                       && ttData.value >= probCutBeta && !is_decisive(beta)
@@ -2131,8 +2131,7 @@ skipExtensionAndPruning:  // full threads search patch
             else
                 ss->statScore = 2 * thisThread->mainHistory[us][move.from_to()]
                               + (*contHist[0])[movedPiece][move.to_sq()]
-                              + (*contHist[1])[movedPiece][move.to_sq()] + 1000 * ss->inCheck
-                              - 3206;
+                              + (*contHist[1])[movedPiece][move.to_sq()] - 3206;
 
             // Decrease/increase reduction for moves with a good/bad history
             r -= ss->statScore * 826 / 8192;
@@ -2151,7 +2150,7 @@ skipExtensionAndPruning:  // full threads search patch
                 // std::clamp has been replaced by a more robust implementation.
                 Depth d = std::max(1, std::min(newDepth - r / 1024,
                                                newDepth + !allNode + (PvNode && !bestMove)))
-                        + (!cutNode && (ss - 1)->isPvNode && moveCount < 8);
+                        + (ss - 1)->isPvNode;
 
                 ss->reduction = newDepth - d;
                 value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
@@ -2297,10 +2296,11 @@ skipExtensionAndPruning:  // full threads search patch
                     assert(value >= beta);  // Fail high
                     break;
                 }
+
                 //from crystal-shashin begin
                 bool isSafeZone = beta < VALUE_MAX_EVAL / 16 && alpha > -VALUE_MAX_EVAL / 16;
 
-                // Reduce other moves if we have found at least one score improvement (~2 Elo)
+                // Reduce other moves if we have found at least one score improvement
                 if (depth > 2 && depth < 16 && !is_decisive(value))
                 {
                     bool useCrystalReduction = !localShashinManager.isTillCategory(
