@@ -1082,6 +1082,53 @@ Value Search::Worker::search(
 
     auto&                   localShashinManager = *this->shashinManager;
     const RootShashinState& rootShashinState    = localShashinManager.getState();  //for ShashChess
+    // From Shashin fortress begin
+
+    bool isFortressNode = localShashinManager.isFortress(rootPos);
+    if (isFortressNode && depth > 16)
+    {
+        static constexpr Depth RedTableAggressive[32] = {
+          /*0–15*/ 7,  7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
+          /*16–31*/ 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5};
+        constexpr Depth BaseReduction = 2;
+        Depth           reduction = BaseReduction + RedTableAggressive[std::min<int>(depth, 31)];
+        depth                     = std::max(depth - reduction, Depth(10));
+
+        int progress = pos.rule50_count();
+        if (progress < 29)
+        {
+            return ss->staticEval;
+        }
+        if (pos.count<ALL_PIECES>() > 12)
+        {
+            return ss->staticEval;
+        }
+        int window = std::min(15, 50 - progress - 10);
+        if (progress >= (50 - window))
+        {
+            double weight = (progress - (50 - window)) / double(window);
+            if (weight < 0.0)
+                weight = 0.0;
+            else if (weight > 1.0)
+                weight = 1.0;
+
+            bool  useNNUE  = (nodeType != NonPV) && (depth > 25);
+            Value baseEval = useNNUE ? evaluate(pos) : ss->staticEval;
+
+            Value drawInf = static_cast<Value>((1.0 - weight) * baseEval + weight * VALUE_DRAW);
+            constexpr Value DrawBoundary = VALUE_DRAW - 384;
+            if (drawInf >= DrawBoundary)
+                return std::clamp(drawInf, DrawBoundary, VALUE_DRAW);
+        }
+
+        if (depth < 15)
+        {
+            static constexpr int Bonus[16] = {330, 308, 286, 264, 242, 220, 198, 176,
+                                              154, 132, 110, 88,  66,  44,  22,  0};
+            ss->staticEval += Bonus[depth];
+        }
+    }
+    // From Shashin fortress end
 
     // Dive into quiescence search when the depth reaches zero
     if (depth <= 0)
