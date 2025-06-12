@@ -1085,14 +1085,9 @@ Value Search::Worker::search(
     // From Shashin fortress begin
 
     bool isFortressNode = localShashinManager.isFortress(rootPos);
-    if (isFortressNode && depth > 16)
+    if (!PvNode && depth > 16 && isFortressNode)
     {
-        static constexpr Depth RedTableAggressive[32] = {
-          /*0–15*/ 7,  7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
-          /*16–31*/ 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5};
-        constexpr Depth BaseReduction = 2;
-        Depth           reduction = BaseReduction + RedTableAggressive[std::min<int>(depth, 31)];
-        depth                     = std::max(depth - reduction, Depth(10));
+        depth = std::max(depth - 1, Depth(10));
 
         int progress = pos.rule50_count();
         if (progress < 29)
@@ -1107,10 +1102,7 @@ Value Search::Worker::search(
         if (progress >= (50 - window))
         {
             double weight = (progress - (50 - window)) / double(window);
-            if (weight < 0.0)
-                weight = 0.0;
-            else if (weight > 1.0)
-                weight = 1.0;
+            weight        = std::clamp(weight, 0.0, 1.0);
 
             bool  useNNUE  = (nodeType != NonPV) && (depth > 25);
             Value baseEval = useNNUE ? evaluate(pos) : ss->staticEval;
@@ -1976,8 +1968,7 @@ skipExtensionAndPruning:  // full threads search patch
         if (capture)
             ss->statScore =
               826 * int(PieceValue[pos.captured_piece()]) / 128
-              + thisThread
-                  ->captureHistory[movedPiece][move.to_sq()][type_of(pos.captured_piece())]
+              + thisThread->captureHistory[movedPiece][move.to_sq()][type_of(pos.captured_piece())]
               - 5030;
         else
             ss->statScore = 2 * thisThread->mainHistory[us][move.from_to()]

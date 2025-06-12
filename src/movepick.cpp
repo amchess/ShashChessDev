@@ -122,7 +122,8 @@ void MovePicker::score() {
 
     static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
-    Color      us       = pos.side_to_move();
+    Color us = pos.side_to_move();
+    //for fortress begin
     const bool fortress = MoveConfig::isFortress;
 
     int phase           = std::clamp(pos.game_ply() / 25, 0, 3);
@@ -130,7 +131,7 @@ void MovePicker::score() {
     int preservingBonus = 900 + 300 * (3 - phase);
 
     int kingSafetyScore = king_safety_score(pos, us);
-
+    //for fotress end
     [[maybe_unused]] Bitboard threatByLesser[QUEEN + 1];
     if constexpr (Type == QUIETS)
     {
@@ -153,15 +154,19 @@ void MovePicker::score() {
                     + 7 * int(PieceValue[pos.piece_on(to)])
                     + 1024 * bool(pos.check_squares(pt) & to);
 
-            if (MoveConfig::isAggressive)
+            //for fortress begin
+            if (fortress && MoveConfig::isAggressive)
                 m.value += 500;
+            //for fortress end
         }
         else if constexpr (Type == QUIETS)
         {
+            // histories
             m.value = 2 * (*mainHistory)[us][m.from_to()]
                     + 2 * (*pawnHistory)[pawn_structure_index(pos)][pc][to];
             for (int i : {0, 1, 2, 3, 5})
                 m.value += (*continuationHistory[i])[pc][to];
+            // bonus for checks
             m.value += (bool(pos.check_squares(pt) & to) && pos.see_ge(m, -75)) * 16384;
 
             // penalty for moving to a square threatened by a lesser piece
@@ -175,9 +180,10 @@ void MovePicker::score() {
 
             if (ply < LOW_PLY_HISTORY_SIZE)
                 m.value += 8 * (*lowPlyHistory)[ply][m.from_to()] / (1 + ply);
-
-            if (MoveConfig::isStrategical)
+            //for fortress begin
+            if (fortress && MoveConfig::isStrategical)
                 m.value += 200;
+            //for fortress end
         }
         else
         {  // EVASIONS
@@ -192,7 +198,7 @@ void MovePicker::score() {
                     m.value += 2 * (*lowPlyHistory)[ply][m.from_to()] / (1 + ply);
             }
         }
-
+        //fortress begin
         if (fortress)
         {
             bool preserve = is_fortress_preserving_move(pos, m);
@@ -230,6 +236,7 @@ void MovePicker::score() {
             else if (MoveConfig::isAggressive)
                 m.value += static_cast<int>(120 * dynamicFactor);
         }
+        //fortress end
     }
 }
 

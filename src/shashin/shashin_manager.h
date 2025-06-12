@@ -141,14 +141,13 @@ class ShashinManager {
     };
     RootShashinState state;
     PositionCache    positionCache;
-    uint64_t         currentPosHash = 0;
     // Helper to calculate the position hash
     uint64_t computePositionHash(const Position& pos) {
         return Shashin::shashin_position_hash(pos);
     }
     // Helper to invalidate caches when position changes
     void invalidateCaches() {
-        currentPosHash = 0;  // It invalidates all at the position change
+        positionCache.posHash = 0;  // It invalidates all at the position change
     }
 };
 

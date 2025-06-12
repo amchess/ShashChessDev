@@ -296,7 +296,7 @@ class Worker {
     Depth                           completedDepth;                     //mcts
     bool                            nmpGuard = false, nmpSide = false;  //from Crystal-shashin
     ShashinManager&                 getShashinManager();                //from crystal-Shashin
-    int                             lastShashinUpdatedDepth = 0; //from shashin
+    int                             lastShashinUpdatedDepth = 0;        //from shashin
 
    private:
     void iterative_deepening();
