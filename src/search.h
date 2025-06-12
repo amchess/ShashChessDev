@@ -204,6 +204,7 @@ struct InfoIteration {
     size_t           currmovenumber;
 };
 
+//no skill
 // SearchManager manages the search from the main thread. It is responsible for
 // keeping track of the time, and storing data strictly related to the main thread.
 class SearchManager: public ISearchManager {
@@ -295,7 +296,7 @@ class Worker {
     Depth                           completedDepth;                     //mcts
     bool                            nmpGuard = false, nmpSide = false;  //from Crystal-shashin
     ShashinManager&                 getShashinManager();                //from crystal-Shashin
-    int                             lastShashinUpdatedDepth = 0;
+    int                             lastShashinUpdatedDepth = 0; //from shashin
 
    private:
     void iterative_deepening();

@@ -191,15 +191,8 @@ ExtMove* generate_all(const Position& pos, ExtMove* moveList) {
     Bitboard b = attacks_bb<KING>(ksq) & (Type == EVASIONS ? ~pos.pieces(Us) : target);
 
     while (b)
-    //from shashin begin
-    {
-        Square to = pop_lsb(b);
+        *moveList++ = Move(ksq, pop_lsb(b));
 
-        // Add crystal logic only if active
-        if (!MoveConfig::useMoveShashinLogic || !(pos.attackers_to(to) & pos.pieces(~Us)))
-            *moveList++ = Move(ksq, to);
-    }
-    //from shashin end
     if ((Type == QUIETS || Type == NON_EVASIONS) && pos.can_castle(Us & ANY_CASTLING))
         for (CastlingRights cr : {Us & KING_SIDE, Us & QUEEN_SIDE})
             if (!pos.castling_impeded(cr) && pos.can_castle(cr))
