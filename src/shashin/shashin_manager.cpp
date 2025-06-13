@@ -239,34 +239,34 @@ bool ShashinManager::isFortress(const Position& pos) {
         positionCache.fortress = false;
         return false;
     };
-
-    const int   MinPly     = params.minPlyFortress;
-    const Color us         = pos.side_to_move();
-    const int   ourPawns   = popcount(pos.pieces(PAWN, us));
-    const int   theirPawns = popcount(pos.pieces(PAWN, ~us));
-
+    const Color us     = pos.side_to_move();
+    const Color them   = ~us;
+    const int   MinPly = params.minPlyFortress;
     if (pos.rule50_count() < MinPly + 1)
         return cacheFalse();
+    int ourPawns   = popcount(pos.pieces(PAWN, us));
+    int theirPawns = popcount(pos.pieces(PAWN, ~us));
     if (ourPawns < std::max(4, theirPawns))
         return cacheFalse();
-    if (pos.count<ALL_PIECES>() > 12)
-        return cacheFalse();
-
     const Square ourKing   = pos.square<KING>(us);
     const Square theirKing = pos.square<KING>(~us);
     const int    kingDist  = distance(ourKing, theirKing);
-    if (kingDist <= 3)
+    if (kingDist <= 4)
         return cacheFalse();
-
-
-    if (pos.non_pawn_material(~us) > 3000 || popcount(pos.pieces(QUEEN)) > 0)
+    const int theirNonPawnMaterial = pos.non_pawn_material(them);
+    if (theirNonPawnMaterial > params.maxAttackerMaterial || popcount(pos.pieces(QUEEN, them)) > 0)
         return cacheFalse();
     const bool enoughMaterial =
-      (pos.count<ROOK>(us) + pos.count<KNIGHT>(us) + pos.count<BISHOP>(us))
-      >= params.defenderPieces;
+      (pos.count<ROOK>(us) + pos.count<KNIGHT>(us) + pos.count<BISHOP>(us)) + pos.count<PAWN>(us)
+      >= params.minDefenderPieces;
+    if (!enoughMaterial)
+        return cacheFalse();
+
+    if (pos.count<ALL_PIECES>() > params.maxTotalPieces)
+        return cacheFalse();
     const int  kingSafetyScore = king_safety_score(pos, us);
     const bool kingSafety      = kingSafetyScore > 150;
-    if (!enoughMaterial || !kingSafety)
+    if (!kingSafety)
         return cacheFalse();
 
     if (has_pawn_breaks(pos) || !is_king_cutoff(pos, us))
@@ -274,7 +274,7 @@ bool ShashinManager::isFortress(const Position& pos) {
     if (!has_safe_waiting_moves(pos))
         return cacheFalse();
 
-    if (pos.non_pawn_material(us) <= 2 * pos.non_pawn_material(~us))
+    if (pos.non_pawn_material(us) <= 2 * theirNonPawnMaterial)
         return cacheFalse();
 
     const Bitboard ourPieces     = pos.pieces(us);

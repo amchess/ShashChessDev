@@ -1085,7 +1085,7 @@ Value Search::Worker::search(
     // From Shashin fortress begin
 
     bool isFortressNode = localShashinManager.isFortress(rootPos);
-    if (!PvNode && depth > 16 && isFortressNode)
+    if (depth > 24 && !PvNode && isFortressNode)
     {
         depth = std::max(depth - 1, Depth(10));
 

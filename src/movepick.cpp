@@ -226,15 +226,15 @@ void MovePicker::score() {
                 m.value = m.value * 5 / 4;
             else if (!has_safe_waiting_moves(pos))
                 m.value = m.value * 3 / 4;
-        }
-        if (MoveConfig::useMoveShashinLogic)
-        {
-            const double dynamicFactor =
-              std::log(1.0 + std::min(pos.game_ply() / 20.0, 1.0) * 9.0) / std::log(10.0);
-            if (MoveConfig::isStrategical)
-                m.value += static_cast<int>(60 * dynamicFactor);
-            else if (MoveConfig::isAggressive)
-                m.value += static_cast<int>(120 * dynamicFactor);
+            if (MoveConfig::useMoveShashinLogic)
+            {
+                const double dynamicFactor =
+                  std::log(1.0 + std::min(pos.game_ply() / 20.0, 1.0) * 9.0) / std::log(10.0);
+                if (MoveConfig::isStrategical)
+                    m.value += static_cast<int>(60 * dynamicFactor);
+                else if (MoveConfig::isAggressive)
+                    m.value += static_cast<int>(120 * dynamicFactor);
+            }
         }
         //fortress end
     }
