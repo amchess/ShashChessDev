@@ -189,17 +189,43 @@ ExtMove* generate_all(const Position& pos, ExtMove* moveList) {
     }
 
     Bitboard b = attacks_bb<KING>(ksq) & (Type == EVASIONS ? ~pos.pieces(Us) : target);
+    //from shashin crystal begin
+    Bitboard   kingMoves = attacks_bb<KING>(ksq) & ((Type == EVASIONS) ? ~pos.pieces(Us) : target);
+    const bool useFilter = MoveConfig::useMoveShashinLogic && Type != EVASIONS;
+    Bitboard   enemyAttackers = 0;
 
-    while (b)
-    //from shashin begin
+    if (useFilter)
     {
-        Square to = pop_lsb(b);
-
-        // Add crystal logic only if active
-        if (!MoveConfig::useMoveShashinLogic || !(pos.attackers_to(to) & pos.pieces(~Us)))
-            *moveList++ = Move(ksq, to);
+        const Color them = ~Us;
+        enemyAttackers   = pos.attacks_by<PAWN>(them);
+        enemyAttackers |= pos.attacks_by<KNIGHT>(them);
+        enemyAttackers |= pos.attacks_by<BISHOP>(them);
+        enemyAttackers |= pos.attacks_by<ROOK>(them);
+        enemyAttackers |= pos.attacks_by<QUEEN>(them);
     }
-    //from shashin end
+
+    while (kingMoves)
+    {
+        const Square to = pop_lsb(kingMoves);
+        if (!useFilter)
+        {
+            *moveList++ = Move(ksq, to);  // Stockfish puro
+        }
+        else
+        {
+            // Crystal Logic: catture sempre permesse
+            if (pos.pieces(~Us) & to)
+            {
+                *moveList++ = Move(ksq, to);
+            }
+            // Mosse non cattura solo su caselle sicure
+            else if (!(enemyAttackers & to))
+            {
+                *moveList++ = Move(ksq, to);
+            }
+        }
+    }
+    //from shashin crystal bend
     if ((Type == QUIETS || Type == NON_EVASIONS) && pos.can_castle(Us & ANY_CASTLING))
         for (CastlingRights cr : {Us & KING_SIDE, Us & QUEEN_SIDE})
             if (!pos.castling_impeded(cr) && pos.can_castle(cr))
