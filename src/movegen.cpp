@@ -164,7 +164,6 @@ ExtMove* generate_moves(const Position& pos, ExtMove* moveList, Bitboard target)
     return moveList;
 }
 
-
 template<Color Us, GenType Type>
 ExtMove* generate_all(const Position& pos, ExtMove* moveList) {
 
@@ -187,46 +186,39 @@ ExtMove* generate_all(const Position& pos, ExtMove* moveList) {
         moveList = generate_moves<Us, ROOK>(pos, moveList, target);
         moveList = generate_moves<Us, QUEEN>(pos, moveList, target);
     }
+    //Shashin-Crystal begin
+    Bitboard  kingMoves = attacks_bb<KING>(ksq) & (Type == EVASIONS ? ~pos.pieces(Us) : target);
+    const int moveCount = popcount(kingMoves);
 
-    Bitboard kingMoves = attacks_bb<KING>(ksq) & ((Type == EVASIONS) ? ~pos.pieces(Us) : target);
+    const bool useFilter =
+      MoveConfig::useMoveShashinLogic && moveCount > 3 && (Type != EVASIONS || !pos.checkers());
 
-    const bool fewKingOptions = popcount(kingMoves) < 2;
-
-    const bool useFilter = MoveConfig::useMoveShashinLogic && Type != EVASIONS && !fewKingOptions;
-
-    Bitboard enemyAttackers = 0;
+    Bitboard enemyAttacks = 0;
     if (useFilter)
     {
         const Color them = ~Us;
-        enemyAttackers   = pos.attacks_by<PAWN>(them);
-        enemyAttackers |= pos.attacks_by<KNIGHT>(them);
-        enemyAttackers |= pos.attacks_by<BISHOP>(them);
-        enemyAttackers |= pos.attacks_by<ROOK>(them);
-        enemyAttackers |= pos.attacks_by<QUEEN>(them);
+        enemyAttacks     = pos.attacks_by<PAWN>(them) | pos.attacks_by<KNIGHT>(them)
+                     | pos.attacks_by<BISHOP>(them) | pos.attacks_by<ROOK>(them)
+                     | pos.attacks_by<QUEEN>(them);
     }
 
     while (kingMoves)
     {
-        const Square to = pop_lsb(kingMoves);
+        Square to = pop_lsb(kingMoves);
 
         if (!useFilter)
         {
-            // Stockfish puro: senza alcun filtro
             *moveList++ = Move(ksq, to);
         }
         else
         {
-            if (pos.pieces(~Us) & to)
-            {
-                *moveList++ = Move(ksq, to);
-            }
-            else if (!(enemyAttackers & to))
+            if (pos.pieces(~Us) & to || !(enemyAttacks & to))
             {
                 *moveList++ = Move(ksq, to);
             }
         }
     }
-
+    //Shashin-Crystal end
     if ((Type == QUIETS || Type == NON_EVASIONS) && pos.can_castle(Us & ANY_CASTLING))
         for (CastlingRights cr : {Us & KING_SIDE, Us & QUEEN_SIDE})
             if (!pos.castling_impeded(cr) && pos.can_castle(cr))
