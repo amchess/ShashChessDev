@@ -188,12 +188,13 @@ ExtMove* generate_all(const Position& pos, ExtMove* moveList) {
         moveList = generate_moves<Us, QUEEN>(pos, moveList, target);
     }
 
-    Bitboard b = attacks_bb<KING>(ksq) & (Type == EVASIONS ? ~pos.pieces(Us) : target);
-    //from shashin crystal begin
-    Bitboard   kingMoves = attacks_bb<KING>(ksq) & ((Type == EVASIONS) ? ~pos.pieces(Us) : target);
-    const bool useFilter = MoveConfig::useMoveShashinLogic && Type != EVASIONS;
-    Bitboard   enemyAttackers = 0;
+    Bitboard kingMoves = attacks_bb<KING>(ksq) & ((Type == EVASIONS) ? ~pos.pieces(Us) : target);
 
+    const bool fewKingOptions = popcount(kingMoves) < 2;
+
+    const bool useFilter = MoveConfig::useMoveShashinLogic && Type != EVASIONS && !fewKingOptions;
+
+    Bitboard enemyAttackers = 0;
     if (useFilter)
     {
         const Color them = ~Us;
@@ -207,25 +208,25 @@ ExtMove* generate_all(const Position& pos, ExtMove* moveList) {
     while (kingMoves)
     {
         const Square to = pop_lsb(kingMoves);
+
         if (!useFilter)
         {
-            *moveList++ = Move(ksq, to);  // Stockfish puro
+            // Stockfish puro: senza alcun filtro
+            *moveList++ = Move(ksq, to);
         }
         else
         {
-            // Crystal Logic: catture sempre permesse
             if (pos.pieces(~Us) & to)
             {
                 *moveList++ = Move(ksq, to);
             }
-            // Mosse non cattura solo su caselle sicure
             else if (!(enemyAttackers & to))
             {
                 *moveList++ = Move(ksq, to);
             }
         }
     }
-    //from shashin crystal bend
+
     if ((Type == QUIETS || Type == NON_EVASIONS) && pos.can_castle(Us & ANY_CASTLING))
         for (CastlingRights cr : {Us & KING_SIDE, Us & QUEEN_SIDE})
             if (!pos.castling_impeded(cr) && pos.can_castle(cr))
