@@ -2301,24 +2301,35 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     // Step 3. Transposition table lookup
     posKey                         = pos.key();
     auto [ttHit, ttData, ttWriter] = tt.probe(posKey);
-    // Need further processing of the saved data
+
+    // Process saved data
     ss->ttHit    = ttHit;
     ttData.move  = ttHit ? ttData.move : Move::none();
     ttData.value = ttHit ? value_from_tt(ttData.value, ss->ply, pos.rule50_count()) : VALUE_NONE;
     pvHit        = ttHit && ttData.is_pv;
 
-    //from crystal shashin begin
-    const auto&   staticState    = rootShashinState.staticState;
-    const auto&   dynamicDerived = rootShashinState.dynamicDerived;
-    const uint8_t legalMoveCount = staticState.legalMoveCount;
-    const bool    kingExposed    = staticState.kingExposed;
-    // Costanti definite correttamente per qsearch
-    //from crystal shashin end
-    // At non-PV nodes we check for an early TT cutoff
-    if (!PvNode && ttData.depth >= DEPTH_QS
-        && is_valid(ttData.value)  // Can happen when !ttHit or when access race in probe()
-        && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER)))
-        return ttData.value;
+    // Crystal-Shashin QSearch optimization
+    const bool canUseTTValue = !PvNode && ttHit && is_valid(ttData.value)
+                            && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER));
+
+    if (canUseTTValue)
+    {
+        if (ttData.depth >= DEPTH_QS)
+            return ttData.value;
+        const auto& staticState = rootShashinState.staticState;  // Accesso O(1)
+        if (staticState.legalMoveCount < 35 && std::abs(ttData.value) > 60)
+        {
+            const auto& dynamicDerived = rootShashinState.dynamicDerived;
+            if (!dynamicDerived.isStrategical)
+            {
+                const bool depthCondition =
+                  ttData.depth >= ADJUSTED_QS_DEPTH && ttData.depth > MIN_DEPTH_FOR_QS_CUTOFF;
+                const bool kingSafety = !staticState.kingExposed || ttData.depth > DEPTH_QS + 4;
+                if (depthCondition && kingSafety)
+                    return ttData.value;
+            }
+        }
+    }
 
     // Step 4. Static evaluation of the position
     Value unadjustedStaticEval = VALUE_NONE;
