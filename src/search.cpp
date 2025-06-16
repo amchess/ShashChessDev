@@ -2352,18 +2352,19 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
             if ((staticState.isSacrificial || kingExposed) && staticEval > alpha - 220)
             {
-                int penalty = 0;
+                int       penalty = 0;
+                const int margin  = staticEval - (alpha - 180);
 
                 if (staticState.isSacrificial)
-                    penalty += std::min(staticState.legalMoveCount / 6, 6);
+                    penalty += std::clamp(staticState.legalMoveCount / 6, 1, 5);
 
                 if (kingExposed)
-                    penalty += std::min(std::abs(staticState.kingSafetyScore) / 36, 3);
+                    penalty += std::clamp(std::abs(staticState.kingSafetyScore) / 35, 1, 4);
 
-                if (staticEval > alpha - 60)
-                    penalty = penalty * 3 / 4;
+                if (margin < 60)
+                    penalty = penalty * margin / 60;
 
-                staticEval -= std::min(penalty, 21);
+                staticEval -= std::min(penalty, 14);
             }
             //from Shashin end
             ss->staticEval = bestValue = staticEval;
