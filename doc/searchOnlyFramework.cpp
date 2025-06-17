@@ -35,7 +35,6 @@ void Search::Worker::start_searching() {
     }
     else
     {
-        shashinManager = std::make_unique<ShashinManager>();
         // It inizializes the rootPosition static state
         shashinManager->setStaticState(rootPos);
     }

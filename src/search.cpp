@@ -384,7 +384,6 @@ void Search::Worker::start_searching() {
     }
     else
     {
-        shashinManager = std::make_unique<ShashinManager>();
         // It inizializes the rootPosition static state
         shashinManager->setStaticState(rootPos);
     }
@@ -2350,25 +2349,10 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             //from Shashin begin
             Value staticEval = to_corrected_static_eval(unadjustedStaticEval, correctionValue);
 
-            if ((staticState.isSacrificial || kingExposed) && staticEval > alpha - 220)
-            {
-                int       penalty = 0;
-                const int margin  = staticEval - (alpha - 180);
-
-                if (staticState.isSacrificial)
-                    penalty += std::clamp(staticState.legalMoveCount / 6, 1, 5);
-
-                if (kingExposed)
-                    penalty += std::clamp(std::abs(staticState.kingSafetyScore) / 35, 1, 4);
-
-                if (margin < 60)
-                    penalty = penalty * margin / 60;
-
-                staticEval -= std::min(penalty, 14);
-            }
-            //from Shashin end
+            if (kingExposed && staticState.kingSafetyScore < -60 && staticState.legalMoveCount < 8)
+                staticEval -= 2;
             ss->staticEval = bestValue = staticEval;
-
+            //from Shashin end
             // ttValue can be used as a better position evaluation
             if (is_valid(ttData.value) && !is_decisive(ttData.value)
                 && (ttData.bound & (ttData.value > bestValue ? BOUND_LOWER : BOUND_UPPER)))
@@ -2397,7 +2381,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         if (bestValue > alpha)
             alpha = bestValue;
 
-        futilityBase = ss->staticEval + (kingExposed ? 300 : 376);
+        futilityBase = ss->staticEval + (kingExposed ? 360 : 376);
     }
 
     const PieceToHistory* contHist[] = {(ss - 1)->continuationHistory,
