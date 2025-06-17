@@ -2349,8 +2349,8 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             //from Shashin begin
             Value staticEval = to_corrected_static_eval(unadjustedStaticEval, correctionValue);
 
-            if (kingExposed && staticState.kingSafetyScore < -60 && staticState.legalMoveCount < 8)
-                staticEval -= 2;
+            if (kingExposed && staticState.kingSafetyScore < -50 && staticState.legalMoveCount < 10)
+                staticEval -= std::clamp((-staticState.kingSafetyScore) / 30, 1, 4);
             ss->staticEval = bestValue = staticEval;
             //from Shashin end
             // ttValue can be used as a better position evaluation
