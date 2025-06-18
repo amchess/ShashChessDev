@@ -1893,17 +1893,17 @@ moves_loop:  // When in check, search starts here
 
                     if (isHighTal)
                     {
-                        int boost = std::min(depth * 3, 150);
+                        int boost = std::min(depth * 2, 100);
                         if (depth >= 8 || staticState.kingSafetyScore < -30)
                         {
-                            doubleMargin += 90 + boost;
-                            tripleMargin += 120 + boost;
+                            doubleMargin += 50 + boost;
+                            tripleMargin += 70 + boost;
                         }
                     }
 
                     extension =
                       1 + (v0 < singularBeta - doubleMargin) + (v0 < singularBeta - tripleMargin);
-                    if (isAggressive && depth < 24)
+                    if (isAggressive && depth < 16)
                         extension = std::min<Depth>(extension + 1, 2);
 
                     if (depth < MAX_PLY - 2)
@@ -1917,7 +1917,7 @@ moves_loop:  // When in check, search starts here
                 // subtree by returning a softbound.
                 else if (v0 >= beta && !is_decisive(v0))
                 {
-                    return isTacticalReactive ? (v0 - (PvNode ? 30 : 50))  // PvNode meno aggressivo
+                    return isTacticalReactive ? (v0 - (PvNode ? 20 : 40))  // PvNode meno aggressivo
                                               : v0;
                 }
 
@@ -1931,12 +1931,20 @@ moves_loop:  // When in check, search starts here
                 // If the ttMove is assumed to fail high over current beta
                 else if (ttData.value >= beta)
                 {
-                    extension = (isStrategical && lowMobility) ? Depth(-1) : Depth(-3);
+                    extension = (isStrategical && lowMobility) ? Depth(0) : Depth(-2);
                 }
                 // If we are on a cutNode but the ttMove is not assumed to fail high
                 // over current beta
                 else if (cutNode)
-                    extension = isAggressive ? Depth(-1) : Depth(-2);
+                {
+                    extension = isAggressive ? Depth(0) : Depth(-1);
+                }
+                bool criticalEndgame = PvNode && pos.count<ALL_PIECES>() <= 6
+                                    && pos.non_pawn_material() <= 2 * QueenValue;
+                if (criticalEndgame && extension > 0 && depth < MAX_PLY - 2)
+                {
+                    extension++;
+                }
             }
         }
 
