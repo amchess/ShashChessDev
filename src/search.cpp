@@ -1856,58 +1856,50 @@ moves_loop:  // When in check, search starts here
 
         // (*Scaler) Generally, higher singularBeta (i.e closer to ttValue)
         // and lower extension margins scale well.
-        //from Shashin begin
-
+        //shashin crystal begin
         if (!rootNode && move == ttData.move && !excludedMove
             && depth >= 6 - (thisThread->completedDepth > 27) + ss->ttPv && is_valid(ttData.value)
             && !is_decisive(ttData.value) && (ttData.bound & BOUND_LOWER)
             && ttData.depth >= depth - 3)
         {
-            const auto correctionValue = correction_value(*thisThread, pos, ss);
-            const bool lowMobility     = staticState.legalMoveCount < 15;
+            // Shashin-Crystal: game cycle extension logic
+            bool gameCycleExtension = gameCycle && extension >= 0 && ourMove && PvNode;
 
-            if (gameCycle && extension >= 0 && PvNode && isHighTal && depth > 12)
+            if (gameCycleExtension && isHighTal && depth > 12)
             {
-                extension = std::min<Depth>(extension + 1, 2);
+                extension = std::min(extension + 1, 2);
             }
             else
             {
-                int   corrAdj       = std::abs(correctionValue) / 248400;
-                bool  ply2          = ss->ply > thisThread->rootDepth;
-                bool  ply3          = ss->ply * 2 > thisThread->rootDepth * 3;
-                int   baseMargin    = 58 + 76 * (ss->ttPv && !PvNode);
-                Value singularBeta  = ttData.value - baseMargin * depth / 57;
+                int   marginBase    = 58 + 76 * (ss->ttPv && !PvNode);
+                Value singularBeta  = ttData.value - marginBase * depth / 57;
                 Depth singularDepth = newDepth / 2;
 
                 ss->excludedMove = move;
-                Value v0 =
+                value =
                   search<NonPV>(pos, ss, singularBeta - 1, singularBeta, singularDepth, cutNode);
                 ss->excludedMove = Move::none();
 
-                if (v0 < singularBeta)
+                if (value < singularBeta)
                 {
-                    int doubleMargin = -4 + 244 * PvNode - 206 * !ttCapture - corrAdj
-                                     - (997 * ttMoveHistory) / 131072 - (ply2 ? 47 : 0);
+                    int  corrValAdj       = std::abs(correctionValue) / 248400;
+                    bool plyDoubleCut     = (ss->ply > thisThread->rootDepth);
+                    bool plyTripleCut     = (ss->ply * 2 > thisThread->rootDepth * 3);
+                    int  shashinBoostBase = std::min(depth * 3, 150);
+                    bool deepPosition     = (depth >= 8);
+                    bool kingUnderAttack  = (staticState.kingSafetyScore < -30);
+                    bool criticalHighTal  = isHighTal && (deepPosition || kingUnderAttack);
+                    int  doubleMargin     = -4 + 244 * PvNode - 206 * !ttCapture - corrValAdj
+                                     - (997 * ttMoveHistory) / 131072 - plyDoubleCut * 47
+                                     + (criticalHighTal ? (90 + shashinBoostBase) : 0);
+
                     int tripleMargin = 84 + 269 * PvNode - 253 * !ttCapture + 91 * ss->ttPv
-                                     - corrAdj - (ply3 ? 54 : 0);
+                                     - corrValAdj - plyTripleCut * 54
+                                     + (criticalHighTal ? (120 + shashinBoostBase) : 0);
 
-                    if (isHighTal)
-                    {
-                        int boost = std::min(depth * 2, 100);
-                        if (depth >= 8 || staticState.kingSafetyScore < -30)
-                        {
-                            doubleMargin += 50 + boost;
-                            tripleMargin += 70 + boost;
-                        }
-                    }
-
-                    extension =
-                      1 + (v0 < singularBeta - doubleMargin) + (v0 < singularBeta - tripleMargin);
-                    if (isAggressive && depth < 16)
-                        extension = std::min<Depth>(extension + 1, 2);
-
-                    if (depth < MAX_PLY - 2)
-                        ++depth;
+                    extension = 1 + (value < singularBeta - doubleMargin)
+                              + (value < singularBeta - tripleMargin);
+                    depth++;
                 }
                 // Multi-cut pruning
                 // Our ttMove is assumed to fail high based on the bound of the TT entry,
@@ -1915,12 +1907,12 @@ moves_loop:  // When in check, search starts here
                 // over the original beta, we assume this expected cut-node is not
                 // singular (multiple moves fail high), and we can prune the whole
                 // subtree by returning a softbound.
-                else if (v0 >= beta && !is_decisive(v0))
+                else if (value >= beta && !is_decisive(value))
                 {
-                    return isTacticalReactive ? (v0 - (PvNode ? 20 : 40))  // PvNode meno aggressivo
-                                              : v0;
+                    if (isTacticalReactive)
+                        return value - (PvNode ? 30 : 50);  // PvNode meno aggressivo
+                    return value;
                 }
-
                 // Negative extensions
                 // If other moves failed high over (ttValue - margin) without the
                 // ttMove on a reduced search, but we cannot do multi-cut because
@@ -1931,22 +1923,21 @@ moves_loop:  // When in check, search starts here
                 // If the ttMove is assumed to fail high over current beta
                 else if (ttData.value >= beta)
                 {
-                    extension = (isStrategical && lowMobility) ? Depth(0) : Depth(-2);
+                    bool lowMobility = MoveList<LEGAL>(pos).size() < 15;
+                    extension        = (isStrategical && lowMobility) ? -1 : -3;
                 }
-                // If we are on a cutNode but the ttMove is not assumed to fail high
-                // over current beta
                 else if (cutNode)
                 {
-                    extension = isAggressive ? Depth(0) : Depth(-1);
+                    extension = isAggressive ? -1 : -2;
                 }
-                bool criticalEndgame = PvNode && pos.count<ALL_PIECES>() <= 6
-                                    && pos.non_pawn_material() <= 2 * QueenValue;
+
+                bool criticalEndgame =
+                  pos.count<ALL_PIECES>() <= 6 && pos.non_pawn_material() <= 2 * QueenValue;
                 if (criticalEndgame && extension > 0 && depth < MAX_PLY - 2)
-                {
-                    extension++;
-                }
+                    extension += 1;
             }
         }
+        // Shashin-Crystal end
 
 skipExtensionAndPruning:  // full threads search patch
         // Step 16. Make the move
