@@ -1856,59 +1856,90 @@ moves_loop:  // When in check, search starts here
 
         // (*Scaler) Generally, higher singularBeta (i.e closer to ttValue)
         // and lower extension margins scale well.
+        //from Shashin begin
 
         if (!rootNode && move == ttData.move && !excludedMove
             && depth >= 6 - (thisThread->completedDepth > 27) + ss->ttPv && is_valid(ttData.value)
             && !is_decisive(ttData.value) && (ttData.bound & BOUND_LOWER)
             && ttData.depth >= depth - 3)
         {
-            Value singularBeta  = ttData.value - (58 + 76 * (ss->ttPv && !PvNode)) * depth / 57;
-            Depth singularDepth = newDepth / 2;
+            const auto correctionValue = correction_value(*thisThread, pos, ss);
+            const bool lowMobility     = staticState.legalMoveCount < 15;
 
-            ss->excludedMove = move;
-            value = search<NonPV>(pos, ss, singularBeta - 1, singularBeta, singularDepth, cutNode);
-            ss->excludedMove = Move::none();
-
-            if (value < singularBeta)
+            if (gameCycle && extension >= 0 && PvNode && isHighTal && depth > 12)
             {
-                int corrValAdj   = std::abs(correctionValue) / 248400;
-                int doubleMargin = -4 + 244 * PvNode - 206 * !ttCapture - corrValAdj
-                                 - 997 * ttMoveHistory / 131072
-                                 - (ss->ply > thisThread->rootDepth) * 47;
-                int tripleMargin = 84 + 269 * PvNode - 253 * !ttCapture + 91 * ss->ttPv - corrValAdj
-                                 - (ss->ply * 2 > thisThread->rootDepth * 3) * 54;
-
-                extension =
-                  1 + (value < singularBeta - doubleMargin) + (value < singularBeta - tripleMargin);
-
-                depth++;
+                extension = std::min<Depth>(extension + 1, 2);
             }
+            else
+            {
+                int   corrAdj       = std::abs(correctionValue) / 248400;
+                bool  ply2          = ss->ply > thisThread->rootDepth;
+                bool  ply3          = ss->ply * 2 > thisThread->rootDepth * 3;
+                int   baseMargin    = 58 + 76 * (ss->ttPv && !PvNode);
+                Value singularBeta  = ttData.value - baseMargin * depth / 57;
+                Depth singularDepth = newDepth / 2;
 
-            // Multi-cut pruning
-            // Our ttMove is assumed to fail high based on the bound of the TT entry,
-            // and if after excluding the ttMove with a reduced search we fail high
-            // over the original beta, we assume this expected cut-node is not
-            // singular (multiple moves fail high), and we can prune the whole
-            // subtree by returning a softbound.
-            else if (value >= beta && !is_decisive(value))
-                return value;
+                ss->excludedMove = move;
+                Value v0 =
+                  search<NonPV>(pos, ss, singularBeta - 1, singularBeta, singularDepth, cutNode);
+                ss->excludedMove = Move::none();
 
-            // Negative extensions
-            // If other moves failed high over (ttValue - margin) without the
-            // ttMove on a reduced search, but we cannot do multi-cut because
-            // (ttValue - margin) is lower than the original beta, we do not know
-            // if the ttMove is singular or can do a multi-cut, so we reduce the
-            // ttMove in favor of other moves based on some conditions:
+                if (v0 < singularBeta)
+                {
+                    int doubleMargin = -4 + 244 * PvNode - 206 * !ttCapture - corrAdj
+                                     - (997 * ttMoveHistory) / 131072 - (ply2 ? 47 : 0);
+                    int tripleMargin = 84 + 269 * PvNode - 253 * !ttCapture + 91 * ss->ttPv
+                                     - corrAdj - (ply3 ? 54 : 0);
 
-            // If the ttMove is assumed to fail high over current beta
-            else if (ttData.value >= beta)
-                extension = -3;
+                    if (isHighTal)
+                    {
+                        int boost = std::min(depth * 3, 150);
+                        if (depth >= 8 || staticState.kingSafetyScore < -30)
+                        {
+                            doubleMargin += 90 + boost;
+                            tripleMargin += 120 + boost;
+                        }
+                    }
 
-            // If we are on a cutNode but the ttMove is not assumed to fail high
-            // over current beta
-            else if (cutNode)
-                extension = -2;
+                    extension =
+                      1 + (v0 < singularBeta - doubleMargin) + (v0 < singularBeta - tripleMargin);
+                    if (isAggressive && depth < 24)
+                        extension = std::min<Depth>(extension + 1, 2);
+
+                    if (depth < MAX_PLY - 2)
+                        ++depth;
+                }
+                // Multi-cut pruning
+                // Our ttMove is assumed to fail high based on the bound of the TT entry,
+                // and if after excluding the ttMove with a reduced search we fail high
+                // over the original beta, we assume this expected cut-node is not
+                // singular (multiple moves fail high), and we can prune the whole
+                // subtree by returning a softbound.
+                else if (v0 >= beta && !is_decisive(v0))
+                {
+                    return isTacticalReactive ? (v0 - (PvNode ? 30 : 50))  // PvNode meno aggressivo
+                                              : v0;
+                }
+
+                // Negative extensions
+                // If other moves failed high over (ttValue - margin) without the
+                // ttMove on a reduced search, but we cannot do multi-cut because
+                // (ttValue - margin) is lower than the original beta, we do not know
+                // if the ttMove is singular or can do a multi-cut, so we reduce the
+                // ttMove in favor of other moves based on some conditions:
+
+                // If the ttMove is assumed to fail high over current beta
+                else if (ttData.value >= beta)
+                {
+                    extension = (isStrategical && lowMobility) ? Depth(-1) : Depth(-3);
+                }
+                // If we are on a cutNode but the ttMove is not assumed to fail high
+                // over current beta
+                else if (cutNode)
+                    extension = isAggressive ? Depth(-1) : Depth(-2);
+            }
         }
+
 skipExtensionAndPruning:  // full threads search patch
         // Step 16. Make the move
         do_move(pos, move, st, givesCheck);
