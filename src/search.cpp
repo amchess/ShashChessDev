@@ -2179,9 +2179,42 @@ skipExtensionAndPruning:  // full threads search patch
                     break;
                 }
 
+                //from crystal-shashin begin
                 // Reduce other moves if we have found at least one score improvement
                 if (depth > 2 && depth < 16 && !is_decisive(value))
-                    depth -= 2;
+                {
+                    const int  baseReduction = 2;
+                    int        reduction     = baseReduction;
+                    const bool isTactical =
+                      localShashinManager.isTal() || localShashinManager.isPetrosian();
+                    const bool kingInDanger = staticState.stmKingDanger;
+
+                    // Ottimizzazione 3: Riduzione dinamica
+                    if (isTactical && kingInDanger)
+                    {
+                        // Riduzione minima in posizioni tattiche critiche
+                        reduction = 1;
+                    }
+                    else if (isStrategical && !kingInDanger && depth > 6)
+                    {
+                        // Riduzione maggiore in posizioni strategiche tranquille
+                        reduction = 3;
+                    }
+                    else if (gameCycle)
+                    {
+                        // Riduzione intermedia durante i cicli di gioco
+                        reduction = baseReduction;
+                    }
+
+                    // Ottimizzazione 4: Evitare riduzioni eccessive
+                    if (reduction >= depth)
+                    {
+                        reduction = depth - 1;
+                    }
+
+                    depth -= reduction;
+                }
+                //from crystal-shashin end
 
                 assert(depth > 0);
                 alpha = value;  // Update alpha! Always alpha < beta
