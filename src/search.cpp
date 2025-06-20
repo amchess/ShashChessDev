@@ -1586,20 +1586,19 @@ Value Search::Worker::search(
         // Compute conditions once
         ourMove       = !(ss->ply & 1);
         kingDanger    = !ourMove && king_danger(pos, us);
-        quietKingSafe = !staticState.isSacrificial
-                     && !staticState.kingExposed;  // King is safe during quiet moves
-        positionSafe = !kingDanger && quietKingSafe;
+        quietKingSafe = !staticState.isSacrificial && (staticState.kingSafetyScore > -50);
+        positionSafe  = !kingDanger && quietKingSafe;
 
         //only from Stockfish begin
         allowNullMoveOnlyFromStockfish = ((ss - 1)->currentMove != Move::null())
                                       && (ss->ply >= thisThread->nmpMinPly) && !is_loss(beta);
 
         //only from Stockfish end
-        //only from shashin crystal begin
+        // only from shashin crystal begin - MODIFICA CHIAVE QUI
         allowNullMoveOnlyFromCrystal =
-          !thisThread->nmpGuard && !gameCycle && (eval >= ss->staticEval) && positionSafe
+          !thisThread->nmpGuard && (gameCycle ? (depth < 10 && positionSafe) : true)
+          && (eval >= ss->staticEval) && positionSafe
           && (rootDepth < 11 || ourMove || (MoveList<LEGAL>(pos).size() > 5));
-
         // Master switch from ShashinManager
         useNullMoveByShashinForStockfish = localShashinManager.useNullMoveByShashinForStockfish();
         nullMoveFromCrystal   = !useNullMoveByShashinForStockfish && allowNullMoveOnlyFromCrystal;
@@ -1615,7 +1614,10 @@ Value Search::Worker::search(
             // Crystal-specific adjustment
             if (!useNullMoveByShashinForStockfish && !ourMove && (ss - 1)->secondaryLine)
                 R = std::min(R, 8);
-
+            if (localShashinManager.isComplexPosition() && depth > 10)
+            {
+                R = std::max(R - 1, 3);
+            }
             ss->currentMove         = Move::null();
             ss->continuationHistory = &thisThread->continuationHistory[0][0][NO_PIECE][0];
             ss->continuationCorrectionHistory =
