@@ -1586,7 +1586,7 @@ Value Search::Worker::search(
         // Compute conditions once
         ourMove       = !(ss->ply & 1);
         kingDanger    = !ourMove && king_danger(pos, us);
-        quietKingSafe = !staticState.isSacrificial && (staticState.kingSafetyScore > -50);
+        quietKingSafe = !staticState.isSacrificial && (staticState.kingSafetyScore > -30);
         positionSafe  = !kingDanger && quietKingSafe;
 
         //only from Stockfish begin
@@ -1596,9 +1596,9 @@ Value Search::Worker::search(
         //only from Stockfish end
         // only from shashin crystal begin - MODIFICA CHIAVE QUI
         allowNullMoveOnlyFromCrystal =
-          !thisThread->nmpGuard && (gameCycle ? (depth < 10 && positionSafe) : true)
-          && (eval >= ss->staticEval) && positionSafe
-          && (rootDepth < 11 || ourMove || (MoveList<LEGAL>(pos).size() > 5));
+          !thisThread->nmpGuard && (gameCycle ? (depth < 8 && positionSafe) : true)
+          && (eval >= ss->staticEval + 20) && positionSafe
+          && (rootDepth < 11 || ourMove || (MoveList<LEGAL>(pos).size() > 8));
         // Master switch from ShashinManager
         useNullMoveByShashinForStockfish = localShashinManager.useNullMoveByShashinForStockfish();
         nullMoveFromCrystal   = !useNullMoveByShashinForStockfish && allowNullMoveOnlyFromCrystal;
