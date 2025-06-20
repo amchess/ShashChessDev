@@ -102,9 +102,12 @@ bool ShashinManager::isTillCategory(ShashinPosition lowerBound, ShashinPosition 
 
 
 bool ShashinManager::useNullMoveByShashinForStockfish() const {
-    const auto& staticState = state.staticState;
-    return (!isInRange(ShashinPosition::HIGH_TAL) && (!isAggressive() || !staticState.highMaterial)
-            && (!isPassive() || staticState.legalMoveCount >= params.lowMobilityMoves));
+    const auto& staticState    = state.staticState;
+    const auto& dynamicDerived = state.dynamicDerived;
+    bool        avoidNullMove  = isInRange(ShashinPosition::HIGH_TAL)
+                      || isInRange(ShashinPosition::MIDDLE_TAL)
+                      || (dynamicDerived.isAggressive && staticState.highMaterial);
+    return state.dynamicDerived.isStrategical && !avoidNullMove;
 }
 
 bool ShashinManager::isSimpleIntermediate() const {

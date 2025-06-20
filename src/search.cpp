@@ -1156,7 +1156,7 @@ Value Search::Worker::search(
     bool givesCheck, improving = false, priorCapture, opponentWorsening = false,
                      expTTHit = false;  //shashin
     //from Shashin-Crystal begin
-    bool isMate, gameCycle, capture, ttCapture, kingDanger, quietKingSafe = false;
+    bool isMate, gameCycle, capture, ttCapture;
     //from shashin crystal end
     int   priorReduction;
     Piece movedPiece;
@@ -1180,8 +1180,8 @@ Value Search::Worker::search(
     bestValue          = -VALUE_INFINITE;
     maxValue           = VALUE_INFINITE;
     // from Crystal-shashin begin
-    gameCycle = kingDanger = false;
-    rootDepth              = thisThread->rootDepth;
+    gameCycle = false;
+    rootDepth = thisThread->rootDepth;
 
     ss->secondaryLine = false;
     ss->mainLine      = false;
@@ -1524,9 +1524,7 @@ Value Search::Worker::search(
     }
     //from Shashin begin
     int  nullThreshold;
-    bool commonNullMoveConditions, useNullMoveByShashinForStockfish, nullMoveFromCrystal,
-      nullMoveFromStockfish, positionSafe, allowNullMoveOnlyFromStockfish,
-      allowNullMoveOnlyFromCrystal;
+    bool commonNullMoveConditions;
     //from Shashin end
     // full threads patch begin
     if (thisThread->fullSearch)
@@ -1584,25 +1582,28 @@ Value Search::Worker::search(
     if (commonNullMoveConditions)
     {
         // Compute conditions once
-        ourMove       = !(ss->ply & 1);
-        kingDanger    = !ourMove && king_danger(pos, us);
-        quietKingSafe = !staticState.isSacrificial && (staticState.kingSafetyScore > -30);
-        positionSafe  = !kingDanger && quietKingSafe;
+        ourMove            = !(ss->ply & 1);
+        bool kingDanger    = !ourMove && king_danger(pos, us);
+        bool quietKingSafe = !staticState.isSacrificial && (staticState.kingSafetyScore > -30);
+        bool positionSafe  = !kingDanger && quietKingSafe;
 
         //only from Stockfish begin
-        allowNullMoveOnlyFromStockfish = ((ss - 1)->currentMove != Move::null())
-                                      && (ss->ply >= thisThread->nmpMinPly) && !is_loss(beta);
+        bool allowNullMoveOnlyFromStockfish = ((ss - 1)->currentMove != Move::null())
+                                           && (ss->ply >= thisThread->nmpMinPly) && !is_loss(beta);
 
         //only from Stockfish end
         // only from shashin crystal begin - MODIFICA CHIAVE QUI
-        allowNullMoveOnlyFromCrystal =
+        bool allowNullMoveOnlyFromCrystal =
           !thisThread->nmpGuard && (gameCycle ? (depth < 8 && positionSafe) : true)
           && (eval >= ss->staticEval + 20) && positionSafe
           && (rootDepth < 11 || ourMove || (MoveList<LEGAL>(pos).size() > 8));
         // Master switch from ShashinManager
-        useNullMoveByShashinForStockfish = localShashinManager.useNullMoveByShashinForStockfish();
-        nullMoveFromCrystal   = !useNullMoveByShashinForStockfish && allowNullMoveOnlyFromCrystal;
-        nullMoveFromStockfish = useNullMoveByShashinForStockfish && allowNullMoveOnlyFromStockfish;
+        bool useNullMoveByShashinForStockfish =
+          localShashinManager.useNullMoveByShashinForStockfish();
+        bool nullMoveFromCrystal =
+          !useNullMoveByShashinForStockfish && allowNullMoveOnlyFromCrystal;
+        bool nullMoveFromStockfish =
+          useNullMoveByShashinForStockfish && allowNullMoveOnlyFromStockfish;
 
         // Combined decision logic
         if (nullMoveFromStockfish || nullMoveFromCrystal)
@@ -1612,11 +1613,14 @@ Value Search::Worker::search(
             Depth R             = std::min(int(eval - beta) / 213, 6) + depth / 3 + 5;
 
             // Crystal-specific adjustment
-            if (!useNullMoveByShashinForStockfish && !ourMove && (ss - 1)->secondaryLine)
-                R = std::min(R, 8);
-            if (localShashinManager.isComplexPosition() && depth > 10)
+            if (nullMoveFromCrystal)
             {
-                R = std::max(R - 1, 3);
+                if (!ourMove && (ss - 1)->secondaryLine)
+                    R = std::min(R, 8);
+                if (localShashinManager.isComplexPosition() && depth > 10)
+                {
+                    R = std::max(R - 1, 3);
+                }
             }
             ss->currentMove         = Move::null();
             ss->continuationHistory = &thisThread->continuationHistory[0][0][NO_PIECE][0];
