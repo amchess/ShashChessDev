@@ -1203,6 +1203,7 @@ Value Search::Worker::search(
     bool        isStrategical      = dynamicDerived.isStrategical;
     bool        isAggressive       = dynamicDerived.isAggressive;
     bool        isTacticalReactive = dynamicDerived.isTacticalReactive;
+    bool        quietKingSafe = !staticState.isSacrificial && (staticState.kingSafetyScore > -30);
     //from crystal shashin end
     if (!rootNode)
     {
@@ -1449,7 +1450,8 @@ Value Search::Worker::search(
         }
     }
     //from shashin-crystal begin
-    int baseRazoringMargin = 0;
+    int   baseRazoringMargin = 0;
+    Depth originalDepth      = (Depth) 0;
     //from shashin-crystal end
     // Step 6. Static evaluation of the position
     Value      unadjustedStaticEval = VALUE_NONE;
@@ -1582,10 +1584,9 @@ Value Search::Worker::search(
     if (commonNullMoveConditions)
     {
         // Compute conditions once
-        ourMove            = !(ss->ply & 1);
-        bool kingDanger    = !ourMove && king_danger(pos, us);
-        bool quietKingSafe = !staticState.isSacrificial && (staticState.kingSafetyScore > -30);
-        bool positionSafe  = !kingDanger && quietKingSafe;
+        ourMove           = !(ss->ply & 1);
+        bool kingDanger   = !ourMove && king_danger(pos, us);
+        bool positionSafe = !kingDanger && quietKingSafe;
 
         //only from Stockfish begin
         bool allowNullMoveOnlyFromStockfish = ((ss - 1)->currentMove != Move::null())
@@ -1655,11 +1656,25 @@ Value Search::Worker::search(
     improving |= ss->staticEval >= beta + 94;
 
     // Step 10. Internal iterative reductions
-    // For PV nodes without a ttMove as well as for deep enough cutNodes, we decrease depth.
-    // (*Scaler) Especially if they make IIR less aggressive.
+    //by Shashin begin
+    originalDepth = depth;
     if (!allNode && depth >= 6 && !ttData.move)
+    {
         depth--;
+    }
+    if (quietKingSafe && !localShashinManager.avoidStep10() && depth >= 6)
+    {
+        const bool ttReduction = cutNode && ttData.move && ttData.bound == BOUND_UPPER;
 
+        if (ttReduction)
+        {
+            const int reduction = isStrategical ? 2 : (isAggressive || isTacticalReactive) ? 0 : 1;
+
+            // Applica la riduzione aggiuntiva solo se giustificata
+            depth = std::max(originalDepth - reduction, 1);
+        }
+    }
+    //by Shashin end
     // Step 11. ProbCut
     // If we have a good enough capture (or queen promotion) and a reduced search
     // returns a value much above beta, we can (almost) safely prune the previous move.

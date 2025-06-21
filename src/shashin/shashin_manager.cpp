@@ -147,9 +147,19 @@ bool ShashinManager::isTacticalReduction() const {
 }
 
 bool ShashinManager::avoidStep10() const {
-    const auto& staticState = state.staticState;
-    return (isPassive() && staticState.legalMoveCount < params.midMobilityMoves) || isStrategical()
-        || (isAggressive() && staticState.kingDanger);
+    const auto& staticState    = state.staticState;
+    const auto& dynamicDerived = state.dynamicDerived;
+    if (staticState.kingDanger || staticState.isSacrificial || staticState.kingExposed)
+        return true;
+    if (dynamicDerived.isStrategical)
+    {
+        return (staticState.legalMoveCount < 5) && (staticState.allPiecesCount < 8);
+    }
+    else if (dynamicDerived.isAggressive)
+    {
+        return staticState.kingSafetyScore < 40;
+    }
+    return false;
 }
 
 bool ShashinManager::isTalTacticalHighMiddle() const {
