@@ -2426,9 +2426,9 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     pvHit        = ttHit && ttData.is_pv;
 
     // Crystal-Shashin QSearch optimization
-    const auto& staticState = rootShashinState.staticState;  // Accesso O(1)
-
-    const bool canUseTTValue = !PvNode && ttHit && is_valid(ttData.value)
+    const auto& staticState    = rootShashinState.staticState;
+    const auto& dynamicDerived = rootShashinState.dynamicDerived;
+    const bool  canUseTTValue  = !PvNode && ttHit && is_valid(ttData.value)
                             && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER));
 
     if (canUseTTValue)
@@ -2534,7 +2534,8 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             if (!givesCheck && move.to_sq() != prevSq && !is_loss(futilityBase)
                 && move.type_of() != PROMOTION)
             {
-                if (moveCount > 2)
+                if (moveCount
+                    > 2 + ((!(dynamicDerived.isHighTal)) ? 0 : PvNode))  //from Crystal-shashin
                     continue;
 
                 Value futilityValue = futilityBase + PieceValue[pos.piece_on(move.to_sq())];
