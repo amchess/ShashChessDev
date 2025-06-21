@@ -200,7 +200,7 @@ void MovePicker::score() {
         //fortress begin
         if (fortress)
         {
-            if (m.value > 5000)
+            if (m.value > 3000)
             {
                 const bool breaking   = is_fortress_breaking_move(pos, m);
                 const bool preserving = is_fortress_preserving_move(pos, m);

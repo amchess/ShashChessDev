@@ -259,14 +259,14 @@ bool ShashinManager::isFortress(const Position& pos) {
     const Color them = ~us;
     if (pos.rule50_count() < 30)
         return cacheFalse();
-    if (popcount(pos.pieces(PAWN, us)) < 5)
+    if (popcount(pos.pieces(PAWN, us)) < 4)
         return cacheFalse();
     const Square ourKing   = pos.square<KING>(us);
     const Square theirKing = pos.square<KING>(~us);
     const int    kingDist  = distance(ourKing, theirKing);
     if (kingDist < 5)
         return cacheFalse();
-    if (pos.non_pawn_material(them) > 1000)
+    if (pos.non_pawn_material(them) > 1200)
         return cacheFalse();
     Bitboard enemyMobility =
       pos.attacks_by<KNIGHT>(them) | pos.attacks_by<BISHOP>(them) | pos.attacks_by<ROOK>(them);

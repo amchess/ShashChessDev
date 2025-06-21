@@ -1086,7 +1086,7 @@ Value Search::Worker::search(
 
     if (depth > 24 && !PvNode && isFortressNode)
     {
-        depth = depth - 3;
+        depth = depth - 1;
     }
     // From Shashin fortress end
 
