@@ -1156,7 +1156,7 @@ Value Search::Worker::search(
     bool givesCheck, improving = false, priorCapture, opponentWorsening = false,
                      expTTHit = false;  //shashin
     //from Shashin-Crystal begin
-    bool isMate, gameCycle, capture, ttCapture;
+    bool gameCycle, capture, ttCapture;
     //from shashin crystal end
     int                 priorReduction;
     Piece               movedPiece;
@@ -1450,7 +1450,6 @@ Value Search::Worker::search(
         }
     }
     //from shashin-crystal begin
-    int   baseRazoringMargin = 0;
     Depth originalDepth      = (Depth) 0;
     //from shashin-crystal end
     // Step 6. Static evaluation of the position
@@ -1771,13 +1770,10 @@ moves_loop:  // When in check, search starts here
 
     int moveCount = 0;
 
-    bool doLMP = ss->ply > 2 && !PvNode;  //for step 14
-
     //from Crystal-Shashin end
 
     // Step 13. Loop through all pseudo-legal moves until no moves remain
     // or a beta cutoff occurs.
-    bool isHighTal = dynamicDerived.isHighTal;
     while ((move = mp.next_move()) != Move::none())
     {
         assert(move.is_ok());
@@ -1827,10 +1823,6 @@ moves_loop:  // When in check, search starts here
         if (ss->ttPv)
             r += 968;
 
-        //shashin begin
-        bool applyPruning            = false;
-        bool commonPruningConditions = pos.non_pawn_material(us) && !is_loss(bestValue);
-        //shashin end
         // full threads patch begin
         if (thisThread->fullSearch)
         {
@@ -2066,7 +2058,7 @@ skipExtensionAndPruning:  // full threads search patch
         //from shashin crystal begin
         if (depth >= 2 && moveCount > std::max(sibs, static_cast<int>(1)) && doLMRStep)
         {
-            bool isCrystal       = dynamicDerived.useMoveGenAndStep17CrystalLogic;
+            bool isCrystal       = localShashinManager.useStep17CrystalLogic();
             bool applyCrystalLMR = false;
             bool allowExt        = false;
             bool kingDangerThem  = false;

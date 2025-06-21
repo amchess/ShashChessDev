@@ -67,7 +67,8 @@ class ShashinManager {
     void initDynamicBaseState(Value currentValue, Position& rootPos, const ShashinConfig& config);
 
     // Feature flags
-    bool useMoveGenAndStep17CrystalLogic() const;
+    bool useMoveGenCrystalLogic() const;
+    bool useStep17CrystalLogic() const;
     bool isComplexPosition() const;
     bool isLowActivity() const { return state.staticState.legalMoveCount < 20; }
     bool isTacticalInitiative() const;

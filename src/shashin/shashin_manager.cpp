@@ -33,8 +33,12 @@ ShashinPosition ShashinManager::getResilientShashinRange(ShashinPosition range, 
     }
     return range;
 }
-
-__attribute__((hot)) bool ShashinManager::useMoveGenAndStep17CrystalLogic() const {
+__attribute__((hot)) bool ShashinManager::useMoveGenCrystalLogic() const {
+    const auto& s = state.staticState;
+    return (state.dynamicBase.currentRange >= ShashinPosition::MIDDLE_LOW_TAL
+            && state.dynamicBase.currentRange <= ShashinPosition::MIDDLE_TAL && s.kingDanger);
+}
+__attribute__((hot)) bool ShashinManager::useStep17CrystalLogic() const {
     const auto& s = state.staticState;  // Local access
 
     // Strategical with high material and many moves
@@ -202,7 +206,7 @@ void ShashinManager::initDynamicRootShashinState(const Eval::NNUE::Networks&   n
       static_value(alignedNetworks, accumulators, refreshTable, rootPos, ss, optimism), rootPos,
       config);
     setDynamicDerivedState();
-    MoveConfig::useMoveShashinLogic = state.dynamicDerived.useMoveGenAndStep17CrystalLogic;
+    MoveConfig::useMoveShashinLogic = state.dynamicDerived.useMoveGenCrystalLogic;
     MoveConfig::isStrategical       = isStrategical();
     MoveConfig::isAggressive        = state.dynamicDerived.isAggressive;
 }
@@ -219,7 +223,7 @@ void ShashinManager::updateRootShashinState(Value score, const Position& rootPos
     setDynamicDerivedState();
 
     // Direct comparison without temporaries
-    const bool newUseLogic    = useMoveGenAndStep17CrystalLogic();
+    const bool newUseLogic    = useMoveGenCrystalLogic();
     const bool newStrategical = state.dynamicDerived.isStrategical;
     const bool newAggressive  = state.dynamicDerived.isAggressive;
 
@@ -233,12 +237,12 @@ void ShashinManager::updateRootShashinState(Value score, const Position& rootPos
 }
 
 void ShashinManager::setDynamicDerivedState() {
-    auto& derived                           = state.dynamicDerived;
-    derived.isStrategical                   = isStrategical();
-    derived.isAggressive                    = isAggressive();
-    derived.isTacticalReactive              = isTacticalReactive();
-    derived.isHighTal                       = isInRange(ShashinPosition::HIGH_TAL);
-    derived.useMoveGenAndStep17CrystalLogic = useMoveGenAndStep17CrystalLogic();
+    auto& derived                  = state.dynamicDerived;
+    derived.isStrategical          = isStrategical();
+    derived.isAggressive           = isAggressive();
+    derived.isTacticalReactive     = isTacticalReactive();
+    derived.isHighTal              = isInRange(ShashinPosition::HIGH_TAL);
+    derived.useMoveGenCrystalLogic = useMoveGenCrystalLogic();
 }
 
 bool ShashinManager::isFortress(const Position& pos) {
