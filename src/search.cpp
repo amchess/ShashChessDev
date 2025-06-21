@@ -1082,42 +1082,11 @@ Value Search::Worker::search(
     auto&                   localShashinManager = *this->shashinManager;
     const RootShashinState& rootShashinState    = localShashinManager.getState();  //for ShashChess
     // From Shashin fortress begin
+    bool isFortressNode = localShashinManager.isFortress(pos);  // Non rootPos!
 
-    bool isFortressNode = localShashinManager.isFortress(rootPos);
     if (depth > 24 && !PvNode && isFortressNode)
     {
-        depth = std::max(depth - 1, Depth(10));
-
-        int progress = pos.rule50_count();
-        if (progress < 29)
-        {
-            return ss->staticEval;
-        }
-        if (pos.count<ALL_PIECES>() > 12)
-        {
-            return ss->staticEval;
-        }
-        int window = std::min(15, 50 - progress - 10);
-        if (progress >= (50 - window))
-        {
-            double weight = (progress - (50 - window)) / double(window);
-            weight        = std::clamp(weight, 0.0, 1.0);
-
-            bool  useNNUE  = (nodeType != NonPV) && (depth > 25);
-            Value baseEval = useNNUE ? evaluate(pos) : ss->staticEval;
-
-            Value drawInf = static_cast<Value>((1.0 - weight) * baseEval + weight * VALUE_DRAW);
-            constexpr Value DrawBoundary = VALUE_DRAW - 384;
-            if (drawInf >= DrawBoundary)
-                return std::clamp(drawInf, DrawBoundary, VALUE_DRAW);
-        }
-
-        if (depth < 15)
-        {
-            static constexpr int Bonus[16] = {330, 308, 286, 264, 242, 220, 198, 176,
-                                              154, 132, 110, 88,  66,  44,  22,  0};
-            ss->staticEval += Bonus[depth];
-        }
+        depth = depth - 3;
     }
     // From Shashin fortress end
 

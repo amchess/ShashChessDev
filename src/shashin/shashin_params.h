@@ -15,7 +15,7 @@ struct ShashinParams {
 
     int minPlyFortress      = 28;
     int minDefenderPieces   = 2;
-    int maxAttackerMaterial = 2500;
+    int maxAttackerMaterial = 1000;
     int maxTotalPieces      = 14;
 
     int attackerPenalty                 = 12;

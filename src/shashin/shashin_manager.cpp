@@ -255,65 +255,42 @@ bool ShashinManager::isFortress(const Position& pos) {
         positionCache.fortress = false;
         return false;
     };
-    const Color us     = pos.side_to_move();
-    const Color them   = ~us;
-    const int   MinPly = params.minPlyFortress;
-    if (pos.rule50_count() < MinPly + 1)
+    const Color us   = pos.side_to_move();
+    const Color them = ~us;
+    if (pos.rule50_count() < 30)
         return cacheFalse();
-    int ourPawns   = popcount(pos.pieces(PAWN, us));
-    int theirPawns = popcount(pos.pieces(PAWN, ~us));
-    if (ourPawns < std::max(4, theirPawns))
+    if (popcount(pos.pieces(PAWN, us)) < 5)
         return cacheFalse();
     const Square ourKing   = pos.square<KING>(us);
     const Square theirKing = pos.square<KING>(~us);
     const int    kingDist  = distance(ourKing, theirKing);
-    if (kingDist <= 4)
+    if (kingDist < 5)
         return cacheFalse();
-    const int theirNonPawnMaterial = pos.non_pawn_material(them);
-    if (theirNonPawnMaterial > params.maxAttackerMaterial || popcount(pos.pieces(QUEEN, them)) > 0)
+    if (pos.non_pawn_material(them) > 1000)
         return cacheFalse();
-    const bool enoughMaterial =
-      (pos.count<ROOK>(us) + pos.count<KNIGHT>(us) + pos.count<BISHOP>(us)) + pos.count<PAWN>(us)
-      >= params.minDefenderPieces;
-    if (!enoughMaterial)
+    Bitboard enemyMobility =
+      pos.attacks_by<KNIGHT>(them) | pos.attacks_by<BISHOP>(them) | pos.attacks_by<ROOK>(them);
+    int mobilityCount = popcount(enemyMobility);
+    int overlapping   = popcount(enemyMobility & pos.pieces(us));
+    if (popcount(pos.pieces(us)) < params.minDefenderPieces)
         return cacheFalse();
 
     if (pos.count<ALL_PIECES>() > params.maxTotalPieces)
         return cacheFalse();
-    const int  kingSafetyScore = king_safety_score(pos, us);
-    const bool kingSafety      = kingSafetyScore > 150;
-    if (!kingSafety)
+
+    if (king_safety_score(pos, us) <= 150)
         return cacheFalse();
 
     if (has_pawn_breaks(pos) || !is_king_cutoff(pos, us))
         return cacheFalse();
+
     if (!has_safe_waiting_moves(pos))
         return cacheFalse();
 
-    if (pos.non_pawn_material(us) <= 2 * theirNonPawnMaterial)
+    if (pos.non_pawn_material(us) <= 2 * pos.non_pawn_material(them))
         return cacheFalse();
 
-    const Bitboard ourPieces     = pos.pieces(us);
-    Bitboard       enemyMobility = 0;
-    int            mobilityCount = 0;
-
-    auto processPieceType = [&](PieceType pt) {
-        Bitboard pieces = pos.pieces(~us, pt);
-        while (pieces)
-        {
-            Square   s    = pop_lsb(pieces);
-            Bitboard atks = attacks_bb(pt, s, pos.pieces());
-            enemyMobility |= atks;
-            mobilityCount += popcount(atks);
-        }
-    };
-
-    processPieceType(KNIGHT);
-    processPieceType(BISHOP);
-    processPieceType(ROOK);
-
-    const int overlapping = popcount(enemyMobility & ourPieces);
-    bool      fortress    = (overlapping < 3) && (mobilityCount < params.highDepthLimit);
+    bool fortress = (overlapping < 3) && (mobilityCount < params.highDepthLimit);
 
     positionCache.posHash  = newHash;
     positionCache.fortress = fortress;

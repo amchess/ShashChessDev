@@ -130,7 +130,6 @@ void MovePicker::score() {
     int breakingPenalty = 1800 + 600 * phase;
     int preservingBonus = 900 + 300 * (3 - phase);
 
-    int kingSafetyScore = king_safety_score(pos, us);
     //for fotress end
     [[maybe_unused]] Bitboard threatByLesser[QUEEN + 1];
     if constexpr (Type == QUIETS)
@@ -201,39 +200,22 @@ void MovePicker::score() {
         //fortress begin
         if (fortress)
         {
-            bool preserve = is_fortress_preserving_move(pos, m);
-            if (is_fortress_breaking_move(pos, m))
+            if (m.value > 5000)
             {
-                m.value -= breakingPenalty;
-                if (is_fortress_key_piece(pc))
-                    m.value -= 450;
-                if (kingSafetyScore > 120)
-                    m.value += 300;
-            }
-            else if (preserve)
-            {
-                m.value += preservingBonus;
-                if (type_of(pc) == KING && phase == 3)
-                    m.value += 200;
-            }
-
-            if (preserve)
-            {
-                m.value += 500 * ShashChess::AdjPawnCount[file_of(to)];
-            }
-
-            if (no_progress_for(pos, 15))
-                m.value = m.value * 5 / 4;
-            else if (!has_safe_waiting_moves(pos))
-                m.value = m.value * 3 / 4;
-            if (MoveConfig::useMoveShashinLogic)
-            {
-                const double dynamicFactor =
-                  std::log(1.0 + std::min(pos.game_ply() / 20.0, 1.0) * 9.0) / std::log(10.0);
-                if (MoveConfig::isStrategical)
-                    m.value += static_cast<int>(60 * dynamicFactor);
-                else if (MoveConfig::isAggressive)
-                    m.value += static_cast<int>(120 * dynamicFactor);
+                const bool breaking   = is_fortress_breaking_move(pos, m);
+                const bool preserving = is_fortress_preserving_move(pos, m);
+                if (breaking)
+                {
+                    m.value -= breakingPenalty;
+                }
+                else if (preserving)
+                {
+                    m.value += preservingBonus;
+                    if (type_of(pc) == KING && phase == 3)
+                    {
+                        m.value += 200;
+                    }
+                }
             }
         }
         //fortress end
