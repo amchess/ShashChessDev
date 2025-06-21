@@ -1158,10 +1158,9 @@ Value Search::Worker::search(
     //from Shashin-Crystal begin
     bool isMate, gameCycle, capture, ttCapture;
     //from shashin crystal end
-    int   priorReduction;
-    Piece movedPiece;
-    bool  ourMove = false;  // from Shashin Crystal
-
+    int                 priorReduction;
+    Piece               movedPiece;
+    bool                ourMove = !(ss->ply & 1);  // from Shashin Crystal
     ValueList<Move, 32> capturesSearched;
     ValueList<Move, 32> quietsSearched;
     // from learning begin
@@ -1180,8 +1179,9 @@ Value Search::Worker::search(
     bestValue          = -VALUE_INFINITE;
     maxValue           = VALUE_INFINITE;
     // from Crystal-shashin begin
-    gameCycle = false;
-    rootDepth = thisThread->rootDepth;
+    gameCycle       = false;
+    rootDepth       = thisThread->rootDepth;
+    bool kingDanger = !ourMove && king_danger(pos, us);
 
     ss->secondaryLine = false;
     ss->mainLine      = false;
@@ -1584,8 +1584,6 @@ Value Search::Worker::search(
     if (commonNullMoveConditions)
     {
         // Compute conditions once
-        ourMove           = !(ss->ply & 1);
-        bool kingDanger   = !ourMove && king_danger(pos, us);
         bool positionSafe = !kingDanger && quietKingSafe;
 
         //only from Stockfish begin
@@ -1734,10 +1732,32 @@ Value Search::Worker::search(
 moves_loop:  // When in check, search starts here
 
     // Step 12. A small Probcut idea
-    probCutBeta = beta + 400;
-    if ((ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 4 && ttData.value >= probCutBeta
-        && !is_decisive(beta) && is_valid(ttData.value) && !is_decisive(ttData.value))
+    //from Shashin Crystal begin
+    probCutBeta              = beta + 400;
+    const bool commonProbcut = (ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 4
+                            && ttData.value >= probCutBeta && !is_decisive(beta)
+                            && is_valid(ttData.value) && !is_decisive(ttData.value);
+
+    if (commonProbcut)
+    {
+        // 1. ProbCut Crystal: solo per posizioni tattiche complesse
+        if (localShashinManager.allowCrystalProbCut() && depth >= 8)
+        {
+            const bool crystalConditions = !PvNode && ttCapture && !gameCycle;
+
+            if (crystalConditions)
+            {
+                // Riduzione più aggressiva in profondità elevate
+                const Depth probCutDepth = depth - (depth >= 12 ? 5 : 4);
+                if (ttData.depth >= probCutDepth)
+                    return probCutBeta;
+            }
+        }
+
+        // 2. ProbCut Stockfish: condizioni standard per tutte le altre posizioni
         return probCutBeta;
+    }
+    //from Shashin Crystal end
 
     const PieceToHistory* contHist[] = {
       (ss - 1)->continuationHistory, (ss - 2)->continuationHistory, (ss - 3)->continuationHistory,

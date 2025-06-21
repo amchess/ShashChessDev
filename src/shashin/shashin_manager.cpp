@@ -67,11 +67,10 @@ bool ShashinManager::useCrystalFutility() const {
 }
 
 bool ShashinManager::allowCrystalProbCut() const {
-    const auto& s   = state.staticState;
-    const auto& d   = state.dynamicDerived;
-    bool highTalent = d.isHighTal && s.legalMoveCount < params.highMobilityMoves && !s.kingExposed;
-    bool reactiveTactic = d.isTacticalReactive && !s.kingExposed && s.legalMoveCount < 25;
-    return highTalent || reactiveTactic;
+    const auto& s = state.staticState;
+    const auto& d = state.dynamicDerived;
+
+    return (d.isHighTal || d.isTacticalReactive) && s.legalMoveCount < params.highMobilityMoves;
 }
 
 bool ShashinManager::allowStockfishProbCut() const {
