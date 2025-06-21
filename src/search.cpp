@@ -1450,7 +1450,7 @@ Value Search::Worker::search(
         }
     }
     //from shashin-crystal begin
-    Depth originalDepth      = (Depth) 0;
+    Depth originalDepth = (Depth) 0;
     //from shashin-crystal end
     // Step 6. Static evaluation of the position
     Value      unadjustedStaticEval = VALUE_NONE;

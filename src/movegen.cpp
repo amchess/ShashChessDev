@@ -186,29 +186,24 @@ ExtMove* generate_all(const Position& pos, ExtMove* moveList) {
         moveList = generate_moves<Us, ROOK>(pos, moveList, target);
         moveList = generate_moves<Us, QUEEN>(pos, moveList, target);
     }
+    Bitboard b = attacks_bb<KING>(ksq) & (Type == EVASIONS ? ~pos.pieces(Us) : target);
     //Shashin-Crystal begin
-    Bitboard    kingMoves = attacks_bb<KING>(ksq) & (Type == EVASIONS ? ~pos.pieces(Us) : target);
-    const int   moveCount = popcount(kingMoves);
-    const Color them      = ~Us;
-    const bool  useFilter =
-      MoveConfig::useMoveShashinLogic && moveCount > 3 && (Type != EVASIONS || !pos.checkers());
+    if (MoveConfig::useMoveShashinLogic && popcount(b) > 3 && (Type != EVASIONS || !pos.checkers()))
+    {
+        const Color them     = ~Us;
+        Bitboard    filtered = 0;
 
-    if (!useFilter)
-    {
-        while (kingMoves)
-            *moveList++ = Move(ksq, pop_lsb(kingMoves));
-    }
-    else
-    {
-        while (kingMoves)
+        while (b)
         {
-            Square to = pop_lsb(kingMoves);
+            Square to = pop_lsb(b);
             if (pos.pieces(them) & to || !(pos.attackers_to(to) & pos.pieces(them)))
-            {
-                *moveList++ = Move(ksq, to);
-            }
+                filtered |= to;
         }
+        b = filtered;
     }
+    //Shashin-Crystal end
+    while (b)
+        *moveList++ = Move(ksq, pop_lsb(b));
     if ((Type == QUIETS || Type == NON_EVASIONS) && pos.can_castle(Us & ANY_CASTLING))
         for (CastlingRights cr : {Us & KING_SIDE, Us & QUEEN_SIDE})
             if (!pos.castling_impeded(cr) && pos.can_castle(cr))
