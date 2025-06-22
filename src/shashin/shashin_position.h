@@ -141,37 +141,42 @@ inline bool is_king_cutoff(const Position& pos, Color strongSide) {
 }
 [[nodiscard]]
 inline bool has_safe_waiting_moves(const Position& pos) {
-    const Color us = pos.side_to_move();
     MoveList<LEGAL> moves(pos);
-    
-    return std::any_of(moves.begin(), moves.end(), [&](const auto& m) {
-        // Filtra mosse non catture e non di scacco
-        if (pos.capture_stage(m) || pos.gives_check(m))
-            return false;
+    for (const auto& m : moves)
+    {
+        if (!pos.capture_stage(m) && !pos.gives_check(m))
+        {
+            const Square to         = m.to_sq();
+            Piece        moved      = pos.moved_piece(m);
+            Value        movedValue = PieceValue[type_of(moved)];
 
-        const Square to = m.to_sq();
-        const Piece moved = pos.moved_piece(m);
-        
-        // Gestione valore pezzo mosso
-        Value movedValue = PieceValue[type_of(moved)];
-        if (m.type_of() == PROMOTION)
-            movedValue = PieceValue[m.promotion_type()];
-        
-        // Verifica attacchi
-        const Bitboard attackers = pos.attackers_to(to, ~us);
-        if (!attackers) return true;  // Nessun attaccante
-        
-        // Trova attaccante minimo
-        Value minAttackerValue = VALUE_INFINITE;
-        Bitboard tmp = attackers;
-        while (tmp) {
-            const Piece attacker = pos.piece_on(pop_lsb(tmp));
-            minAttackerValue = std::min(minAttackerValue, PieceValue[type_of(attacker)]);
+            // Gestione promozioni
+            if (m.type_of() == PROMOTION)
+                movedValue = PieceValue[m.promotion_type()];  // Sovrascrive il valore del pedone
+
+            Bitboard attackers           = pos.attackers_to(to, ~pos.side_to_move());
+            Value    minOpponentAttacker = VALUE_INFINITE;
+
+            // Trova il pezzo attaccante avversario di valore minimo
+            while (attackers)
+            {
+                Square s            = pop_lsb(attackers);
+                Piece  attacker     = pos.piece_on(s);
+                minOpponentAttacker = std::min(minOpponentAttacker, PieceValue[type_of(attacker)]);
+            }
+
+            // Condizioni di sicurezza aggiornate:
+            const bool isSafe = (minOpponentAttacker > movedValue) ||  // Nessun attacco redditizio
+                                (!attackers && m.type_of() != PROMOTION)
+                             ||  // Mossa normale non attaccata
+                                (m.type_of() == PROMOTION
+                                 && !attackers);  // Promozione non attaccata (qualsiasi tipo)
+
+            if (isSafe)
+                return true;
         }
-        
-        // Controlla sicurezza
-        return minAttackerValue > movedValue;
-    });
+    }
+    return false;
 }
 
 [[nodiscard]]
@@ -195,20 +200,11 @@ inline bool is_fortress_key_piece(Piece p) noexcept {
 }
 [[nodiscard]]
 inline bool is_fortress_breaking_move(const Position& pos, const Move& m) {
-    const Square from = m.from_sq();
-    const Piece moved = pos.piece_on(from);
-    
-    // Controllo mosse di re
-    if (type_of(moved) == KING) 
-        return !is_king_nearby(pos, m.to_sq());
-    
-    // Controllo mosse di pedone
-    if (type_of(moved) == PAWN)
-        return is_pawn_weakening_move(pos, from, m.to_sq());
-    
-    // Controllo catture di pezzi chiave
-    const Piece captured = pos.piece_on(m.to_sq());
-    return captured != NO_PIECE && is_fortress_key_piece(captured);
+    Square from = m.from_sq(), to = m.to_sq();
+    Piece  moved = pos.piece_on(from), captured = pos.piece_on(to);
+    return (type_of(moved) == KING && !is_king_nearby(pos, to))
+        || (type_of(moved) == PAWN && is_pawn_weakening_move(pos, from, to))
+        || (captured != NO_PIECE && is_fortress_key_piece(captured));
 }
 [[nodiscard]]
 inline bool is_inside_fortress(const Position& pos, Square sq) noexcept {

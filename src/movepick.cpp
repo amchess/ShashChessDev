@@ -202,31 +202,28 @@ void MovePicker::score() {
         if (fortress)
         {
             bool preserve = is_fortress_preserving_move(pos, m);
-            bool breaking = is_fortress_breaking_move(pos, m);
-            if (breaking)
+            if (is_fortress_breaking_move(pos, m))
             {
                 m.value -= breakingPenalty;
                 if (is_fortress_key_piece(pc))
-                    m.value -= 300;
+                    m.value -= 450;
                 if (kingSafetyScore > 120)
                     m.value += 300;
             }
             else if (preserve)
             {
                 m.value += preservingBonus;
-                if (MoveConfig::isStrategical)
-                    m.value += preservingBonus * 0.5;
                 if (type_of(pc) == KING && phase == 3)
-                    m.value += 100;
+                    m.value += 200;
             }
 
             if (preserve)
             {
-                m.value += 300 * ShashChess::AdjPawnCount[file_of(to)];
+                m.value += 500 * ShashChess::AdjPawnCount[file_of(to)];
             }
 
             if (no_progress_for(pos, 15))
-                m.value = m.value * 11 / 10;
+                m.value = m.value * 5 / 4;
             else if (!has_safe_waiting_moves(pos))
                 m.value = m.value * 3 / 4;
             if (MoveConfig::useMoveShashinLogic)
@@ -236,7 +233,7 @@ void MovePicker::score() {
                 if (MoveConfig::isStrategical)
                     m.value += static_cast<int>(60 * dynamicFactor);
                 else if (MoveConfig::isAggressive)
-                    m.value += static_cast<int>(100 * dynamicFactor);
+                    m.value += static_cast<int>(120 * dynamicFactor);
             }
         }
         //fortress end

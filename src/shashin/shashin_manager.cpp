@@ -260,52 +260,60 @@ bool ShashinManager::isFortress(const Position& pos) {
     const int   MinPly = params.minPlyFortress;
     if (pos.rule50_count() < MinPly + 1)
         return cacheFalse();
-    if (pos.non_pawn_material(them) > params.maxAttackerMaterial
-        || popcount(pos.pieces(QUEEN, them)) > 0)
-    {
-        return cacheFalse();
-    }
     int ourPawns   = popcount(pos.pieces(PAWN, us));
     int theirPawns = popcount(pos.pieces(PAWN, ~us));
-    if (ourPawns < std::max(4, theirPawns) || ourPawns < 3)
-    {
+    if (ourPawns < std::max(4, theirPawns))
         return cacheFalse();
-    }
     const Square ourKing   = pos.square<KING>(us);
     const Square theirKing = pos.square<KING>(~us);
     const int    kingDist  = distance(ourKing, theirKing);
     if (kingDist <= 4)
         return cacheFalse();
-    // 4. Ottimizzazione calcolo mobilità
-    Bitboard enemyMobility = 0;
-    int      mobilityCount = 0;
+    const int theirNonPawnMaterial = pos.non_pawn_material(them);
+    if (theirNonPawnMaterial > params.maxAttackerMaterial || popcount(pos.pieces(QUEEN, them)) > 0)
+        return cacheFalse();
+    const bool enoughMaterial =
+      (pos.count<ROOK>(us) + pos.count<KNIGHT>(us) + pos.count<BISHOP>(us)) + pos.count<PAWN>(us)
+      >= params.minDefenderPieces;
+    if (!enoughMaterial)
+        return cacheFalse();
 
-    // Calcolo efficiente degli attacchi
-    auto addAttacks = [&](PieceType pt) {
-        Bitboard pieces = pos.pieces(them, pt);
+    if (pos.count<ALL_PIECES>() > params.maxTotalPieces)
+        return cacheFalse();
+    const int  kingSafetyScore = king_safety_score(pos, us);
+    const bool kingSafety      = kingSafetyScore > 150;
+    if (!kingSafety)
+        return cacheFalse();
+
+    if (has_pawn_breaks(pos) || !is_king_cutoff(pos, us))
+        return cacheFalse();
+    if (!has_safe_waiting_moves(pos))
+        return cacheFalse();
+
+    if (pos.non_pawn_material(us) <= 2 * theirNonPawnMaterial)
+        return cacheFalse();
+
+    const Bitboard ourPieces     = pos.pieces(us);
+    Bitboard       enemyMobility = 0;
+    int            mobilityCount = 0;
+
+    auto processPieceType = [&](PieceType pt) {
+        Bitboard pieces = pos.pieces(~us, pt);
         while (pieces)
         {
-            Square s = pop_lsb(pieces);
-            enemyMobility |= attacks_bb(pt, s, pos.pieces());
+            Square   s    = pop_lsb(pieces);
+            Bitboard atks = attacks_bb(pt, s, pos.pieces());
+            enemyMobility |= atks;
+            mobilityCount += popcount(atks);
         }
     };
 
-    addAttacks(KNIGHT);
-    addAttacks(BISHOP);
-    addAttacks(ROOK);
+    processPieceType(KNIGHT);
+    processPieceType(BISHOP);
+    processPieceType(ROOK);
 
-    mobilityCount         = popcount(enemyMobility);
-    const int overlapping = popcount(enemyMobility & pos.pieces(us));
-
-    // 5. Nuove condizioni di fortezza
-    bool fortress = true;
-    fortress &= (overlapping < 3);
-    fortress &= (mobilityCount < params.highDepthLimit);
-    fortress &= !has_pawn_breaks(pos);
-    fortress &= is_king_cutoff(pos, us);
-    fortress &= has_safe_waiting_moves(pos);
-    fortress &= (king_safety_score(pos, us) > 120);
-    fortress &= (pos.count<ALL_PIECES>() <= params.maxTotalPieces);
+    const int overlapping = popcount(enemyMobility & ourPieces);
+    bool      fortress    = (overlapping < 3) && (mobilityCount < params.highDepthLimit);
 
     positionCache.posHash  = newHash;
     positionCache.fortress = fortress;
