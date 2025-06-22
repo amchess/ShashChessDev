@@ -1082,13 +1082,55 @@ Value Search::Worker::search(
     auto&                   localShashinManager = *this->shashinManager;
     const RootShashinState& rootShashinState    = localShashinManager.getState();  //for ShashChess
     // From Shashin fortress begin
-    bool isFortressNode = localShashinManager.isFortress(pos);  // Non rootPos!
 
-    if (depth > 24 && !PvNode && isFortressNode)
+    bool isFortressNode = localShashinManager.isFortress(rootPos);
+    if (isFortressNode && !PvNode && depth > 18)
     {
-        depth = depth - 1;
+        depth = std::max(depth - 1, Depth(12));
+
+        int progress   = pos.rule50_count();
+        int pieceCount = pos.count<ALL_PIECES>();
+        // Ottimizzazione: unico controllo per condizioni di uscita
+        if (progress < 35 || pieceCount > 14)  // Progress aumentato da 29, pezzi da 12 a 14
+        {
+            // Valutazione più accurata usando NNUE quando disponibile
+            Value eval = (depth > 15 && nodeType != Root) ? evaluate(pos) : ss->staticEval;
+
+            // Piccola regolazione basata sulla sicurezza del re
+            int kingSafety = king_safety_score(pos, pos.side_to_move());
+            if (kingSafety > 100)
+                eval += kingSafety / 10;
+
+            return eval;
+        }
+
+        // Gestione semplificata del draw
+        if (progress > 40)  // Inizio prima (da 40 invece di 35)
+        {
+            // Calcolo semplificato del peso
+            double weight = std::clamp((progress - 40) / 10.0, 0.0, 1.0);
+
+            // Usa sempre la valutazione corrente
+            Value currentEval = (nodeType != Root) ? evaluate(pos) : ss->staticEval;
+
+            // Interpolazione lineare verso il draw
+            Value drawAdjust = static_cast<Value>((1 - weight) * currentEval + weight * VALUE_DRAW);
+
+            // Soglia dinamica basata sul materiale
+            Value drawBoundary = VALUE_DRAW - (400 - std::min(pos.non_pawn_material(), 300));
+            if (drawAdjust > drawBoundary)
+                return drawAdjust;
+        }
+
+        // Bonus semplificato e ridotto
+        if (depth < 12)  // Ridotto da 15 a 12
+        {
+            static constexpr int Bonus[12] = {250, 220, 190, 160, 130, 100, 70, 50, 30, 20, 10, 0};
+            ss->staticEval += Bonus[depth];
+        }
     }
     // From Shashin fortress end
+
 
     // Dive into quiescence search when the depth reaches zero
     if (depth <= 0)

@@ -14,9 +14,9 @@ struct ShashinParams {
     int advancedDepthLimit = 20;
 
     int minPlyFortress      = 28;
-    int minDefenderPieces   = 2;
-    int maxAttackerMaterial = 1000;
-    int maxTotalPieces      = 14;
+    int minDefenderPieces   = 3;
+    int maxAttackerMaterial = 800;
+    int maxTotalPieces      = 12;
 
     int attackerPenalty                 = 12;
     int shieldBonus                     = 15;
