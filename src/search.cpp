@@ -1154,7 +1154,7 @@ Value Search::Worker::search(
     Value bestValue, value = VALUE_NONE, eval = VALUE_NONE, maxValue, expTTValue = VALUE_NONE,
                      probCutBeta = VALUE_NONE;  // from learning
     bool givesCheck, improving = false, priorCapture, opponentWorsening = false,
-                     expTTHit = false;  //shashin
+                     expTTHit = false;  //shashin +learning
     //from Shashin-Crystal begin
     bool gameCycle, capture, ttCapture;
     //from shashin crystal end
@@ -1578,7 +1578,7 @@ Value Search::Worker::search(
     //common null move conditions begin
     nullThreshold            = beta - 19 * depth + 389;
     commonNullMoveConditions = cutNode && !disableNMAndPC && ss->staticEval >= nullThreshold
-                            && !excludedMove && pos.non_pawn_material(us) && eval >= beta;
+                            && !excludedMove && pos.non_pawn_material(us) && eval >= beta;//learning
     //common null move conditions end
     if (commonNullMoveConditions)
     {
@@ -1676,7 +1676,7 @@ Value Search::Worker::search(
     // If we have a good enough capture (or queen promotion) and a reduced search
     // returns a value much above beta, we can (almost) safely prune the previous move.
     probCutBeta = beta + 201 - 58 * improving;
-    if (depth >= 3 && !disableNMAndPC
+    if (depth >= 3 && !disableNMAndPC //learning
         && !is_decisive(beta)
         // If value from transposition table is lower than probCutBeta, don't attempt
         // probCut there
