@@ -278,6 +278,20 @@ N.B.
 
 Because of disk access, to be effective, the learning must be made at no bullet time controls (less than 5 minutes/game).
 
+**Note on Architecture Support for Reinforcement Learning**  
+The reinforcement learning feature (experience file) is supported on 64-bit little-endian architectures. The following 64-bit non-little-endian architectures are relatively rare and specialized:
+- **IBM z/Architecture** (mainframe systems)
+- **POWER** (PowerPC 64-bit, used in IBM servers)
+- **SPARC** (historically used in enterprise servers)
+
+These big-endian architectures are not currently supported. The experience file format uses native little-endian byte ordering, which is compatible with:
+- x86-64 (Intel/AMD processors)
+- ARM64 (Apple Silicon, modern smartphones and tablets)
+- RISC-V (in little-endian mode)
+- All other mainstream 64-bit little-endian platforms
+
+If you're using one of the specialized big-endian architectures, you may need to convert the experience files or disable the reinforcement learning feature.
+
 ### Read only learning
 
 _Boolean, Default: False_ 
