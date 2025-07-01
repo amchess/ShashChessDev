@@ -78,7 +78,7 @@ using namespace ShashChess::Shashin;  //shashin
 // learning begin
 bool                       useLearning          = true;
 bool                       enabledLearningProbe = false;
-std::vector<QLearningMove> qLearningTrajectory;
+thread_local std::vector<QLearningMove> qLearningTrajectory;
 // learning end
 
 namespace TB = Tablebases;
@@ -3272,6 +3272,7 @@ void putQLearningTrajectoryIntoLearningTable() {
 void setStartPoint() {
     useLearning = true;
     LD.resume();
+    qLearningTrajectory.clear();
 }
 // learning end
 
