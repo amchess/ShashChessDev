@@ -2056,7 +2056,7 @@ skipExtensionAndPruning:  // full threads search patch
 
         // Step 17. Late moves reduction / extension (LMR)
         //from shashin crystal begin
-        if (depth >= 2 && moveCount > std::max(sibs, static_cast<int>(1)) && doLMRStep)
+        if (depth >= 2 && moveCount > std::max(sibs, static_cast<int>(1)) && doLMRStep) //learning
         {
             bool isCrystal       = localShashinManager.useStep17CrystalLogic();
             bool applyCrystalLMR = false;
