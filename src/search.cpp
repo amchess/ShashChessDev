@@ -2484,7 +2484,6 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     if (useLearning && LD.is_enabled())
     {
         const LearningMove* learningMove = nullptr;
-        int sibs = LD.probeByMaxDepthAndScore(posKey, learningMove);  // Aggiunto probe
 
         if (learningMove)
         {
