@@ -76,8 +76,8 @@ Local assessments: Penalize or reward based on king's security, tactical complex
 namespace ShashChess {
 using namespace ShashChess::Shashin;  //shashin
 // learning begin
-bool                       useLearning          = true;
-bool                       enabledLearningProbe = false;
+bool                                    useLearning          = true;
+bool                                    enabledLearningProbe = false;
 thread_local std::vector<QLearningMove> qLearningTrajectory;
 // learning end
 
@@ -1578,7 +1578,8 @@ Value Search::Worker::search(
     //common null move conditions begin
     nullThreshold            = beta - 19 * depth + 389;
     commonNullMoveConditions = cutNode && !disableNMAndPC && ss->staticEval >= nullThreshold
-                            && !excludedMove && pos.non_pawn_material(us) && eval >= beta;//learning
+                            && !excludedMove && pos.non_pawn_material(us)
+                            && eval >= beta;  //learning
     //common null move conditions end
     if (commonNullMoveConditions)
     {
@@ -1676,7 +1677,7 @@ Value Search::Worker::search(
     // If we have a good enough capture (or queen promotion) and a reduced search
     // returns a value much above beta, we can (almost) safely prune the previous move.
     probCutBeta = beta + 201 - 58 * improving;
-    if (depth >= 3 && !disableNMAndPC //learning
+    if (depth >= 3 && !disableNMAndPC  //learning
         && !is_decisive(beta)
         // If value from transposition table is lower than probCutBeta, don't attempt
         // probCut there
@@ -2056,7 +2057,7 @@ skipExtensionAndPruning:  // full threads search patch
 
         // Step 17. Late moves reduction / extension (LMR)
         //from shashin crystal begin
-        if (depth >= 2 && moveCount > std::max(sibs, static_cast<int>(1)) && doLMRStep) //learning
+        if (depth >= 2 && moveCount > std::max(sibs, static_cast<int>(1)) && doLMRStep)  //learning
         {
             bool isCrystal       = localShashinManager.useStep17CrystalLogic();
             bool applyCrystalLMR = false;
@@ -2415,9 +2416,9 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     StateInfo st;
 
     Key   posKey;
-    Move  move, bestMove;
-    Value bestValue, value, futilityBase;
-    bool  pvHit, givesCheck, capture;
+    Move  move, bestMove, expTTMove = Move::none();                               //learning
+    Value bestValue, value, futilityBase, expTTValue = VALUE_NONE;                //learning
+    bool  pvHit, givesCheck, capture, expTTHit = false, updatedLearning = false;  //learning
     int   moveCount;
 
     // Step 1. Initialize node
@@ -2476,7 +2477,46 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         }
     }
     // Crystal-Shashin QSearch optimization end
-    
+    // Step 3 bis learning begin
+    expTTHit        = false;
+    updatedLearning = false;
+
+    if (useLearning && LD.is_enabled())
+    {
+        const LearningMove* learningMove = nullptr;
+        int sibs = LD.probeByMaxDepthAndScore(posKey, learningMove);  // Aggiunto probe
+
+        if (learningMove)
+        {
+            expTTHit   = true;
+            expTTMove  = learningMove->move;
+            expTTValue = learningMove->score;
+
+            // Usa la mossa di learning per l'ordinamento se non abbiamo TT move
+            if (!ttHit)
+            {
+                ttData.move = expTTMove;
+            }
+
+            if (learningMove->depth >= DEPTH_QS)
+            {
+                updatedLearning = true;
+                // Cutoff solo se non siamo in scacco
+                if (!PvNode && !ss->inCheck && is_valid(expTTValue))
+                {
+                    if (expTTValue >= beta)
+                    {
+                        return beta;
+                    }
+                    if (expTTValue <= alpha)
+                    {
+                        return alpha;
+                    }
+                }
+            }
+        }
+    }
+    // Step 3 bis learning end
     // Step 4. Static evaluation of the position
     Value unadjustedStaticEval = VALUE_NONE;
     if (ss->inCheck)
@@ -2506,10 +2546,17 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         }
         else
         {
-            unadjustedStaticEval = evaluate(pos);
-
-            ss->staticEval = bestValue =
-              to_corrected_static_eval(unadjustedStaticEval, correctionValue);
+            //priority to the learning - only if we are not in check
+            if (expTTHit && updatedLearning && is_valid(expTTValue))
+            {
+                ss->staticEval = bestValue = expTTValue;
+            }
+            else
+            {
+                unadjustedStaticEval = evaluate(pos);
+                ss->staticEval       = bestValue =
+                  to_corrected_static_eval(unadjustedStaticEval, correctionValue);
+            }
         }
 
         // Stand pat. Return immediately if static value is at least beta
