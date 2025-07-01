@@ -2452,7 +2452,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     ttData.value = ttHit ? value_from_tt(ttData.value, ss->ply, pos.rule50_count()) : VALUE_NONE;
     pvHit        = ttHit && ttData.is_pv;
 
-    // Crystal-Shashin QSearch optimization
+    // Crystal-Shashin QSearch optimization begin
     const auto& staticState    = rootShashinState.staticState;
     const auto& dynamicDerived = rootShashinState.dynamicDerived;
     const bool  canUseTTValue  = !PvNode && ttHit && is_valid(ttData.value)
@@ -2475,7 +2475,8 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             }
         }
     }
-
+    // Crystal-Shashin QSearch optimization end
+    
     // Step 4. Static evaluation of the position
     Value unadjustedStaticEval = VALUE_NONE;
     if (ss->inCheck)
