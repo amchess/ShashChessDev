@@ -740,7 +740,7 @@ endif
 ifeq ($(avx512),yes)
 	CXXFLAGS += -DUSE_AVX512
 	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
-		CXXFLAGS += -mavx512f -mavx512bw
+		CXXFLAGS += -mavx512f -mavx512bw -mavx512dq -mavx512vl
 	endif
 endif
 
@@ -1035,10 +1035,6 @@ net:
 format:
 	$(CLANG-FORMAT) -i $(SRCS) $(HEADERS) -style=file
 
-# default target
-default:
-	help
-
 ### ==========================================================================
 ### Section 5. Private Targets
 ### ==========================================================================
@@ -1164,6 +1160,6 @@ icx-profile-use:
 .depend: $(SRCS)
 	-@$(CXX) $(DEPENDFLAGS) -MM $(SRCS) > $@ 2> /dev/null
 
-ifeq (, $(filter $(MAKECMDGOALS), help strip install clean net objclean profileclean config-sanity))
+ifeq (, $(filter $(MAKECMDGOALS), help strip install clean net objclean profileclean format config-sanity))
 -include .depend
 endif
