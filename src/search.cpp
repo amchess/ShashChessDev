@@ -2467,7 +2467,6 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             return ttData.value;
         if (staticState.legalMoveCount < 35 && std::abs(ttData.value) > 60)
         {
-            const auto& dynamicDerived = rootShashinState.dynamicDerived;
             if (!dynamicDerived.isStrategical)
             {
                 const bool depthCondition =

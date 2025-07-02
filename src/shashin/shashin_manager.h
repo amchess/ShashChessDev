@@ -27,7 +27,7 @@ struct Stack;
 
 class ShashinManager {
    public:
-    explicit ShashinManager(const ShashinParams& params = {});
+    explicit ShashinManager(const ShashinParams& params_ = {});
 
     // Core interface
     ShashinPosition         getResilientShashinRange(ShashinPosition range, int depth = 0);

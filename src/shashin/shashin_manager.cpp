@@ -6,8 +6,8 @@
 
 namespace ShashChess {
 using namespace ShashChess::Shashin;
-ShashinManager::ShashinManager(const ShashinParams& params) :
-    params(params) {}
+ShashinManager::ShashinManager(const ShashinParams& params_) :
+    params(params_) {}
 
 ShashinPosition ShashinManager::getResilientShashinRange(ShashinPosition range, int depth) {
 
