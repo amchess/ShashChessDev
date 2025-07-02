@@ -1160,9 +1160,9 @@ Value Search::Worker::search(
     //from Shashin-Crystal begin
     bool gameCycle, capture, ttCapture;
     //from shashin crystal end
-    int                 priorReduction;
-    Piece               movedPiece;
-    bool                ourMove = !(ss->ply & 1);  // from Shashin Crystal
+    int          priorReduction;
+    Piece        movedPiece;
+    bool         ourMove = !(ss->ply & 1);  // from Shashin Crystal
     SearchedList capturesSearched;
     SearchedList quietsSearched;
     // from learning begin
@@ -1611,8 +1611,8 @@ Value Search::Worker::search(
         {
             assert(eval - beta >= 0);
             thisThread->nmpSide = ourMove;  // Null move signal for Shashin
-	        // Null move dynamic reduction based on depth
-	        Depth R = 7 + depth / 3;
+            // Null move dynamic reduction based on depth
+            Depth R = 7 + depth / 3;
 
             // Crystal-specific adjustment
             if (nullMoveFromCrystal)
