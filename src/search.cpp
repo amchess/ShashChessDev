@@ -2456,7 +2456,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     // Crystal-Shashin QSearch optimization begin
     const auto& staticState    = rootShashinState.staticState;
     const auto& dynamicDerived = rootShashinState.dynamicDerived;
-    const bool  canUseTTValue  = !PvNode && ttHit && is_valid(ttData.value)
+    const bool  canUseTTValue  = !PvNode && is_valid(ttData.value)
                             && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER));
 
     if (canUseTTValue)
@@ -2465,7 +2465,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             return ttData.value;
         if (staticState.legalMoveCount < 35 && std::abs(ttData.value) > 60)
         {
-            if (!dynamicDerived.isStrategical)
+            if (!dynamicDerived.isStrategical && !staticState.kingDanger)
             {
                 const bool depthCondition =
                   ttData.depth >= ADJUSTED_QS_DEPTH && ttData.depth > MIN_DEPTH_FOR_QS_CUTOFF;
@@ -2522,7 +2522,6 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     else
     {
         const auto correctionValue = correction_value(*thisThread, pos, ss);
-        const bool kingExposed     = staticState.kingExposed;
 
         if (ss->ttHit)
         {
@@ -2530,13 +2529,9 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             unadjustedStaticEval = ttData.eval;
             if (!is_valid(unadjustedStaticEval))
                 unadjustedStaticEval = evaluate(pos);
-            //from Shashin begin
-            Value staticEval = to_corrected_static_eval(unadjustedStaticEval, correctionValue);
+            ss->staticEval = bestValue =
+              to_corrected_static_eval(unadjustedStaticEval, correctionValue);
 
-            if (kingExposed && staticState.kingSafetyScore < -50 && staticState.legalMoveCount < 10)
-                staticEval -= std::clamp((-staticState.kingSafetyScore) / 30, 1, 4);
-            ss->staticEval = bestValue = staticEval;
-            //from Shashin end
             // ttValue can be used as a better position evaluation
             if (is_valid(ttData.value) && !is_decisive(ttData.value)
                 && (ttData.bound & (ttData.value > bestValue ? BOUND_LOWER : BOUND_UPPER)))
@@ -2572,7 +2567,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         if (bestValue > alpha)
             alpha = bestValue;
 
-        futilityBase = ss->staticEval + (kingExposed ? 360 : 376);
+        futilityBase = ss->staticEval + 376;
     }
 
     const PieceToHistory* contHist[] = {(ss - 1)->continuationHistory,

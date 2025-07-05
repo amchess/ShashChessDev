@@ -188,22 +188,26 @@ ExtMove* generate_all(const Position& pos, ExtMove* moveList) {
     }
     Bitboard b = attacks_bb<KING>(ksq) & (Type == EVASIONS ? ~pos.pieces(Us) : target);
     //Shashin-Crystal begin
-    if (MoveConfig::useMoveShashinLogic && popcount(b) > 3 && (Type != EVASIONS || !pos.checkers()))
+    if (MoveConfig::useMoveShashinLogic && (Type != EVASIONS || !pos.checkers()))
     {
-        const Color them     = ~Us;
-        Bitboard    filtered = 0;
-
-        while (b)
+        constexpr int KingMoveThreshold = 3;
+        if (popcount(b) > KingMoveThreshold)
         {
-            Square to = pop_lsb(b);
-            if (pos.pieces(them) & to || !(pos.attackers_to(to) & pos.pieces(them)))
-                filtered |= to;
+            const Color them     = ~Us;
+            Bitboard    filtered = 0;
+            while (b)
+            {
+                Square to = pop_lsb(b);
+                if (pos.pieces(them) & to || !(pos.attackers_to(to, them)))
+                    filtered |= to;
+            }
+            b = filtered;
         }
-        b = filtered;
     }
     //Shashin-Crystal end
     while (b)
         *moveList++ = Move(ksq, pop_lsb(b));
+
     if ((Type == QUIETS || Type == NON_EVASIONS) && pos.can_castle(Us & ANY_CASTLING))
         for (CastlingRights cr : {Us & KING_SIDE, Us & QUEEN_SIDE})
             if (!pos.castling_impeded(cr) && pos.can_castle(cr))

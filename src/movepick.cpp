@@ -98,8 +98,10 @@ MovePicker::MovePicker(const Position&              p,
     depth(d),
     ply(pl) {
 
-    stage = (pos.checkers() ? EVASION_TT : (depth > 0 ? MAIN_TT : QSEARCH_TT))
-          + !(ttm && pos.pseudo_legal(ttm));  //faster than Stockfish
+    if (pos.checkers())
+        stage = EVASION_TT + !(ttm && pos.pseudo_legal(ttm));
+    else
+        stage = (depth > 0 ? MAIN_TT : QSEARCH_TT) + !(ttm && pos.pseudo_legal(ttm));
 }
 
 // MovePicker constructor for ProbCut: we generate captures with Static Exchange
@@ -144,16 +146,16 @@ void MovePicker::score() {
 
     for (auto& m : *this)
     {
-        const Square    from = m.from_sq();
-        const Square    to   = m.to_sq();
-        const Piece     pc   = pos.moved_piece(m);
-        const PieceType pt   = type_of(pc);
+        const Square    from          = m.from_sq();
+        const Square    to            = m.to_sq();
+        const Piece     pc            = pos.moved_piece(m);
+        const PieceType pt            = type_of(pc);
+        const Piece     capturedPiece = pos.piece_on(to);
 
         if constexpr (Type == CAPTURES)
         {
-            m.value = (*captureHistory)[pc][to][type_of(pos.piece_on(to))]
-                    + 7 * int(PieceValue[pos.piece_on(to)])
-                    + 1024 * bool(pos.check_squares(pt) & to);
+            m.value = (*captureHistory)[pc][to][type_of(capturedPiece)]
+                    + 7 * int(PieceValue[capturedPiece]) + 1024 * bool(pos.check_squares(pt) & to);
 
             //for fortress begin
             if (fortress && MoveConfig::isAggressive)
@@ -163,10 +165,14 @@ void MovePicker::score() {
         else if constexpr (Type == QUIETS)
         {
             // histories
-            m.value = 2 * (*mainHistory)[us][m.from_to()]
-                    + 2 * (*pawnHistory)[pawn_structure_index(pos)][pc][to];
-            for (int i : {0, 1, 2, 3, 5})
-                m.value += (*continuationHistory[i])[pc][to];
+            m.value = 2 * (*mainHistory)[us][m.from_to()];
+            m.value += 2 * (*pawnHistory)[pawn_structure_index(pos)][pc][to];
+            m.value += (*continuationHistory[0])[pc][to];
+            m.value += (*continuationHistory[1])[pc][to];
+            m.value += (*continuationHistory[2])[pc][to];
+            m.value += (*continuationHistory[3])[pc][to];
+            m.value += (*continuationHistory[5])[pc][to];
+
             // bonus for checks
             m.value += (bool(pos.check_squares(pt) & to) && pos.see_ge(m, -75)) * 16384;
 
