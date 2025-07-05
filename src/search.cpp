@@ -1484,8 +1484,6 @@ Value Search::Worker::search(
     {
         //learning begin
         unadjustedStaticEval = evaluate(pos);
-        ss->staticEval = eval = to_corrected_static_eval(unadjustedStaticEval, correctionValue);
-
         if (!LD.is_enabled() || !expTTHit || !updatedLearning)
         {
             ss->staticEval = eval = to_corrected_static_eval(unadjustedStaticEval, correctionValue);
