@@ -205,42 +205,59 @@ void MovePicker::score() {
                     m.value += 2 * (*lowPlyHistory)[ply][m.from_to()] / (1 + ply);
             }
         }
-        //fortress begin
+        //for fortress begin
         if (fortress)
         {
             bool preserve = is_fortress_preserving_move(pos, m);
             if (is_fortress_breaking_move(pos, m))
             {
-                m.value -= breakingPenalty;
+                // Penalità maggiore per mosse che rompono la fortezza
+                m.value -= breakingPenalty * 1.5;
+
+                // Penalità extra per pezzi chiave
                 if (is_fortress_key_piece(pc))
-                    m.value -= 450;
-                if (kingSafetyScore > 120)
-                    m.value += 300;
+                    m.value -= 600;
             }
             else if (preserve)
             {
-                m.value += preservingBonus;
+                // Bonus maggiore per mosse che mantengono la fortezza
+                m.value += preservingBonus * 1.8;
+
+                // Bonus speciale per mosse di re in fase finale
                 if (type_of(pc) == KING && phase == 3)
-                    m.value += 200;
+                    m.value += 300;
+
+                // Bonus aggiuntivo per mosse di pedone che rafforzano la struttura
+                if (type_of(pc) == PAWN)
+                {
+                    // Bonus per pedoni connessi (corretto con attacks_bb)
+                    Bitboard adjacentPawns = attacks_bb<PAWN>(to, us) & pos.pieces(us, PAWN);
+                    if (adjacentPawns)
+                        m.value += 200;
+
+                    // Bonus per pedoni avanzati
+                    Rank r          = rank_of(to);
+                    bool isAdvanced = (us == WHITE) ? (r >= RANK_5) : (r <= RANK_4);
+                    if (isAdvanced)
+                        m.value += 150;
+                }
             }
 
-            if (preserve)
+            // Gestione regola delle 50 mosse
+            if (no_progress_for(pos, 15) && preserve)
             {
-                m.value += 500 * ShashChess::AdjPawnCount[file_of(to)];
+                m.value += 300;
             }
 
-            if (no_progress_for(pos, 15))
-                m.value = m.value * 5 / 4;
-            else if (!has_safe_waiting_moves(pos))
-                m.value = m.value * 3 / 4;
+            // Logica Shashin dinamica
             if (MoveConfig::useMoveShashinLogic)
             {
-                const double dynamicFactor =
-                  std::log(1.0 + std::min(pos.game_ply() / 20.0, 1.0) * 9.0) / std::log(10.0);
+                double plyFactor = std::min(pos.game_ply() / 40.0, 1.0);
+
                 if (MoveConfig::isStrategical)
-                    m.value += static_cast<int>(60 * dynamicFactor);
+                    m.value += static_cast<int>(100 * plyFactor);
                 else if (MoveConfig::isAggressive)
-                    m.value += static_cast<int>(120 * dynamicFactor);
+                    m.value += static_cast<int>(180 * plyFactor);
             }
         }
         //fortress end
