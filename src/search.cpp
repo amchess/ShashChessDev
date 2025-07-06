@@ -1836,79 +1836,85 @@ moves_loop:  // When in check, search starts here
         // Depth conditions are important for mate finding.
         if (!rootNode && pos.non_pawn_material(us) && !is_loss(bestValue))
         {
-            // Skip quiet moves if movecount exceeds our FutilityMoveCount threshold
-            if (moveCount >= (3 + depth * depth) / (2 - improving))
-                mp.skip_quiet_moves();
-
-            // Reduced depth of the next LMR search
-            int lmrDepth = newDepth - r / 1024;
-
-            if (capture || givesCheck)
+            const bool allowPruning = !kingDanger || (isStrategical && depth < 8);
+            if (allowPruning)
             {
-                Piece capturedPiece = pos.piece_on(move.to_sq());
-                int   captHist =
-                  thisThread->captureHistory[movedPiece][move.to_sq()][type_of(capturedPiece)];
+                // Skip quiet moves if movecount exceeds our FutilityMoveCount threshold
+                if (moveCount >= (3 + depth * depth) / (2 - improving))
+                    mp.skip_quiet_moves();
 
-                // Futility pruning for captures
-                if (!givesCheck && lmrDepth < 7 && !ss->inCheck)
+                // Reduced depth of the next LMR search
+                int lmrDepth = newDepth - r / 1024;
+
+                if (capture || givesCheck)
                 {
-                    Value futilityValue = ss->staticEval + 232 + 224 * lmrDepth
-                                        + PieceValue[capturedPiece] + 131 * captHist / 1024;
-                    if (futilityValue <= alpha)
+                    Piece capturedPiece = pos.piece_on(move.to_sq());
+                    int   captHist =
+                      thisThread->captureHistory[movedPiece][move.to_sq()][type_of(capturedPiece)];
+
+                    // Futility pruning for captures
+                    if (!givesCheck && lmrDepth < 7 && !ss->inCheck)
+                    {
+                        Value futilityValue = ss->staticEval + 232 + 224 * lmrDepth
+                                            + PieceValue[capturedPiece] + 131 * captHist / 1024;
+                        if (futilityValue <= alpha)
+                            continue;
+                    }
+
+                    // SEE based pruning for captures and checks
+                    int seeHist = std::clamp(captHist / 31, -137 * depth, 125 * depth);
+                    if (!pos.see_ge(move, -158 * depth - seeHist))
+                    {
+                        bool mayStalemateTrap =
+                          depth > 2 && alpha < 0
+                          && pos.non_pawn_material(us) == PieceValue[movedPiece]
+                          && PieceValue[movedPiece] >= RookValue
+                          // it can't be stalemate if we moved a piece adjacent to the king
+                          && !(attacks_bb<KING>(pos.square<KING>(us)) & move.from_sq())
+                          && !mp.can_move_king_or_pawn();
+
+                        // avoid pruning sacrifices of our last piece for stalemate
+                        if (!mayStalemateTrap)
+                            continue;
+                    }
+                }
+                else
+                {
+                    int history =
+                      (*contHist[0])[movedPiece][move.to_sq()]
+                      + (*contHist[1])[movedPiece][move.to_sq()]
+                      + thisThread
+                          ->pawnHistory[pawn_structure_index(pos)][movedPiece][move.to_sq()];
+
+                    // Continuation history based pruning
+                    if (history < -4229 * depth)
+                        continue;
+
+                    history += 68 * thisThread->mainHistory[us][move.from_to()] / 32;
+
+                    lmrDepth += history / 3388;
+
+                    Value baseFutility  = (bestMove ? 46 : 230);
+                    Value futilityValue = ss->staticEval + baseFutility + 117 * lmrDepth
+                                        + 102 * (ss->staticEval > alpha);
+
+                    // Futility pruning: parent node
+                    // (*Scaler): Generally, more frequent futility pruning
+                    // scales well with respect to time and threads
+                    if (!ss->inCheck && lmrDepth < 12 && futilityValue <= alpha)
+                    {
+                        if (bestValue <= futilityValue && !is_decisive(bestValue)
+                            && !is_win(futilityValue))
+                            bestValue = futilityValue;
+                        continue;
+                    }
+
+                    lmrDepth = std::max(lmrDepth, 0);
+
+                    // Prune moves with negative SEE
+                    if (!pos.see_ge(move, -27 * lmrDepth * lmrDepth))
                         continue;
                 }
-
-                // SEE based pruning for captures and checks
-                int seeHist = std::clamp(captHist / 31, -137 * depth, 125 * depth);
-                if (!pos.see_ge(move, -158 * depth - seeHist))
-                {
-                    bool mayStalemateTrap =
-                      depth > 2 && alpha < 0 && pos.non_pawn_material(us) == PieceValue[movedPiece]
-                      && PieceValue[movedPiece] >= RookValue
-                      // it can't be stalemate if we moved a piece adjacent to the king
-                      && !(attacks_bb<KING>(pos.square<KING>(us)) & move.from_sq())
-                      && !mp.can_move_king_or_pawn();
-
-                    // avoid pruning sacrifices of our last piece for stalemate
-                    if (!mayStalemateTrap)
-                        continue;
-                }
-            }
-            else
-            {
-                int history =
-                  (*contHist[0])[movedPiece][move.to_sq()]
-                  + (*contHist[1])[movedPiece][move.to_sq()]
-                  + thisThread->pawnHistory[pawn_structure_index(pos)][movedPiece][move.to_sq()];
-
-                // Continuation history based pruning
-                if (history < -4229 * depth)
-                    continue;
-
-                history += 68 * thisThread->mainHistory[us][move.from_to()] / 32;
-
-                lmrDepth += history / 3388;
-
-                Value baseFutility = (bestMove ? 46 : 230);
-                Value futilityValue =
-                  ss->staticEval + baseFutility + 117 * lmrDepth + 102 * (ss->staticEval > alpha);
-
-                // Futility pruning: parent node
-                // (*Scaler): Generally, more frequent futility pruning
-                // scales well with respect to time and threads
-                if (!ss->inCheck && lmrDepth < 12 && futilityValue <= alpha)
-                {
-                    if (bestValue <= futilityValue && !is_decisive(bestValue)
-                        && !is_win(futilityValue))
-                        bestValue = futilityValue;
-                    continue;
-                }
-
-                lmrDepth = std::max(lmrDepth, 0);
-
-                // Prune moves with negative SEE
-                if (!pos.see_ge(move, -27 * lmrDepth * lmrDepth))
-                    continue;
             }
         }
 
