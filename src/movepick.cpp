@@ -133,7 +133,6 @@ void MovePicker::score() {
     int breakingPenalty = 1800 + 600 * phase;
     int preservingBonus = 900 + 300 * (3 - phase);
 
-    int kingSafetyScore = king_safety_score(pos, us);
     //for fotress end
     [[maybe_unused]] Bitboard threatByLesser[QUEEN + 1];
     if constexpr (Type == QUIETS)
