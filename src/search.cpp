@@ -1558,19 +1558,40 @@ Value Search::Worker::search(
     // Step 8. Futility pruning: child node
     // The depth condition is important for mate finding.
     {
-        auto futility_margin = [&](Depth d) {
-            Value futilityMult = 93 - 20 * (cutNode && !ss->ttHit);
+        // Adjust futility margin based on Shashin style
+        Value styleFactor = 100;  // Default = neutral
+        if (isAggressive)
+        {
+            styleFactor = 80;  // Reduce pruning in aggressive positions
+        }
+        else if (isStrategical)
+        {
+            styleFactor = 120;  // Increase pruning in strategical positions
+        }
+        else if (kingDanger)
+        {
+            styleFactor = 70;  // Reduce pruning when king is in danger
+        }
 
-            return futilityMult * d                      //
-                 - improving * futilityMult * 2          //
-                 - opponentWorsening * futilityMult / 3  //
-                 + (ss - 1)->statScore / 376             //
-                 + std::abs(correctionValue) / 168639;
+        auto futility_margin = [&](Depth d) {
+            Value baseMargin     = 93 - 20 * (cutNode && !ss->ttHit);
+            Value adjustedMargin = (baseMargin * styleFactor) / 100;
+
+            return adjustedMargin * d - improving * adjustedMargin * 2
+                 - opponentWorsening * adjustedMargin / 3 + (ss - 1)->statScore / 376
+                 + std::abs(correctionValue) / 168639
+                 - 50 * staticState.legalMoveCount / 40;  // Account for mobility
         };
 
-        if (!ss->ttPv && depth < 14 && eval - futility_margin(depth) >= beta && eval >= beta
-            && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval))
-            return beta + (eval - beta) / 3;
+        bool allowPruning = !staticState.kingDanger || (dynamicDerived.isStrategical && depth < 8);
+
+        if (allowPruning && !ss->ttPv && depth < 14 && eval - futility_margin(depth) >= beta
+            && eval >= beta && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval))
+        {
+            // Less aggressive reduction in critical positions
+            Value reduction = (dynamicDerived.isAggressive) ? (eval - beta) / 4 : (eval - beta) / 3;
+            return beta + reduction;
+        }
     }
 
     // Step 9. Null move search with verification search
@@ -1684,48 +1705,55 @@ Value Search::Worker::search(
         // probCut there
         && !(is_valid(ttData.value) && ttData.value < probCutBeta))
     {
-        assert(probCutBeta < VALUE_INFINITE && probCutBeta > beta);
-
-        MovePicker mp(pos, ttData.move, probCutBeta - ss->staticEval, &thisThread->captureHistory);
-        Depth      probCutDepth = std::max(depth - 5, 0);
-
-        while ((move = mp.next_move()) != Move::none())
+        // Shashin adjustment: skip ProbCut in fortress positions or quiet strategical positions
+        if (!isFortressNode && !(isStrategical && !kingDanger))
         {
-            assert(move.is_ok());
+            assert(probCutBeta < VALUE_INFINITE && probCutBeta > beta);
 
-            if (move == excludedMove || !pos.legal(move))
-                continue;
-
-            assert(pos.capture_stage(move));
-
-            movedPiece = pos.moved_piece(move);
-
-            do_move(pos, move, st);
-
-            ss->currentMove = move;
-            ss->continuationHistory =
-              &this->continuationHistory[ss->inCheck][true][movedPiece][move.to_sq()];
-            ss->continuationCorrectionHistory =
-              &this->continuationCorrectionHistory[movedPiece][move.to_sq()];
-
-            // Perform a preliminary qsearch to verify that the move holds
-            value = -qsearch<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1);
-
-            // If the qsearch held, perform the regular search
-            if (value >= probCutBeta && probCutDepth > 0)
-                value = -search<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1, probCutDepth,
-                                       !cutNode);
-
-            undo_move(pos, move);
-
-            if (value >= probCutBeta)
+            MovePicker mp(pos, ttData.move, probCutBeta - ss->staticEval,
+                          &thisThread->captureHistory);
+            Depth      probCutDepth = std::max(depth - 5, 0);
+            // Shashin adjustment: reduce depth more in Capablanca positions
+            if (localShashinManager.isCapablanca() && depth > 8)
+                probCutDepth = std::max(depth - 7, 0);
+            while ((move = mp.next_move()) != Move::none())
             {
-                // Save ProbCut data into transposition table
-                ttWriter.write(posKey, value_to_tt(value, ss->ply), ss->ttPv, BOUND_LOWER,
-                               probCutDepth + 1, move, unadjustedStaticEval, tt.generation());
+                assert(move.is_ok());
 
-                if (!is_decisive(value))
-                    return value - (probCutBeta - beta);
+                if (move == excludedMove || !pos.legal(move))
+                    continue;
+
+                assert(pos.capture_stage(move));
+
+                movedPiece = pos.moved_piece(move);
+
+                do_move(pos, move, st);
+
+                ss->currentMove = move;
+                ss->continuationHistory =
+                  &this->continuationHistory[ss->inCheck][true][movedPiece][move.to_sq()];
+                ss->continuationCorrectionHistory =
+                  &this->continuationCorrectionHistory[movedPiece][move.to_sq()];
+
+                // Perform a preliminary qsearch to verify that the move holds
+                value = -qsearch<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1);
+
+                // If the qsearch held, perform the regular search
+                if (value >= probCutBeta && probCutDepth > 0)
+                    value = -search<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1,
+                                           probCutDepth, !cutNode);
+
+                undo_move(pos, move);
+
+                if (value >= probCutBeta)
+                {
+                    // Save ProbCut data into transposition table
+                    ttWriter.write(posKey, value_to_tt(value, ss->ply), ss->ttPv, BOUND_LOWER,
+                                   probCutDepth + 1, move, unadjustedStaticEval, tt.generation());
+
+                    if (!is_decisive(value))
+                        return value - (probCutBeta - beta);
+                }
             }
         }
     }
@@ -2023,7 +2051,22 @@ skipExtensionAndPruning:  // full threads search patch
         if (ss->ttPv)
             r -= 2437 + PvNode * 926 + (ttData.value > alpha) * 901
                + (ttData.depth >= depth) * (943 + cutNode * 1180);
-
+        // Shashin style based adjustements
+        if (!thisThread->fullSearch)
+        {
+            // Shashin logic here
+            bool isShashinTactical = localShashinManager.isTal() || isTacticalReactive;
+            // Tactical style: less reduction to preserve depth
+            if (isShashinTactical && depth > 8)
+            {
+                r -= 512;  // Reduction by 0.5 plies
+            }
+            // Strategical style: more reduction in quiet phases
+            else if (isStrategical && !ss->inCheck && depth > 6)
+            {
+                r += 256;  // Added reduction by 0.25 plies
+            }
+        }
         // These reduction adjustments have no proven non-linear scaling
 
         r += 316;  // Base reduction offset to compensate for other tweaks
