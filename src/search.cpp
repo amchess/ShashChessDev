@@ -1080,9 +1080,13 @@ Value Search::Worker::search(
     constexpr bool PvNode   = nodeType != NonPV;
     constexpr bool rootNode = nodeType == Root;
     const bool     allNode  = !(PvNode || cutNode);
-
+    //For ShashChess begin
     auto&                   localShashinManager = *this->shashinManager;
-    const RootShashinState& rootShashinState    = localShashinManager.getState();  //for ShashChess
+    const RootShashinState& rootShashinState    = localShashinManager.getState();
+    bool                    isTal               = localShashinManager.isTal();
+    bool                    isPetrosian         = localShashinManager.isPetrosian();
+    bool                    isCapablanca        = localShashinManager.isCapablanca();
+    //for ShashChess end
     // From Shashin fortress begin
 
     bool isFortressNode = localShashinManager.isFortress(rootPos);
@@ -1572,24 +1576,42 @@ Value Search::Worker::search(
         {
             styleFactor = 70;  // Reduce pruning when king is in danger
         }
-
+        if (dynamicDerived.isTacticalReactive)
+        {
+            styleFactor = std::max(60, styleFactor - 20);
+        }
         auto futility_margin = [&](Depth d) {
             Value baseMargin     = 93 - 20 * (cutNode && !ss->ttHit);
             Value adjustedMargin = (baseMargin * styleFactor) / 100;
 
-            return adjustedMargin * d - improving * adjustedMargin * 2
-                 - opponentWorsening * adjustedMargin / 3 + (ss - 1)->statScore / 376
-                 + std::abs(correctionValue) / 168639
-                 - 50 * staticState.legalMoveCount / 40;  // Account for mobility
+            Value margin = adjustedMargin * d - improving * adjustedMargin * 2
+                         - opponentWorsening * adjustedMargin / 3 + (ss - 1)->statScore / 376
+                         + std::abs(correctionValue) / 168639
+                         - 40 * staticState.legalMoveCount / 30;
+
+            // Extra bonus per posizioni Tal a basse profondità
+            if (dynamicDerived.isTacticalReactive && d < 10)
+            {
+                margin += 50;
+            }
+
+            return margin;
         };
 
-        bool allowPruning = !staticState.kingDanger || (dynamicDerived.isStrategical && depth < 8);
-
-        if (allowPruning && !ss->ttPv && depth < 14 && eval - futility_margin(depth) >= beta
+        bool  allowPruning = !staticState.kingDanger || (dynamicDerived.isStrategical && depth < 8);
+        Depth maxFutilityDepth = dynamicDerived.isTacticalReactive ? 10 : 14;
+        Value futilityValue    = ss->staticEval + futility_margin(depth);
+        if (allowPruning && !ss->ttPv && depth < maxFutilityDepth && futilityValue <= beta
             && eval >= beta && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval))
         {
             // Less aggressive reduction in critical positions
-            Value reduction = (dynamicDerived.isAggressive) ? (eval - beta) / 4 : (eval - beta) / 3;
+            Value reduction = (dynamicDerived.isAggressive || dynamicDerived.isTacticalReactive)
+                              ? (eval - beta) / 6
+                              : (eval - beta) / 3;
+            if (dynamicDerived.isStrategical)
+            {
+                reduction += 25;
+            }
             return beta + reduction;
         }
     }
@@ -1597,7 +1619,7 @@ Value Search::Worker::search(
     // Step 9. Null move search with verification search
     //crystal-shashin logic begin
     //common null move conditions begin
-    nullThreshold            = beta - 19 * depth + 389;
+    nullThreshold            = beta - 21 * depth + 410;
     commonNullMoveConditions = cutNode && !disableNMAndPC && ss->staticEval >= nullThreshold
                             && !excludedMove && pos.non_pawn_material(us)
                             && eval >= beta;  //learning
@@ -1688,9 +1710,15 @@ Value Search::Worker::search(
 
         if (ttReduction)
         {
-            const int reduction = isStrategical ? 2 : (isAggressive || isTacticalReactive) ? 0 : 1;
-
-            // Applica la riduzione aggiuntiva solo se giustificata
+            int reduction = 1;
+            if (isTal || localShashinManager.isPetrosian())
+            {
+                reduction = 0;  // Minima riduzione per posizioni tattiche
+            }
+            else if (isStrategical)
+            {
+                reduction = 2;  // Riduzione aggiuntiva per posizioni strategiche
+            }
             depth = std::max(originalDepth - reduction, 1);
         }
     }
@@ -1714,7 +1742,7 @@ Value Search::Worker::search(
                           &thisThread->captureHistory);
             Depth      probCutDepth = std::max(depth - 5, 0);
             // Shashin adjustment: reduce depth more in Capablanca positions
-            if (localShashinManager.isCapablanca() && depth > 8)
+            if (isCapablanca && depth > 8)
                 probCutDepth = std::max(depth - 7, 0);
             while ((move = mp.next_move()) != Move::none())
             {
@@ -1799,8 +1827,6 @@ moves_loop:  // When in check, search starts here
     value = bestValue;
 
     int moveCount = 0;
-
-    //from Crystal-Shashin end
 
     // Step 13. Loop through all pseudo-legal moves until no moves remain
     // or a beta cutoff occurs.
@@ -2055,7 +2081,7 @@ skipExtensionAndPruning:  // full threads search patch
         if (!thisThread->fullSearch)
         {
             // Shashin logic here
-            bool isShashinTactical = localShashinManager.isTal() || isTacticalReactive;
+            bool isShashinTactical = isTal || isTacticalReactive;
             // Tactical style: less reduction to preserve depth
             if (isShashinTactical && depth > 8)
             {
@@ -2106,7 +2132,8 @@ skipExtensionAndPruning:  // full threads search patch
 
         // Step 17. Late moves reduction / extension (LMR)
         //from shashin crystal begin
-        if (depth >= 2 && moveCount > std::max(sibs, static_cast<int>(1)) && doLMRStep)  //learning
+        if (!isCapablanca && depth >= 2 && moveCount > std::max(sibs, static_cast<int>(1))
+            && doLMRStep)  //learning
         {
             bool isCrystal       = localShashinManager.useStep17CrystalLogic();
             bool applyCrystalLMR = false;
@@ -2299,9 +2326,8 @@ skipExtensionAndPruning:  // full threads search patch
                 {
                     const int  baseReduction = 2;
                     int        reduction     = baseReduction;
-                    const bool isTactical =
-                      localShashinManager.isTal() || localShashinManager.isPetrosian();
-                    const bool kingInDanger = staticState.stmKingDanger;
+                    const bool isTactical    = isTal || isPetrosian;
+                    const bool kingInDanger  = staticState.stmKingDanger;
 
                     // Ottimizzazione 3: Riduzione dinamica
                     if (isTactical && kingInDanger)
@@ -2651,10 +2677,18 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             if (!givesCheck && move.to_sq() != prevSq && !is_loss(futilityBase)
                 && move.type_of() != PROMOTION)
             {
-                if (moveCount
-                    > 2 + ((!(dynamicDerived.isHighTal)) ? 0 : PvNode))  //from Crystal-shashin
-                    continue;
-
+                //from shashin begin
+                if (dynamicDerived.isTacticalReactive)
+                {
+                    if (moveCount > 5)
+                        continue;
+                }
+                else
+                {
+                    if (moveCount > 2 + ((!(dynamicDerived.isHighTal)) ? 0 : PvNode))
+                        continue;
+                }
+                //From shashin end
                 Value futilityValue = futilityBase + PieceValue[pos.piece_on(move.to_sq())];
 
                 // If static eval + value of piece we are going to capture is
@@ -2664,7 +2698,6 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                     bestValue = std::max(bestValue, futilityValue);
                     continue;
                 }
-
                 // If static exchange evaluation is low enough
                 // we can prune this move.
                 if (!pos.see_ge(move, alpha - futilityBase))
