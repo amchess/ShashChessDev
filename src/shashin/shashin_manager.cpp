@@ -61,12 +61,13 @@ __attribute__((hot)) bool ShashinManager::useStep17CrystalLogic() const {
 
     return false;
 }
+
 bool ShashinManager::useCrystalFutility() const {
     const auto& st = state.staticState;
     const auto& dd = state.dynamicDerived;
     // Applichiamo Crystal solo in posizioni tattiche “pulite”:
     return dd.isTacticalReactive && !st.kingExposed && !st.isSacrificial
-        && st.legalMoveCount <= params.highMobilityMoves;
+        && st.legalMoveCount <= params.advancedDepthLimit;
 }
 
 bool ShashinManager::allowCrystalProbCut() const {
@@ -255,17 +256,11 @@ bool ShashinManager::isFortress(const Position& pos) {
         return false;
     };
 
-    const Color us                  = pos.side_to_move();
-    const Color them                = ~us;
-    const int   MinPly              = params.minPlyFortress;
-    Value       nonPawnMaterialThem = pos.non_pawn_material(them);
-    if (nonPawnMaterialThem > params.maxAttackerMaterial)
-        return cacheFalse();
+    const Color us     = pos.side_to_move();
+    const Color them   = ~us;
+    const int   MinPly = params.minPlyFortress;
 
-    Bitboard defenders = pos.pieces(us) & ~pos.pieces(us, KING, PAWN);
-    if (popcount(defenders) < params.minDefenderPieces)
-        return cacheFalse();
-
+    // Condizioni più restrittive
     if (pos.rule50_count() < MinPly + 1 || pos.count<PAWN>(us) < 4
         || pos.non_pawn_material(us) < PieceValue[ROOK])
     {
@@ -280,7 +275,7 @@ bool ShashinManager::isFortress(const Position& pos) {
         return cacheFalse();
 
     // Materiale attaccante più limitato
-    if (nonPawnMaterialThem > 2 * PieceValue[KNIGHT] || pos.count<QUEEN>(them) > 0)
+    if (pos.non_pawn_material(them) > 2 * PieceValue[KNIGHT] || pos.count<QUEEN>(them) > 0)
     {
         return cacheFalse();
     }

@@ -188,16 +188,17 @@ ExtMove* generate_all(const Position& pos, ExtMove* moveList) {
     }
     Bitboard b = attacks_bb<KING>(ksq) & (Type == EVASIONS ? ~pos.pieces(Us) : target);
     //Shashin-Crystal begin
-    if (MoveConfig::useMoveShashinLogic && Type == CAPTURES || !pos.checkers())
+    if (MoveConfig::useMoveShashinLogic && (Type != EVASIONS || !pos.checkers()))
     {
         constexpr int KingMoveThreshold = 3;
         if (popcount(b) > KingMoveThreshold)
         {
-            Bitboard filtered = 0;
+            const Color them     = ~Us;
+            Bitboard    filtered = 0;
             while (b)
             {
                 Square to = pop_lsb(b);
-                if (!(pos.attackers_to(to, ~Us) & pos.pieces(~Us, QUEEN, ROOK)))
+                if (pos.pieces(them) & to || !(pos.attackers_to(to, them)))
                     filtered |= to;
             }
             b = filtered;

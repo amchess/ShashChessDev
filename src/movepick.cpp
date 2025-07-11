@@ -211,7 +211,7 @@ void MovePicker::score() {
             if (is_fortress_breaking_move(pos, m))
             {
                 // Penalità maggiore per mosse che rompono la fortezza
-                m.value -= breakingPenalty * 0.7;
+                m.value -= breakingPenalty * 1.5;
 
                 // Penalità extra per pezzi chiave
                 if (is_fortress_key_piece(pc))
