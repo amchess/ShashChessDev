@@ -130,9 +130,15 @@ void MovePicker::score() {
     const bool fortress = MoveConfig::isFortress;
 
     int phase           = std::clamp(pos.game_ply() / 25, 0, 3);
-    int breakingPenalty = 1800 + 600 * phase;
-    int preservingBonus = 900 + 300 * (3 - phase);
+    int breakingPenalty = 1200 + 400 * phase;
+    int preservingBonus = 600 + 200 * (3 - phase);
 
+    const int pieceCount = pos.count<ALL_PIECES>();
+    if (pieceCount < 10)
+    {
+        breakingPenalty *= 0.7;
+        preservingBonus *= 0.6;
+    }
     //for fotress end
     [[maybe_unused]] Bitboard threatByLesser[QUEEN + 1];
     if constexpr (Type == QUIETS)
@@ -210,21 +216,20 @@ void MovePicker::score() {
             bool preserve = is_fortress_preserving_move(pos, m);
             if (is_fortress_breaking_move(pos, m))
             {
-                // Penalità maggiore per mosse che rompono la fortezza
-                m.value -= breakingPenalty * 1.5;
+                m.value -= breakingPenalty;
 
                 // Penalità extra per pezzi chiave
                 if (is_fortress_key_piece(pc))
-                    m.value -= 600;
+                    m.value -= 400;
             }
             else if (preserve)
             {
                 // Bonus maggiore per mosse che mantengono la fortezza
-                m.value += preservingBonus * 1.8;
+                m.value += preservingBonus;
 
                 // Bonus speciale per mosse di re in fase finale
                 if (type_of(pc) == KING && phase == 3)
-                    m.value += 300;
+                    m.value += 200;
 
                 // Bonus aggiuntivo per mosse di pedone che rafforzano la struttura
                 if (type_of(pc) == PAWN)
@@ -232,12 +237,6 @@ void MovePicker::score() {
                     // Bonus per pedoni connessi (corretto con attacks_bb)
                     Bitboard adjacentPawns = attacks_bb<PAWN>(to, us) & pos.pieces(us, PAWN);
                     if (adjacentPawns)
-                        m.value += 200;
-
-                    // Bonus per pedoni avanzati
-                    Rank r          = rank_of(to);
-                    bool isAdvanced = (us == WHITE) ? (r >= RANK_5) : (r <= RANK_4);
-                    if (isAdvanced)
                         m.value += 150;
                 }
             }
@@ -245,18 +244,7 @@ void MovePicker::score() {
             // Gestione regola delle 50 mosse
             if (no_progress_for(pos, 15) && preserve)
             {
-                m.value += 300;
-            }
-
-            // Logica Shashin dinamica
-            if (MoveConfig::useMoveShashinLogic)
-            {
-                double plyFactor = std::min(pos.game_ply() / 40.0, 1.0);
-
-                if (MoveConfig::isStrategical)
-                    m.value += static_cast<int>(100 * plyFactor);
-                else if (MoveConfig::isAggressive)
-                    m.value += static_cast<int>(180 * plyFactor);
+                m.value += 200;
             }
         }
         //fortress end
