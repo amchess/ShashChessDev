@@ -105,6 +105,8 @@ bool ShashinManager::isTillCategory(ShashinPosition lowerBound, ShashinPosition 
 
 
 bool ShashinManager::useNullMoveByShashinForStockfish() const {
+    if (state.dynamicDerived.isStrategical)
+        return true;
     const auto& staticState    = state.staticState;
     const auto& dynamicDerived = state.dynamicDerived;
     bool        avoidNullMove  = isInRange(ShashinPosition::HIGH_TAL)

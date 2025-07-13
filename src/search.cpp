@@ -1612,7 +1612,7 @@ Value Search::Worker::search(
                                            && (ss->ply >= thisThread->nmpMinPly) && !is_loss(beta);
 
         //only from Stockfish end
-        // only from shashin crystal begin - MODIFICA CHIAVE QUI
+        // only from shashin crystal begin
         bool allowNullMoveOnlyFromCrystal =
           !thisThread->nmpGuard && (gameCycle ? (depth < 8 && positionSafe) : true)
           && (eval >= ss->staticEval + 20) && positionSafe
