@@ -107,12 +107,13 @@ bool ShashinManager::isTillCategory(ShashinPosition lowerBound, ShashinPosition 
 bool ShashinManager::useNullMoveByShashinForStockfish() const {
     if (state.dynamicDerived.isStrategical)
         return true;
+
     const auto& staticState    = state.staticState;
     const auto& dynamicDerived = state.dynamicDerived;
     bool        avoidNullMove  = isInRange(ShashinPosition::HIGH_TAL)
-                      || isInRange(ShashinPosition::MIDDLE_TAL)
                       || (dynamicDerived.isAggressive && staticState.highMaterial);
-    return state.dynamicDerived.isStrategical && !avoidNullMove;
+
+    return !avoidNullMove;
 }
 
 bool ShashinManager::isSimpleIntermediate() const {

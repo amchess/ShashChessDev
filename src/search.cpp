@@ -2132,7 +2132,7 @@ skipExtensionAndPruning:  // full threads search patch
                                            newDepth + !allNode + (PvNode && !bestMove)))
                     + (ss - 1)->isPvNode;
 
-            if (isCrystal && localShashinManager.isStrategical() && !capture && moveCount > 6)
+            if (isCrystal && isStrategical && !capture && moveCount > 6)
                 d = std::max(1, d - 1);
 
             ss->reduction = newDepth - d;
@@ -2149,7 +2149,7 @@ skipExtensionAndPruning:  // full threads search patch
                 bool doDeeperSearch    = value > bestValue + 42 + 2 * newDepth;
                 bool doShallowerSearch = value < bestValue + 9;
 
-                if (applyCrystalLMR && doDeeperSearch && !localShashinManager.isStrategical())
+                if (applyCrystalLMR && doDeeperSearch && !isStrategical)
                 {
                     Depth extDepth = newDepth + 1;
 
