@@ -38,28 +38,17 @@ __attribute__((hot)) bool ShashinManager::useMoveGenCrystalLogic() const {
     return (state.dynamicBase.currentRange >= ShashinPosition::MIDDLE_LOW_TAL
             && state.dynamicBase.currentRange <= ShashinPosition::MIDDLE_TAL && s.kingDanger);
 }
+// Aggiungere prima della funzione:
+constexpr uint8_t MIDDLE_LOW_TAL = static_cast<uint8_t>(ShashinPosition::MIDDLE_LOW_TAL);
+constexpr uint8_t HIGH_TAL       = static_cast<uint8_t>(ShashinPosition::HIGH_TAL);
+
 __attribute__((hot)) bool ShashinManager::useStep17CrystalLogic() const {
-    const auto& s = state.staticState;  // Local access
+    const auto&   s     = state.staticState;
+    const uint8_t range = static_cast<uint8_t>(state.dynamicBase.currentRange);
 
-    // Strategical with high material and many moves
-    if (__builtin_expect((state.dynamicBase.currentRange == ShashinPosition::CAPABLANCA)
-                           && !s.kingDanger && s.highMaterial
-                           && s.legalMoveCount >= params.highMobilityMoves,
-                         0))
-    {
-        return true;
-    }
-
-    // Tal logic: attacking with low complexity and king danger
-    if (__builtin_expect((state.dynamicBase.currentRange >= ShashinPosition::MIDDLE_LOW_TAL
-                          && state.dynamicBase.currentRange <= ShashinPosition::MIDDLE_TAL)
-                           && s.legalMoveCount < params.highMobilityMoves && s.kingDanger,
-                         1))
-    {
-        return true;
-    }
-
-    return false;
+    // Branchless optimization
+    const bool inRange = (range >= MIDDLE_LOW_TAL) & (range <= HIGH_TAL);
+    return inRange & (s.legalMoveCount < params.highMobilityMoves) & s.kingDanger;
 }
 
 bool ShashinManager::useCrystalFutility() const {
