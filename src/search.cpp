@@ -2147,8 +2147,8 @@ skipExtensionAndPruning:  // full threads search patch
                 if (applyCrystalLMR && doDeeperSearch)
                 {
                     Depth extDepth = newDepth + 1;
-                    if (localShashinManager.isTactical() && value > alpha + 150 && allowExt
-                        && !isStrategical && depth > 6)
+                    if (value > alpha + 100 && allowExt
+                        && !isStrategical && depth > 5)
                     {
                         extDepth += 1;
                     }

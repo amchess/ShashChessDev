@@ -42,12 +42,12 @@ constexpr uint8_t MIDDLE_TAL = static_cast<uint8_t>(ShashinPosition::MIDDLE_TAL)
 constexpr uint8_t HIGH_TAL   = static_cast<uint8_t>(ShashinPosition::HIGH_TAL);
 
 __attribute__((hot)) bool ShashinManager::useStep17CrystalLogic() const {
-    const auto&   s     = state.staticState;
-    const uint8_t range = static_cast<uint8_t>(state.dynamicBase.currentRange);
+    const auto& s = state.staticState;
+    const auto range = state.dynamicBase.currentRange;
 
-    // Branchless optimization
-    const bool inRange = (range >= MIDDLE_TAL) & (range <= HIGH_TAL);
-    return inRange & (s.legalMoveCount < params.highMobilityMoves) & s.kingDanger;
+    return (range >= ShashinPosition::MIDDLE_TAL) && 
+           (range <= ShashinPosition::HIGH_TAL) && 
+           s.kingDanger;
 }
 
 bool ShashinManager::useCrystalFutility() const {
