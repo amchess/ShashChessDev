@@ -2111,16 +2111,13 @@ skipExtensionAndPruning:  // full threads search patch
             bool isCrystal       = localShashinManager.useStep17CrystalLogic();
             bool applyCrystalLMR = false;
             bool allowExt        = false;
-            bool kingDangerThem  = false;
-            bool lmrCapture      = false;
             if (isCrystal)
             {
-                kingDangerThem  = ourMove && king_danger(pos, ~us);
-                lmrCapture      = cutNode && (ss - 1)->moveCount > 1;
-                allowExt        = (ss->ply + depth < MAX_PLY - 2) && (ss->ply < 2 * rootDepth);
-                bool allowLMR   = depth > 1 && !gameCycle;
-                allowLMR        = allowLMR && (!kingDangerThem || ss->ply > 6);
-                allowLMR        = allowLMR && (!PvNode || ss->ply > 1);
+                const bool kingDangerThem = ourMove && king_danger(pos, ~us);
+                const bool lmrCapture     = cutNode && (ss - 1)->moveCount > 1;
+                allowExt            = (ss->ply + depth < MAX_PLY - 2) && (ss->ply < 2 * rootDepth);
+                const bool allowLMR = (depth > 1) && !gameCycle && (!kingDangerThem || ss->ply > 6)
+                                   && (!PvNode || ss->ply > 1);
                 applyCrystalLMR = allowLMR && (!capture || lmrCapture) && moveCount > 3;
             }
             //from shashin crystal end
@@ -2147,21 +2144,18 @@ skipExtensionAndPruning:  // full threads search patch
                 bool doDeeperSearch    = value > (bestValue + 42 + 2 * newDepth);
                 bool doShallowerSearch = value < bestValue + 9;
                 //from Crystal-Shashin begin
-                if (applyCrystalLMR)
+                if (applyCrystalLMR && doDeeperSearch)
                 {
-                    if (doDeeperSearch)
+                    Depth extDepth = newDepth + 1;
+                    if (localShashinManager.isTactical() && value > alpha + 150 && allowExt
+                        && !isStrategical && depth > 6)
                     {
-                        Depth extDepth = newDepth + 1;
-                        if (value > alpha + 80 && allowExt && !isStrategical)
-                        {
-                            extDepth += 1;
-                        }
-                        value =
-                          -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, extDepth, !cutNode);
+                        extDepth += 1;
                     }
+                    value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, extDepth, !cutNode);
                 }
                 //from crystal-shashin end
-                else
+                else if (!applyCrystalLMR)
                 {
                     newDepth += doDeeperSearch - doShallowerSearch;
                     if (newDepth > d)

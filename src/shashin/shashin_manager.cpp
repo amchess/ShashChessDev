@@ -38,16 +38,15 @@ __attribute__((hot)) bool ShashinManager::useMoveGenCrystalLogic() const {
     return (state.dynamicBase.currentRange >= ShashinPosition::MIDDLE_LOW_TAL
             && state.dynamicBase.currentRange <= ShashinPosition::MIDDLE_TAL && s.kingDanger);
 }
-// Aggiungere prima della funzione:
-constexpr uint8_t MIDDLE_LOW_TAL = static_cast<uint8_t>(ShashinPosition::MIDDLE_LOW_TAL);
-constexpr uint8_t HIGH_TAL       = static_cast<uint8_t>(ShashinPosition::HIGH_TAL);
+constexpr uint8_t MIDDLE_TAL = static_cast<uint8_t>(ShashinPosition::MIDDLE_TAL);
+constexpr uint8_t HIGH_TAL   = static_cast<uint8_t>(ShashinPosition::HIGH_TAL);
 
 __attribute__((hot)) bool ShashinManager::useStep17CrystalLogic() const {
     const auto&   s     = state.staticState;
     const uint8_t range = static_cast<uint8_t>(state.dynamicBase.currentRange);
 
     // Branchless optimization
-    const bool inRange = (range >= MIDDLE_LOW_TAL) & (range <= HIGH_TAL);
+    const bool inRange = (range >= MIDDLE_TAL) & (range <= HIGH_TAL);
     return inRange & (s.legalMoveCount < params.highMobilityMoves) & s.kingDanger;
 }
 
