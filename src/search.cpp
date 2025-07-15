@@ -2105,22 +2105,24 @@ skipExtensionAndPruning:  // full threads search patch
         r -= ss->statScore * 826 / 8192;
 
         // Step 17. Late moves reduction / extension (LMR)
+        //from shashin crystal begin
         if (depth >= 2 && moveCount > std::max(sibs, static_cast<int>(1)) && doLMRStep)  //learning
         {
-            //from shashin crystal begin
             bool isCrystal       = localShashinManager.useStep17CrystalLogic();
             bool applyCrystalLMR = false;
             bool allowExt        = false;
+            bool kingDangerThem  = false;
+            bool lmrCapture      = false;
             if (isCrystal)
             {
-                const bool kingDangerThem = ourMove && king_danger(pos, ~us);
-                const bool lmrCapture     = cutNode && (ss - 1)->moveCount > 1;
-                allowExt            = (ss->ply + depth < MAX_PLY - 2) && (ss->ply < 2 * rootDepth);
-                const bool allowLMR = (depth > 1) && !gameCycle && (!kingDangerThem || ss->ply > 6)
-                                   && (!PvNode || ss->ply > 1);
+                kingDangerThem  = ourMove && king_danger(pos, ~us);
+                lmrCapture      = cutNode && (ss - 1)->moveCount > 1;
+                allowExt        = (ss->ply + depth < MAX_PLY - 2) && (ss->ply < 2 * rootDepth);
+                bool allowLMR   = depth > 1 && !gameCycle;
+                allowLMR        = allowLMR && (!kingDangerThem || ss->ply > 6);
+                allowLMR        = allowLMR && (!PvNode || ss->ply > 1);
                 applyCrystalLMR = allowLMR && (!capture || lmrCapture) && moveCount > 3;
             }
-            //from shashin crystal end
             // In general we want to cap the LMR depth search at newDepth, but when
             // reduction is negative, we allow this move a limited search extension
             // beyond the first move depth.
@@ -2129,6 +2131,9 @@ skipExtensionAndPruning:  // full threads search patch
             Depth d = std::max(1, std::min(newDepth - r / 1024,
                                            newDepth + !allNode + (PvNode && !bestMove)))
                     + (ss - 1)->isPvNode;
+
+            if (isCrystal && isStrategical && !capture && moveCount > 6)
+                d = std::max(1, d - 1);
 
             ss->reduction = newDepth - d;
             value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
@@ -2141,21 +2146,19 @@ skipExtensionAndPruning:  // full threads search patch
             {
                 // Adjust full-depth search based on LMR results - if the result was
                 // good enough search deeper, if it was bad enough search shallower.
-                bool doDeeperSearch    = value > (bestValue + 42 + 2 * newDepth);
+                bool doDeeperSearch    = value > bestValue + 42 + 2 * newDepth;
                 bool doShallowerSearch = value < bestValue + 9;
-                //from Crystal-Shashin begin
-                if (applyCrystalLMR && doDeeperSearch)
+
+                if (applyCrystalLMR && doDeeperSearch && !isStrategical)
                 {
                     Depth extDepth = newDepth + 1;
-                    if (value > alpha + 100 && allowExt
-                        && !isStrategical && depth > 5)
-                    {
-                        extDepth += 1;
-                    }
+
+                    if (localShashinManager.isTactical() && value > alpha + 150)
+                        extDepth += allowExt ? 1 : 0;
+
                     value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, extDepth, !cutNode);
                 }
-                //from crystal-shashin end
-                else if (!applyCrystalLMR)
+                else
                 {
                     newDepth += doDeeperSearch - doShallowerSearch;
                     if (newDepth > d)
@@ -2163,13 +2166,16 @@ skipExtensionAndPruning:  // full threads search patch
                           -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, newDepth, !cutNode);
                 }
 
-                update_continuation_histories(ss, movedPiece, move.to_sq(), 1550);
+                // Bonus storia differenziato
+                int bonus = applyCrystalLMR ? 1808 : 1508;
+                update_continuation_histories(ss, movedPiece, move.to_sq(), bonus);
             }
             else if (value > alpha && value < bestValue + 9)
             {
                 newDepth--;
             }
         }
+        //from shashin crystal end
 
         // Step 18. Full-depth search when LMR is skipped
         else if (!PvNode || moveCount > 1)
