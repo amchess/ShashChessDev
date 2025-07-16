@@ -1988,13 +1988,13 @@ moves_loop:  // When in check, search starts here
         		//shashin crystal begin
                 if (isCriticalTactical)
                 {
-                    doubleMargin -= 50;
-                    tripleMargin -= 70;
+                    doubleMargin -= 52;
+                    tripleMargin -= 68;
                 }
                 else if (isStrategical)
                 {
-                    doubleMargin += 45;
-                    tripleMargin += 65;
+                    doubleMargin += 42;
+                    tripleMargin += 62;
                 }
                 //shashin crystal end
                 extension =
