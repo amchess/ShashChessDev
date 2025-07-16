@@ -1956,22 +1956,22 @@ moves_loop:  // When in check, search starts here
 
         // (*Scaler) Generally, higher singularBeta (i.e closer to ttValue)
         // and lower extension margins scale well.
-        //shashin crystal begin
         if (!rootNode && move == ttData.move && !excludedMove
             && depth >= 6 - (thisThread->completedDepth > 27) + ss->ttPv && is_valid(ttData.value)
             && !is_decisive(ttData.value) && (ttData.bound & BOUND_LOWER)
             && ttData.depth >= depth - 3)
         {
+        	//shashin crystal begin
             const bool isPv               = PvNode;
             const bool isTtPv             = ss->ttPv;
             const int  marginBase         = 58 + 76 * (isTtPv && !isPv);
             Value      singularBeta       = ttData.value - marginBase * depth / 57;
             Depth      singularDepth      = newDepth / 2;
-            bool       isCriticalTactical = false;
-            if (depth >= 8 || staticState.kingSafetyScore < -40)
-            {
+            bool isCriticalTactical = depth >= 5 || staticState.kingSafetyScore < -30;
+            if (isCriticalTactical) {
                 isCriticalTactical = localShashinManager.isTalTacticalHighMiddle();
             }
+            //shashin crystal end
             ss->excludedMove = move;
             value = search<NonPV>(pos, ss, singularBeta - 1, singularBeta, singularDepth, cutNode);
             ss->excludedMove = Move::none();
@@ -1985,17 +1985,18 @@ moves_loop:  // When in check, search starts here
                 int tripleMargin = 84 + 269 * PvNode - 253 * !ttCapture + 91 * ss->ttPv - corrValAdj
                                  - (ss->ply * 2 > thisThread->rootDepth * 3) * 54;
 
-
+        		//shashin crystal begin
                 if (isCriticalTactical)
                 {
-                    doubleMargin -= 45;
-                    tripleMargin -= 60;
+                    doubleMargin -= 55;
+                    tripleMargin -= 75;
                 }
                 else if (isStrategical)
                 {
-                    doubleMargin += 40;
-                    tripleMargin += 60;
+                    doubleMargin += 45;
+                    tripleMargin += 65;
                 }
+                //shashin crystal end
                 extension =
                   1 + (value < singularBeta - doubleMargin) + (value < singularBeta - tripleMargin);
 
@@ -2024,12 +2025,13 @@ moves_loop:  // When in check, search starts here
             {
                 extension = -3;
             }
+            // If we are on a cutNode but the ttMove is not assumed to fail high
+            // over current beta
             else if (cutNode)
             {
                 extension = -2;
             }
         }
-        // Shashin-Crystal end
 
 skipExtensionAndPruning:  // full threads search patch
         // Step 16. Make the move
