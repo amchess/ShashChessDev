@@ -1967,7 +1967,7 @@ moves_loop:  // When in check, search starts here
             const int  marginBase         = 58 + 76 * (isTtPv && !isPv);
             Value      singularBeta       = ttData.value - marginBase * depth / 57;
             Depth      singularDepth      = newDepth / 2;
-            bool isCriticalTactical = depth >= 5 || staticState.kingSafetyScore < -30;
+            bool isCriticalTactical = depth >= 7 || staticState.kingSafetyScore < -35;
             if (isCriticalTactical) {
                 isCriticalTactical = localShashinManager.isTalTacticalHighMiddle();
             }
@@ -1988,8 +1988,8 @@ moves_loop:  // When in check, search starts here
         		//shashin crystal begin
                 if (isCriticalTactical)
                 {
-                    doubleMargin -= 55;
-                    tripleMargin -= 75;
+                    doubleMargin -= 50;
+                    tripleMargin -= 70;
                 }
                 else if (isStrategical)
                 {
