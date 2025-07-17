@@ -1961,17 +1961,17 @@ moves_loop:  // When in check, search starts here
             && !is_decisive(ttData.value) && (ttData.bound & BOUND_LOWER)
             && ttData.depth >= depth - 3)
         {
-        	//shashin crystal begin
+            //shashin crystal begin
             const bool isPv               = PvNode;
             const bool isTtPv             = ss->ttPv;
             const int  marginBase         = 58 + 76 * (isTtPv && !isPv);
             Value      singularBeta       = ttData.value - marginBase * depth / 57;
             Depth      singularDepth      = newDepth / 2;
-            bool isCriticalTactical = depth >= 7 || staticState.kingSafetyScore < -35;
-            if (isCriticalTactical) {
+            bool       isCriticalTactical = false;
+            if (depth >= 6 || staticState.kingSafetyScore < -35)
                 isCriticalTactical = localShashinManager.isTalTacticalHighMiddle();
-            }
-            //shashin crystal end
+            // Shashin crystal adjustments end
+
             ss->excludedMove = move;
             value = search<NonPV>(pos, ss, singularBeta - 1, singularBeta, singularDepth, cutNode);
             ss->excludedMove = Move::none();
@@ -1985,16 +1985,16 @@ moves_loop:  // When in check, search starts here
                 int tripleMargin = 84 + 269 * PvNode - 253 * !ttCapture + 91 * ss->ttPv - corrValAdj
                                  - (ss->ply * 2 > thisThread->rootDepth * 3) * 54;
 
-        		//shashin crystal begin
+                //shashin crystal begin
                 if (isCriticalTactical)
                 {
-                    doubleMargin -= 52;
-                    tripleMargin -= 68;
+                    doubleMargin -= 50;
+                    tripleMargin -= 70;
                 }
                 else if (isStrategical)
                 {
-                    doubleMargin += 42;
-                    tripleMargin += 62;
+                    doubleMargin += 45;
+                    tripleMargin += 65;
                 }
                 //shashin crystal end
                 extension =
