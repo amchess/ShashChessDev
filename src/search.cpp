@@ -1967,13 +1967,24 @@ moves_loop:  // When in check, search starts here
             // Precise position style identification
             ShashinPosition style              = dynamicBase.currentRange;
             bool            isCriticalTactical = (depth >= 6 || staticState.kingSafetyScore < -35);
-            bool            isAggressiveTal =
+
+            // Hybrid classification system
+            bool isAggressiveTal =
               (style == ShashinPosition::HIGH_TAL || style == ShashinPosition::MIDDLE_HIGH_TAL);
             bool isModerateTal =
               (style == ShashinPosition::MIDDLE_TAL || style == ShashinPosition::MIDDLE_LOW_TAL);
-            bool isPetrosianDefensive  = (style == ShashinPosition::HIGH_PETROSIAN
+            bool isPetrosianDefensive = (style == ShashinPosition::HIGH_PETROSIAN
                                          || style == ShashinPosition::MIDDLE_HIGH_PETROSIAN);
-            bool isCapablancaStrategic = (style == ShashinPosition::CAPABLANCA);
+            bool isCapablanca         = (style == ShashinPosition::CAPABLANCA);
+
+            // Hybrid positions with dynamic weighting
+            bool isTacticalHybrid =
+              (style == ShashinPosition::CAPABLANCA_TAL
+               || (style == ShashinPosition::TAL_CAPABLANCA_PETROSIAN && isCriticalTactical));
+            bool isStrategicHybrid =
+              (style == ShashinPosition::CAPABLANCA_PETROSIAN
+               || (style == ShashinPosition::TAL_CAPABLANCA_PETROSIAN && !isCriticalTactical));
+
             // Shashin crystal adjustments end
 
             ss->excludedMove = move;
@@ -1995,40 +2006,41 @@ moves_loop:  // When in check, search starts here
                     if (isAggressiveTal)
                     {
                         // Maximum aggression for pure Tal positions
-                        doubleMargin -= 55;
-                        tripleMargin -= 75;
+                        doubleMargin -= 56;
+                        tripleMargin -= 76;
                     }
                     else if (isModerateTal)
                     {
                         // Balanced approach for moderate Tal
-                        doubleMargin -= 40;
-                        tripleMargin -= 55;
+                        doubleMargin -= 42;
+                        tripleMargin -= 58;
                     }
                     else if (isPetrosianDefensive)
                     {
                         // Conservative extensions for defensive Petrosian
-                        doubleMargin -= 25;
-                        tripleMargin -= 35;
+                        doubleMargin -= 26;
+                        tripleMargin -= 36;
                     }
                 }
 
-                if (isCapablancaStrategic)
+                if (isCapablanca)
                 {
                     // Pure positional strategy
-                    doubleMargin += 45;
-                    tripleMargin += 65;
+                    doubleMargin += 46;
+                    tripleMargin += 66;
                 }
-                else if (style == ShashinPosition::CAPABLANCA_TAL)
+                // Hybrid styles (should not occur but maintained as fallback)
+                else if (isTacticalHybrid)
                 {
-                    // Hybrid: slight tactical preference
-                    doubleMargin -= 15;
-                    tripleMargin -= 25;
+                    // Hybrid with tactical emphasis
+                    doubleMargin -= isCriticalTactical ? 32 : 18;
+                    tripleMargin -= isCriticalTactical ? 48 : 28;
                 }
-                else if (style == ShashinPosition::CAPABLANCA_PETROSIAN)
+                else if (isStrategicHybrid)
                 {
-                    // Hybrid: slight strategic preference
-                    doubleMargin += 25;
-                    tripleMargin += 35;
+                    // Hybrid with strategic emphasis
+                    doubleMargin += isCriticalTactical ? 15 : 38;
+                    tripleMargin += isCriticalTactical ? 22 : 56;
                 }
 
                 extension =
@@ -2046,13 +2058,6 @@ moves_loop:  // When in check, search starts here
             {
                 return value;
             }
-
-            // Negative extensions
-            // If other moves failed high over (ttValue - margin) without the
-            // ttMove on a reduced search, but we cannot do multi-cut because
-            // (ttValue - margin) is lower than the original beta, we do not know
-            // if the ttMove is singular or can do a multi-cut, so we reduce the
-            // ttMove in favor of other moves based on some conditions:
             else if (ttData.value >= beta)
             {
                 extension = -3;
