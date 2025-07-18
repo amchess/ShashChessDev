@@ -1200,6 +1200,7 @@ Value Search::Worker::search(
     if (PvNode && thisThread->selDepth < ss->ply + 1)
         thisThread->selDepth = ss->ply + 1;
     //from crystal shashin begin
+    const auto& dynamicBase        = rootShashinState.dynamicBase;
     const auto& dynamicDerived     = rootShashinState.dynamicDerived;
     const auto& staticState        = rootShashinState.staticState;
     bool        isStrategical      = dynamicDerived.isStrategical;
@@ -1947,29 +1948,32 @@ moves_loop:  // When in check, search starts here
         }
 
         // Step 15. Extensions
-        // Singular extension search. If all moves but one
-        // fail low on a search of (alpha-s, beta-s), and just one fails high on
-        // (alpha, beta), then that move is singular and should be extended. To
-        // verify this we do a reduced search on the position excluding the ttMove
-        // and if the result is lower than ttValue minus a margin, then we will
-        // extend the ttMove. Recursive singular search is avoided.
-
-        // (*Scaler) Generally, higher singularBeta (i.e closer to ttValue)
-        // and lower extension margins scale well.
+        // Singular extension search. If all moves but one fail low on a search of (alpha-s, beta-s),
+        // and just one fails high on (alpha, beta), then that move is singular and should be extended.
+        // To verify this we do a reduced search on the position excluding the ttMove and if the result
+        // is lower than ttValue minus a margin, then we extend the ttMove. Recursive singular search is avoided.
         if (!rootNode && move == ttData.move && !excludedMove
             && depth >= 6 - (thisThread->completedDepth > 27) + ss->ttPv && is_valid(ttData.value)
             && !is_decisive(ttData.value) && (ttData.bound & BOUND_LOWER)
             && ttData.depth >= depth - 3)
         {
-            //shashin crystal begin
-            const bool isPv               = PvNode;
-            const bool isTtPv             = ss->ttPv;
-            const int  marginBase         = 58 + 76 * (isTtPv && !isPv);
-            Value      singularBeta       = ttData.value - marginBase * depth / 57;
-            Depth      singularDepth      = newDepth / 2;
-            bool       isCriticalTactical = false;
-            if (depth >= 8 || staticState.kingSafetyScore < -39)
-                isCriticalTactical = localShashinManager.isTalTacticalHighMiddle();
+            // Shashin crystal adjustments begin
+            const bool isPv          = PvNode;
+            const bool isTtPv        = ss->ttPv;
+            const int  marginBase    = 58 + 76 * (isTtPv && !isPv);
+            Value      singularBeta  = ttData.value - marginBase * depth / 57;
+            Depth      singularDepth = newDepth / 2;
+
+            // Precise position style identification
+            ShashinPosition style              = dynamicBase.currentRange;
+            bool            isCriticalTactical = (depth >= 6 || staticState.kingSafetyScore < -35);
+            bool            isAggressiveTal =
+              (style == ShashinPosition::HIGH_TAL || style == ShashinPosition::MIDDLE_HIGH_TAL);
+            bool isModerateTal =
+              (style == ShashinPosition::MIDDLE_TAL || style == ShashinPosition::MIDDLE_LOW_TAL);
+            bool isPetrosianDefensive  = (style == ShashinPosition::HIGH_PETROSIAN
+                                         || style == ShashinPosition::MIDDLE_HIGH_PETROSIAN);
+            bool isCapablancaStrategic = (style == ShashinPosition::CAPABLANCA);
             // Shashin crystal adjustments end
 
             ss->excludedMove = move;
@@ -1985,21 +1989,50 @@ moves_loop:  // When in check, search starts here
                 int tripleMargin = 84 + 269 * PvNode - 253 * !ttCapture + 91 * ss->ttPv - corrValAdj
                                  - (ss->ply * 2 > thisThread->rootDepth * 3) * 54;
 
-                //shashin crystal begin
+                // Fine-grained margin adjustment based on Shashin category
                 if (isCriticalTactical)
                 {
-                    doubleMargin -= 47;
-                    tripleMargin -= 62;
+                    if (isAggressiveTal)
+                    {
+                        // Maximum aggression for pure Tal positions
+                        doubleMargin -= 55;
+                        tripleMargin -= 75;
+                    }
+                    else if (isModerateTal)
+                    {
+                        // Balanced approach for moderate Tal
+                        doubleMargin -= 40;
+                        tripleMargin -= 55;
+                    }
+                    else if (isPetrosianDefensive)
+                    {
+                        // Conservative extensions for defensive Petrosian
+                        doubleMargin -= 25;
+                        tripleMargin -= 35;
+                    }
                 }
-                else if (isStrategical)
+
+                if (isCapablancaStrategic)
                 {
-                    doubleMargin += 40;
-                    tripleMargin += 60;
+                    // Pure positional strategy
+                    doubleMargin += 45;
+                    tripleMargin += 65;
                 }
-                //shashin crystal end
+                else if (style == ShashinPosition::CAPABLANCA_TAL)
+                {
+                    // Hybrid: slight tactical preference
+                    doubleMargin -= 15;
+                    tripleMargin -= 25;
+                }
+                else if (style == ShashinPosition::CAPABLANCA_PETROSIAN)
+                {
+                    // Hybrid: slight strategic preference
+                    doubleMargin += 25;
+                    tripleMargin += 35;
+                }
+
                 extension =
                   1 + (value < singularBeta - doubleMargin) + (value < singularBeta - tripleMargin);
-
                 depth++;
             }
 
@@ -2013,20 +2046,17 @@ moves_loop:  // When in check, search starts here
             {
                 return value;
             }
+
             // Negative extensions
             // If other moves failed high over (ttValue - margin) without the
             // ttMove on a reduced search, but we cannot do multi-cut because
             // (ttValue - margin) is lower than the original beta, we do not know
             // if the ttMove is singular or can do a multi-cut, so we reduce the
             // ttMove in favor of other moves based on some conditions:
-
-            // If the ttMove is assumed to fail high over current beta
             else if (ttData.value >= beta)
             {
                 extension = -3;
             }
-            // If we are on a cutNode but the ttMove is not assumed to fail high
-            // over current beta
             else if (cutNode)
             {
                 extension = -2;
