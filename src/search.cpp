@@ -1558,52 +1558,38 @@ Value Search::Worker::search(
     // Step 8. Futility pruning: child node
     // The depth condition is important for mate finding.
     {
-        // 8-a. Style weight [70 .. 130]
-        //      – aggressive positions   ⇒ more pruning (smaller margin)
-        //      – strategic positions    ⇒ more conservative pruning (larger margin)
-        int styleWeight = 100;
-        if (dynamicDerived.isAggressive)
-            styleWeight = 85;  // −15 %
-        else if (dynamicDerived.isStrategical)
-            styleWeight = 120;  // +20 %
-        if (staticState.kingDanger)
-            styleWeight = std::min(styleWeight, 80);  // be extra cautious
+        // Adjust futility margin based on Shashin style
+        Value styleFactor = 100;  // Default = neutral
+        if (isAggressive)
+        {
+            styleFactor = 80;  // Reduce pruning in aggressive positions
+        }
+        else if (isStrategical)
+        {
+            styleFactor = 120;  // Increase pruning in strategical positions
+        }
+        else if (kingDanger)
+        {
+            styleFactor = 70;  // Reduce pruning when king is in danger
+        }
 
-        // 8-b. Futility margin function scaled by style and other factors
-        auto futility_margin = [&](Depth d) -> Value {
-            Value base = 93 - 20 * (cutNode && !ss->ttHit);  // Stockfish default base margin
-            Value m    = base * styleWeight / 100;           // scale based on style
+        auto futility_margin = [&](Depth d) {
+            Value baseMargin     = 93 - 20 * (cutNode && !ss->ttHit);
+            Value adjustedMargin = (baseMargin * styleFactor) / 100;
 
-            // Penalize high mobility: more legal moves ⇒ smaller margin ⇒ more pruning
-            int mobAdj = std::clamp(staticState.legalMoveCount - 24, 0, 40);
-            m -= mobAdj;
-
-            // Slight boost if we are improving in the search
-            m += improving * 5;
-
-            // Final margin formula (based on Stockfish with additions)
-            return m * d - improving * m * 2 - opponentWorsening * m / 3 + (ss - 1)->statScore / 376
-                 + std::abs(correctionValue) / 168639;
+            return adjustedMargin * d - improving * adjustedMargin * 2
+                 - opponentWorsening * adjustedMargin / 3 + (ss - 1)->statScore / 376
+                 + std::abs(correctionValue) / 168639
+                 - 50 * staticState.legalMoveCount / 40;  // Account for mobility
         };
 
-        // 8-c. Conditions for safe pruning
-        bool safeToPrune =
-          !ss->inCheck                         // never prune while in check
-          && !staticState.kingDanger           // avoid pruning when king is in real danger
-          && depth < 14                        // depth limit as in Stockfish (important for mates)
-          && (!ttData.move || ttCapture)       // only prune if TT move is missing or is a capture
-          && eval >= beta                      // current static eval must already be above beta
-          && !is_loss(beta) && !is_win(eval);  // do not prune in near-mate situations
+        bool allowPruning = !staticState.kingDanger || (dynamicDerived.isStrategical && depth < 8);
 
-        // If the static evaluation minus the margin still beats beta ⇒ prune
-        if (safeToPrune && eval - futility_margin(depth) >= beta)
+        if (allowPruning && !ss->ttPv && depth < 14 && eval - futility_margin(depth) >= beta
+            && eval >= beta && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval))
         {
-            // 8-d. Return reduced value (more conservative in aggressive settings)
-            Value delta     = eval - beta;
-            Value reduction = dynamicDerived.isAggressive  ? delta / 4   // more cautious cutoff
-                            : dynamicDerived.isStrategical ? delta / 3   // like Stockfish
-                                                           : delta / 3;  // default fallback
-
+            // Less aggressive reduction in critical positions
+            Value reduction = (dynamicDerived.isAggressive) ? (eval - beta) / 4 : (eval - beta) / 3;
             return beta + reduction;
         }
     }
