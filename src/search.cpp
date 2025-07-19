@@ -1200,17 +1200,17 @@ Value Search::Worker::search(
     if (PvNode && thisThread->selDepth < ss->ply + 1)
         thisThread->selDepth = ss->ply + 1;
     //from crystal shashin begin
-    const auto& dynamicBase        = rootShashinState.dynamicBase;
-    const auto& dynamicDerived     = rootShashinState.dynamicDerived;
-    const auto& staticState        = rootShashinState.staticState;
-    bool        isStrategical      = dynamicDerived.isStrategical;
-    bool        isAggressive       = dynamicDerived.isAggressive;
-    bool        isTacticalReactive = dynamicDerived.isTacticalReactive;
-    bool        quietKingSafe = !staticState.isSacrificial && (!staticState.stmKingExposed);
-    ShashinPosition style     = dynamicBase.currentRange;
-    bool            isCapablanca = (style == ShashinPosition::CAPABLANCA);
-    bool            isTal        = localShashinManager.isTal();
-    bool            isPetrosian  = localShashinManager.isPetrosian();
+    const auto&     dynamicBase        = rootShashinState.dynamicBase;
+    const auto&     dynamicDerived     = rootShashinState.dynamicDerived;
+    const auto&     staticState        = rootShashinState.staticState;
+    bool            isStrategical      = dynamicDerived.isStrategical;
+    bool            isAggressive       = dynamicDerived.isAggressive;
+    bool            isTacticalReactive = dynamicDerived.isTacticalReactive;
+    bool            quietKingSafe = !staticState.isSacrificial && (!staticState.stmKingExposed);
+    ShashinPosition style         = dynamicBase.currentRange;
+    bool            isCapablanca  = (style == ShashinPosition::CAPABLANCA);
+    bool            isTal         = localShashinManager.isTal();
+    bool            isPetrosian   = localShashinManager.isPetrosian();
     //from crystal shashin end
     if (!rootNode)
     {
@@ -1969,9 +1969,9 @@ moves_loop:  // When in check, search starts here
             Depth      singularDepth = newDepth / 2;
 
             // Precise position style identification
-            ShashinPosition style = dynamicBase.currentRange;
-            bool isPotentiallyPetrosian = (depth >= 6 || staticState.stmKingExposed);
-            bool isPotentiallyTal = (depth >= 6 || staticState.opponentKingExposed);
+            ShashinPosition style                  = dynamicBase.currentRange;
+            bool            isPotentiallyPetrosian = (depth >= 6 || staticState.stmKingExposed);
+            bool            isPotentiallyTal = (depth >= 6 || staticState.opponentKingExposed);
             // Shashin crystal adjustments end
 
             ss->excludedMove = move;
@@ -2006,16 +2006,18 @@ moves_loop:  // When in check, search starts here
                 {
                     // Pure positional strategy
                     doubleMargin += 46;
-                    tripleMargin += 66;
+                    tripleMargin += 65;
                 }
                 // Hybrid styles (should not occur but maintained as fallback)
                 else
                 {
                     // Hybrid positions with dynamic weighting
-                    bool isAttackingHybrid  = (style == ShashinPosition::CAPABLANCA_TAL
-                                              || (style == ShashinPosition::TAL_CAPABLANCA_PETROSIAN));
-                    bool isDefensiveHybrid  = (style == ShashinPosition::CAPABLANCA_PETROSIAN
-                                              || (style == ShashinPosition::TAL_CAPABLANCA_PETROSIAN));
+                    bool isAttackingHybrid =
+                      (style == ShashinPosition::CAPABLANCA_TAL
+                       || (style == ShashinPosition::TAL_CAPABLANCA_PETROSIAN));
+                    bool isDefensiveHybrid =
+                      (style == ShashinPosition::CAPABLANCA_PETROSIAN
+                       || (style == ShashinPosition::TAL_CAPABLANCA_PETROSIAN));
                     if (isAttackingHybrid)
                     {
                         // Hybrid with tactical emphasis
@@ -2536,11 +2538,14 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             return ttData.value;
         if (staticState.legalMoveCount < 35 && std::abs(ttData.value) > 60)
         {
-            if (!dynamicDerived.isStrategical && !staticState.kingDanger)
+            const bool isQuietRoot = !staticState.stmKingExposed && !staticState.opponentKingExposed;
+            if (!dynamicDerived.isStrategical && isQuietRoot)
             {
                 const bool depthCondition =
                   ttData.depth >= ADJUSTED_QS_DEPTH && ttData.depth > MIN_DEPTH_FOR_QS_CUTOFF;
-                const bool kingSafety = !staticState.stmKingExposed || ttData.depth > DEPTH_QS + 4;
+                const bool kingSafety =
+                  (!staticState.stmKingExposed && !staticState.opponentKingExposed)
+                  || ttData.depth > DEPTH_QS + 4;
                 if (depthCondition && kingSafety)
                     return ttData.value;
             }

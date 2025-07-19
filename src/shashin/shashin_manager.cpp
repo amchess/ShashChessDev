@@ -364,9 +364,9 @@ void ShashinManager::setStaticState(const Position& rootPos) {
     StaticState& staticState = state.staticState;
     invalidateCaches();  // Invalidate caches when position changes
 
-    staticState.legalMoveCount = MoveList<LEGAL>(rootPos).size();
-    staticState.isSacrificial  = isSacrificialPosition(rootPos);
-    staticState.stmKingExposed    = isStmKingExposed();
+    staticState.legalMoveCount      = MoveList<LEGAL>(rootPos).size();
+    staticState.isSacrificial       = isSacrificialPosition(rootPos);
+    staticState.stmKingExposed      = isStmKingExposed();
     staticState.opponentKingExposed = isOpponentKingExposed();
     int nonPawnMaterial      = rootPos.non_pawn_material(WHITE) + rootPos.non_pawn_material(BLACK);
     staticState.highMaterial = (nonPawnMaterial > 2400);
@@ -375,7 +375,7 @@ void ShashinManager::setStaticState(const Position& rootPos) {
     staticState.stmKingDanger      = king_danger(rootPos, rootPos.side_to_move());
     staticState.pawnsNearPromotion = isPawnNearPromotion(rootPos);
     staticState.allPiecesCount     = rootPos.count<ALL_PIECES>();
-    staticState.stmKingSafetyScore    = king_safety_score(rootPos, rootPos.side_to_move());
+    staticState.stmKingSafetyScore = king_safety_score(rootPos, rootPos.side_to_move());
     staticState.opponentKingSafetyScore = king_safety_score(rootPos, ~rootPos.side_to_move());
 
     MoveConfig::isFortress = isFortress(rootPos);

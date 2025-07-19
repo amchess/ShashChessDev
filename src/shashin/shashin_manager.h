@@ -135,26 +135,25 @@ class ShashinManager {
     // Helper functions for styles intensity (inline for performance 
     static inline __attribute__((always_inline)) double getTalIntensity(ShashinPosition style) {
         switch (style) {
-            case ShashinPosition::HIGH_TAL: return 1.0;
-            case ShashinPosition::MIDDLE_HIGH_TAL: return 0.8;
-            case ShashinPosition::MIDDLE_TAL: return 0.6;
-            case ShashinPosition::MIDDLE_LOW_TAL: return 0.4;
-            case ShashinPosition::LOW_TAL: return 0.2;
+            case ShashinPosition::HIGH_TAL: return 1.00;  // 100% reductione
+            case ShashinPosition::MIDDLE_HIGH_TAL: return 0.85;  // 85%
+            case ShashinPosition::MIDDLE_TAL: return 0.73;  // 73% (40/55 ≈ 0.727, 55/75 ≈ 0.733)
+            case ShashinPosition::MIDDLE_LOW_TAL: return 0.60;  // 60%
+            case ShashinPosition::LOW_TAL: return 0.45;  // 45%
             default: return 0.0;
         }
     }
 
     static inline __attribute__((always_inline)) double getPetrosianIntensity(ShashinPosition style) {
         switch (style) {
-            case ShashinPosition::HIGH_PETROSIAN: return 1.0;
-            case ShashinPosition::MIDDLE_HIGH_PETROSIAN: return 0.8;
-            case ShashinPosition::MIDDLE_PETROSIAN: return 0.6;
-            case ShashinPosition::MIDDLE_LOW_PETROSIAN: return 0.4;
-            case ShashinPosition::LOW_PETROSIAN: return 0.2;
+            case ShashinPosition::HIGH_PETROSIAN: return 0.55;  // 55% (25/55 ≈ 0.45, 35/75 ≈ 0.47 → media 0.46 → 1-0.46=0.54)
+            case ShashinPosition::MIDDLE_HIGH_PETROSIAN: return 0.50;  // 50%
+            case ShashinPosition::MIDDLE_PETROSIAN: return 0.40;  // 40%
+            case ShashinPosition::MIDDLE_LOW_PETROSIAN: return 0.30;  // 30%
+            case ShashinPosition::LOW_PETROSIAN: return 0.20;  // 20%
             default: return 0.0;
         }
     }
-
 
    private:
     ShashinParams params;
