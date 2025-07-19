@@ -131,6 +131,29 @@ class ShashinManager {
     inline __attribute__((always_inline)) bool isInRange(ShashinPosition position) const {
         return state.dynamicBase.currentRange == position;
     }
+    // Helper functions for styles intensity (inline for performance 
+    static inline __attribute__((always_inline)) double getTalIntensity(ShashinPosition style) {
+        switch (style) {
+            case ShashinPosition::HIGH_TAL: return 1.0;
+            case ShashinPosition::MIDDLE_HIGH_TAL: return 0.8;
+            case ShashinPosition::MIDDLE_TAL: return 0.6;
+            case ShashinPosition::MIDDLE_LOW_TAL: return 0.4;
+            case ShashinPosition::LOW_TAL: return 0.2;
+            default: return 0.0;
+        }
+    }
+
+    static inline __attribute__((always_inline)) double getPetrosianIntensity(ShashinPosition style) {
+        switch (style) {
+            case ShashinPosition::HIGH_PETROSIAN: return 1.0;
+            case ShashinPosition::MIDDLE_HIGH_PETROSIAN: return 0.8;
+            case ShashinPosition::MIDDLE_PETROSIAN: return 0.6;
+            case ShashinPosition::MIDDLE_LOW_PETROSIAN: return 0.4;
+            case ShashinPosition::LOW_PETROSIAN: return 0.2;
+            default: return 0.0;
+        }
+    }
+
 
    private:
     ShashinParams params;

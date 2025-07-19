@@ -16,22 +16,27 @@ ShashinPosition ShashinManager::getResilientShashinRange(ShashinPosition range, 
                             : (mvCount > params.lowMobilityMoves)  ? params.midDepthLimit
                                                                    : params.lowDepthLimit;
 
-    bool isTalRange = (range == ShashinPosition::CAPABLANCA_TAL
-                       || range == ShashinPosition::TAL_CAPABLANCA_PETROSIAN);
+    // It implements the Shashin max resilience principle
+    switch (range)
+    {
+    // Direct transistion for hybrids
+    case ShashinPosition::CAPABLANCA_TAL :
+        return (depth <= dynamicThreshold) ? ShashinPosition::LOW_TAL : ShashinPosition::CAPABLANCA;
 
-    if (depth <= dynamicThreshold)
-    {
-        if (isTalRange)
+    case ShashinPosition::CAPABLANCA_PETROSIAN :
+        return (depth <= dynamicThreshold) ? ShashinPosition::CAPABLANCA
+                                           : ShashinPosition::LOW_PETROSIAN;
+
+    case ShashinPosition::TAL_CAPABLANCA_PETROSIAN :
+        if (depth <= dynamicThreshold)
             return ShashinPosition::LOW_TAL;
-        if (range == ShashinPosition::CAPABLANCA_PETROSIAN)
+        if (depth <= params.advancedDepthLimit)
             return ShashinPosition::CAPABLANCA;
+        return ShashinPosition::LOW_PETROSIAN;
+    //no hybrids
+    default :
+        return range;
     }
-    else if (depth <= params.advancedDepthLimit
-             && range == ShashinPosition::TAL_CAPABLANCA_PETROSIAN)
-    {
-        return ShashinPosition::CAPABLANCA;
-    }
-    return range;
 }
 __attribute__((hot)) bool ShashinManager::useMoveGenCrystalLogic() const {
     const auto& s = state.staticState;

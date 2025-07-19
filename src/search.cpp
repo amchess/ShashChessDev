@@ -1207,6 +1207,10 @@ Value Search::Worker::search(
     bool        isAggressive       = dynamicDerived.isAggressive;
     bool        isTacticalReactive = dynamicDerived.isTacticalReactive;
     bool        quietKingSafe = !staticState.isSacrificial && (staticState.kingSafetyScore > -30);
+    ShashinPosition style     = dynamicBase.currentRange;
+    bool            isCapablanca = (style == ShashinPosition::CAPABLANCA);
+    bool            isTal        = localShashinManager.isTal();
+    bool            isPetrosian  = localShashinManager.isPetrosian();
     //from crystal shashin end
     if (!rootNode)
     {
@@ -1715,7 +1719,7 @@ Value Search::Worker::search(
                           &thisThread->captureHistory);
             Depth      probCutDepth = std::max(depth - 5, 0);
             // Shashin adjustment: reduce depth more in Capablanca positions
-            if (localShashinManager.isCapablanca() && depth > 8)
+            if (isCapablanca && depth > 8)
                 probCutDepth = std::max(depth - 7, 0);
             while ((move = mp.next_move()) != Move::none())
             {
@@ -1965,25 +1969,7 @@ moves_loop:  // When in check, search starts here
             Depth      singularDepth = newDepth / 2;
 
             // Precise position style identification
-            ShashinPosition style              = dynamicBase.currentRange;
-            bool            isCriticalTactical = (depth >= 6 || staticState.kingSafetyScore < -35);
-
-            // Hybrid classification system
-            bool isAggressiveTal =
-              (style == ShashinPosition::HIGH_TAL || style == ShashinPosition::MIDDLE_HIGH_TAL);
-            bool isModerateTal =
-              (style == ShashinPosition::MIDDLE_TAL || style == ShashinPosition::MIDDLE_LOW_TAL);
-            bool isPetrosianDefensive = (style == ShashinPosition::HIGH_PETROSIAN
-                                         || style == ShashinPosition::MIDDLE_HIGH_PETROSIAN);
-            bool isCapablanca         = (style == ShashinPosition::CAPABLANCA);
-
-            // Hybrid positions with dynamic weighting
-            bool isTacticalHybrid =
-              (style == ShashinPosition::CAPABLANCA_TAL
-               || (style == ShashinPosition::TAL_CAPABLANCA_PETROSIAN && isCriticalTactical));
-            bool isStrategicHybrid =
-              (style == ShashinPosition::CAPABLANCA_PETROSIAN
-               || (style == ShashinPosition::TAL_CAPABLANCA_PETROSIAN && !isCriticalTactical));
+            ShashinPosition style = dynamicBase.currentRange;
 
             // Shashin crystal adjustments end
 
@@ -2000,49 +1986,52 @@ moves_loop:  // When in check, search starts here
                 int tripleMargin = 84 + 269 * PvNode - 253 * !ttCapture + 91 * ss->ttPv - corrValAdj
                                  - (ss->ply * 2 > thisThread->rootDepth * 3) * 54;
 
-                // Fine-grained margin adjustment based on Shashin category
-                if (isCriticalTactical)
+                // Dynamic adjustment based on Shashin intensity
+                if (isTal)
                 {
-                    if (isAggressiveTal)
-                    {
-                        // Maximum aggression for pure Tal positions
-                        doubleMargin -= 55;
-                        tripleMargin -= 75;
-                    }
-                    else if (isModerateTal)
-                    {
-                        // Balanced approach for moderate Tal
-                        doubleMargin -= 40;
-                        tripleMargin -= 55;
-                    }
-                    else if (isPetrosianDefensive)
-                    {
-                        // Conservative extensions for defensive Petrosian
-                        doubleMargin -= 25;
-                        tripleMargin -= 35;
-                    }
+                    // Tal: higher intensity = more reduction
+                    double talIntensity = ShashinManager::getTalIntensity(style);
+                    doubleMargin -= static_cast<int>(45 * talIntensity);
+                    tripleMargin -= static_cast<int>(60 * talIntensity);
+                }
+                else if (isPetrosian)
+                {
+                    // Petrosian: higher intensity = less reduction
+                    double petrosianIntensity = ShashinManager::getPetrosianIntensity(style);
+                    doubleMargin -= static_cast<int>(45 * (1.0 - petrosianIntensity));
+                    tripleMargin -= static_cast<int>(60 * (1.0 - petrosianIntensity));
                 }
 
                 if (isCapablanca)
                 {
                     // Pure positional strategy
-                    doubleMargin += 45;
-                    tripleMargin += 65;
+                    doubleMargin += 46;
+                    tripleMargin += 66;
                 }
                 // Hybrid styles (should not occur but maintained as fallback)
-                else if (isTacticalHybrid)
+                else
                 {
-                    // Hybrid with tactical emphasis
-                    doubleMargin -= isCriticalTactical ? 32 : 18;
-                    tripleMargin -= isCriticalTactical ? 48 : 28;
+                    // Hybrid positions with dynamic weighting
+                    bool isCriticalTactical = (depth >= 6 || staticState.kingSafetyScore < -30);
+                    bool isAttackingHybrid  = (style == ShashinPosition::CAPABLANCA_TAL
+                                              || (style == ShashinPosition::TAL_CAPABLANCA_PETROSIAN
+                                                  && isCriticalTactical));
+                    bool isDefensiveHybrid  = (style == ShashinPosition::CAPABLANCA_PETROSIAN
+                                              || (style == ShashinPosition::TAL_CAPABLANCA_PETROSIAN
+                                                  && !isCriticalTactical));
+                    if (isAttackingHybrid)
+                    {
+                        // Hybrid with tactical emphasis
+                        doubleMargin -= isCriticalTactical ? 32 : 18;
+                        tripleMargin -= isCriticalTactical ? 48 : 28;
+                    }
+                    else if (isDefensiveHybrid)
+                    {
+                        // Hybrid with strategic emphasis
+                        doubleMargin += isCriticalTactical ? 15 : 38;
+                        tripleMargin += isCriticalTactical ? 22 : 56;
+                    }
                 }
-                else if (isStrategicHybrid)
-                {
-                    // Hybrid with strategic emphasis
-                    doubleMargin += isCriticalTactical ? 15 : 38;
-                    tripleMargin += isCriticalTactical ? 22 : 56;
-                }
-
                 extension =
                   1 + (value < singularBeta - doubleMargin) + (value < singularBeta - tripleMargin);
                 depth++;
@@ -2336,9 +2325,8 @@ skipExtensionAndPruning:  // full threads search patch
                 {
                     const int  baseReduction = 2;
                     int        reduction     = baseReduction;
-                    const bool isTactical =
-                      localShashinManager.isTal() || localShashinManager.isPetrosian();
-                    const bool kingInDanger = staticState.stmKingDanger;
+                    const bool isTactical    = isTal || isPetrosian;
+                    const bool kingInDanger  = staticState.stmKingDanger;
 
                     // Ottimizzazione 3: Riduzione dinamica
                     if (isTactical && kingInDanger)
