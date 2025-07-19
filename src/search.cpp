@@ -2006,28 +2006,28 @@ moves_loop:  // When in check, search starts here
                     if (isAggressiveTal)
                     {
                         // Maximum aggression for pure Tal positions
-                        doubleMargin -= 56;
-                        tripleMargin -= 76;
+                        doubleMargin -= 55;
+                        tripleMargin -= 75;
                     }
                     else if (isModerateTal)
                     {
                         // Balanced approach for moderate Tal
-                        doubleMargin -= 42;
-                        tripleMargin -= 58;
+                        doubleMargin -= 40;
+                        tripleMargin -= 55;
                     }
                     else if (isPetrosianDefensive)
                     {
                         // Conservative extensions for defensive Petrosian
-                        doubleMargin -= 26;
-                        tripleMargin -= 36;
+                        doubleMargin -= 25;
+                        tripleMargin -= 35;
                     }
                 }
 
                 if (isCapablanca)
                 {
                     // Pure positional strategy
-                    doubleMargin += 46;
-                    tripleMargin += 66;
+                    doubleMargin += 45;
+                    tripleMargin += 65;
                 }
                 // Hybrid styles (should not occur but maintained as fallback)
                 else if (isTacticalHybrid)
