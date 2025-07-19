@@ -1206,7 +1206,7 @@ Value Search::Worker::search(
     bool        isStrategical      = dynamicDerived.isStrategical;
     bool        isAggressive       = dynamicDerived.isAggressive;
     bool        isTacticalReactive = dynamicDerived.isTacticalReactive;
-    bool        quietKingSafe = !staticState.isSacrificial && (staticState.kingSafetyScore > -30);
+    bool        quietKingSafe = !staticState.isSacrificial && (!staticState.stmKingExposed);
     ShashinPosition style     = dynamicBase.currentRange;
     bool            isCapablanca = (style == ShashinPosition::CAPABLANCA);
     bool            isTal        = localShashinManager.isTal();
@@ -1970,7 +1970,8 @@ moves_loop:  // When in check, search starts here
 
             // Precise position style identification
             ShashinPosition style = dynamicBase.currentRange;
-
+            bool isPotentiallyPetrosian = (depth >= 6 || staticState.stmKingExposed);
+            bool isPotentiallyTal = (depth >= 6 || staticState.opponentKingExposed);
             // Shashin crystal adjustments end
 
             ss->excludedMove = move;
@@ -1985,21 +1986,20 @@ moves_loop:  // When in check, search starts here
                                  - (ss->ply > thisThread->rootDepth) * 47;
                 int tripleMargin = 84 + 269 * PvNode - 253 * !ttCapture + 91 * ss->ttPv - corrValAdj
                                  - (ss->ply * 2 > thisThread->rootDepth * 3) * 54;
-
                 // Dynamic adjustment based on Shashin intensity
-                if (isTal)
+                if (isTal && isPotentiallyTal)
                 {
                     // Tal: higher intensity = more reduction
                     double talIntensity = ShashinManager::getTalIntensity(style);
-                    doubleMargin -= static_cast<int>(45 * talIntensity);
-                    tripleMargin -= static_cast<int>(60 * talIntensity);
+                    doubleMargin -= static_cast<int>(55 * talIntensity);
+                    tripleMargin -= static_cast<int>(75 * talIntensity);
                 }
-                else if (isPetrosian)
+                else if (isPetrosian && isPotentiallyPetrosian)
                 {
                     // Petrosian: higher intensity = less reduction
                     double petrosianIntensity = ShashinManager::getPetrosianIntensity(style);
-                    doubleMargin -= static_cast<int>(45 * (1.0 - petrosianIntensity));
-                    tripleMargin -= static_cast<int>(60 * (1.0 - petrosianIntensity));
+                    doubleMargin -= static_cast<int>(55 * (1.0 - petrosianIntensity));
+                    tripleMargin -= static_cast<int>(75 * (1.0 - petrosianIntensity));
                 }
 
                 if (isCapablanca)
@@ -2012,24 +2012,21 @@ moves_loop:  // When in check, search starts here
                 else
                 {
                     // Hybrid positions with dynamic weighting
-                    bool isCriticalTactical = (depth >= 6 || staticState.kingSafetyScore < -30);
                     bool isAttackingHybrid  = (style == ShashinPosition::CAPABLANCA_TAL
-                                              || (style == ShashinPosition::TAL_CAPABLANCA_PETROSIAN
-                                                  && isCriticalTactical));
+                                              || (style == ShashinPosition::TAL_CAPABLANCA_PETROSIAN));
                     bool isDefensiveHybrid  = (style == ShashinPosition::CAPABLANCA_PETROSIAN
-                                              || (style == ShashinPosition::TAL_CAPABLANCA_PETROSIAN
-                                                  && !isCriticalTactical));
+                                              || (style == ShashinPosition::TAL_CAPABLANCA_PETROSIAN));
                     if (isAttackingHybrid)
                     {
                         // Hybrid with tactical emphasis
-                        doubleMargin -= isCriticalTactical ? 32 : 18;
-                        tripleMargin -= isCriticalTactical ? 48 : 28;
+                        doubleMargin -= isPotentiallyTal ? 32 : 18;
+                        tripleMargin -= isPotentiallyTal ? 48 : 28;
                     }
                     else if (isDefensiveHybrid)
                     {
                         // Hybrid with strategic emphasis
-                        doubleMargin += isCriticalTactical ? 15 : 38;
-                        tripleMargin += isCriticalTactical ? 22 : 56;
+                        doubleMargin += isPotentiallyPetrosian ? 15 : 38;
+                        tripleMargin += isPotentiallyPetrosian ? 22 : 56;
                     }
                 }
                 extension =
@@ -2543,7 +2540,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             {
                 const bool depthCondition =
                   ttData.depth >= ADJUSTED_QS_DEPTH && ttData.depth > MIN_DEPTH_FOR_QS_CUTOFF;
-                const bool kingSafety = !staticState.kingExposed || ttData.depth > DEPTH_QS + 4;
+                const bool kingSafety = !staticState.stmKingExposed || ttData.depth > DEPTH_QS + 4;
                 if (depthCondition && kingSafety)
                     return ttData.value;
             }

@@ -93,7 +93,8 @@ class ShashinManager {
     bool avoidStep10() const;
     bool isTalTacticalHighMiddle() const;
     bool useCrystalFutility() const;
-    bool isKingExposed() const { return state.staticState.kingSafetyScore < -30; }
+    bool isStmKingExposed() const { return state.staticState.stmKingSafetyScore < -30; }
+    bool isOpponentKingExposed() const { return state.staticState.opponentKingSafetyScore < -30; }
 
     // Inline methods for performance
     template<ShashinPosition P>

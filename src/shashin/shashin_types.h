@@ -92,24 +92,28 @@ struct DynamicDerivedState {
 struct StaticState {
     uint8_t legalMoveCount;
     bool    isSacrificial;
-    bool    kingExposed;
+    bool    stmKingExposed;
+    bool    opponentKingExposed;
     bool    highMaterial;
     bool    kingDanger;
     bool    stmKingDanger;
     bool    pawnsNearPromotion;
     uint8_t allPiecesCount;
-    int16_t kingSafetyScore;
+    int16_t stmKingSafetyScore;
+    int16_t opponentKingSafetyScore;
 
     StaticState() :
         legalMoveCount(0),
         isSacrificial(false),
-        kingExposed(false),
+        stmKingExposed(false),
+        opponentKingExposed(false),
         highMaterial(false),
         kingDanger(false),
         stmKingDanger(false),
         pawnsNearPromotion(false),
         allPiecesCount(0),
-        kingSafetyScore(0) {}
+        stmKingSafetyScore(0),
+        opponentKingSafetyScore(0) {}
 };
 
 // Ensure proper alignment for performance

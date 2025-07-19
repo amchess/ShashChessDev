@@ -71,7 +71,7 @@ bool ShashinManager::useCrystalFutility() const {
     const auto& st = state.staticState;
     const auto& dd = state.dynamicDerived;
     // Applichiamo Crystal solo in posizioni tattiche “pulite”:
-    return dd.isTacticalReactive && !st.kingExposed && !st.isSacrificial
+    return dd.isTacticalReactive && !st.stmKingExposed && !st.isSacrificial
         && st.legalMoveCount <= params.advancedDepthLimit;
 }
 
@@ -160,7 +160,7 @@ bool ShashinManager::isTacticalReduction() const {
 bool ShashinManager::avoidStep10() const {
     const auto& staticState    = state.staticState;
     const auto& dynamicDerived = state.dynamicDerived;
-    if (staticState.kingDanger || staticState.isSacrificial || staticState.kingExposed)
+    if (staticState.kingDanger || staticState.isSacrificial || staticState.stmKingExposed)
         return true;
     if (dynamicDerived.isStrategical)
     {
@@ -168,7 +168,7 @@ bool ShashinManager::avoidStep10() const {
     }
     else if (dynamicDerived.isAggressive)
     {
-        return staticState.kingSafetyScore < 40;
+        return staticState.stmKingSafetyScore < 40;
     }
     return false;
 }
@@ -366,8 +366,8 @@ void ShashinManager::setStaticState(const Position& rootPos) {
 
     staticState.legalMoveCount = MoveList<LEGAL>(rootPos).size();
     staticState.isSacrificial  = isSacrificialPosition(rootPos);
-    staticState.kingExposed    = isKingExposed();
-
+    staticState.stmKingExposed    = isStmKingExposed();
+    staticState.opponentKingExposed = isOpponentKingExposed();
     int nonPawnMaterial      = rootPos.non_pawn_material(WHITE) + rootPos.non_pawn_material(BLACK);
     staticState.highMaterial = (nonPawnMaterial > 2400);
 
@@ -375,7 +375,8 @@ void ShashinManager::setStaticState(const Position& rootPos) {
     staticState.stmKingDanger      = king_danger(rootPos, rootPos.side_to_move());
     staticState.pawnsNearPromotion = isPawnNearPromotion(rootPos);
     staticState.allPiecesCount     = rootPos.count<ALL_PIECES>();
-    staticState.kingSafetyScore    = king_safety_score(rootPos, rootPos.side_to_move());
+    staticState.stmKingSafetyScore    = king_safety_score(rootPos, rootPos.side_to_move());
+    staticState.opponentKingSafetyScore = king_safety_score(rootPos, ~rootPos.side_to_move());
 
     MoveConfig::isFortress = isFortress(rootPos);
 }
