@@ -1969,9 +1969,8 @@ moves_loop:  // When in check, search starts here
             Depth      singularDepth = newDepth / 2;
 
             // Precise position style identification
-            ShashinPosition style                  = dynamicBase.currentRange;
-            bool            isPotentiallyPetrosian = (depth >= 6 || staticState.stmKingExposed);
-            bool            isPotentiallyTal = (depth >= 6 || staticState.opponentKingExposed);
+            bool isPotentiallyPetrosian = (depth >= 6 || staticState.stmKingExposed);
+            bool isPotentiallyTal       = (depth >= 6 || staticState.opponentKingExposed);
             // Shashin crystal adjustments end
 
             ss->excludedMove = move;
@@ -2538,7 +2537,8 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             return ttData.value;
         if (staticState.legalMoveCount < 35 && std::abs(ttData.value) > 60)
         {
-            const bool isQuietRoot = !staticState.stmKingExposed && !staticState.opponentKingExposed;
+            const bool isQuietRoot =
+              !staticState.stmKingExposed && !staticState.opponentKingExposed;
             if (!dynamicDerived.isStrategical && isQuietRoot)
             {
                 const bool depthCondition =
