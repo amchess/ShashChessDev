@@ -2004,7 +2004,7 @@ moves_loop:  // When in check, search starts here
                 if (isCapablanca)
                 {
                     // Pure positional strategy
-                    doubleMargin += 46;
+                    doubleMargin += 45;
                     tripleMargin += 65;
                 }
                 // Hybrid styles (should not occur but maintained as fallback)
@@ -2030,6 +2030,7 @@ moves_loop:  // When in check, search starts here
                         tripleMargin += isPotentiallyPetrosian ? 22 : 56;
                     }
                 }
+
                 extension =
                   1 + (value < singularBeta - doubleMargin) + (value < singularBeta - tripleMargin);
                 depth++;
@@ -2045,6 +2046,13 @@ moves_loop:  // When in check, search starts here
             {
                 return value;
             }
+
+            // Negative extensions
+            // If other moves failed high over (ttValue - margin) without the
+            // ttMove on a reduced search, but we cannot do multi-cut because
+            // (ttValue - margin) is lower than the original beta, we do not know
+            // if the ttMove is singular or can do a multi-cut, so we reduce the
+            // ttMove in favor of other moves based on some conditions:
             else if (ttData.value >= beta)
             {
                 extension = -3;
@@ -2321,34 +2329,39 @@ skipExtensionAndPruning:  // full threads search patch
                 // Reduce other moves if we have found at least one score improvement
                 if (depth > 2 && depth < 16 && !is_decisive(value))
                 {
-                    const int  baseReduction = 2;
-                    int        reduction     = baseReduction;
-                    const bool isTactical    = isTal || isPetrosian;
-                    const bool kingInDanger  = staticState.stmKingDanger;
+                    const int baseReduction = 2;
+                    int reduction = baseReduction;
+                    
+                    // Specific tactical conditions for style (Shashin-correct)
+                    const bool criticalTactical = (staticState.opponentKingExposed && isTal) || 
+                                                (staticState.stmKingExposed && isPetrosian);
 
-                    // Ottimizzazione 3: Riduzione dinamica
-                    if (isTactical && kingInDanger)
+                    // Hybrid Shashin Strategy
+                    if (criticalTactical)
                     {
-                        // Riduzione minima in posizioni tattiche critiche
+                        // Depth preserved in critical positions for style
                         reduction = 1;
                     }
-                    else if (isStrategical && !kingInDanger && depth > 6)
+                    else if (isStrategical && !staticState.stmKingExposed
+                            && !staticState.opponentKingExposed)
                     {
-                        // Riduzione maggiore in posizioni strategiche tranquille
-                        reduction = 3;
+                        // Positional scenario: more aggressive reduction
+                        reduction = (depth > 8) ? 3 : 2;
+
+                        // Extra caution in congested positions
+                        if (staticState.allPiecesCount > 20) {
+                            reduction = std::min(reduction, 2);
+                        }
                     }
                     else if (gameCycle)
                     {
-                        // Riduzione intermedia durante i cicli di gioco
-                        reduction = baseReduction;
+                        // Cycle management: balancing safety and progress
+                        reduction = (pos.rule50_count() > 20) ? 3 : 1;
                     }
 
-                    // Ottimizzazione 4: Evitare riduzioni eccessive
-                    if (reduction >= depth)
-                    {
-                        reduction = depth - 1;
-                    }
-
+                    // Adaptive safety clamp
+                    reduction = std::clamp(reduction, 1, depth - 1);
+                    
                     depth -= reduction;
                 }
                 //from crystal-shashin end
@@ -2537,9 +2550,9 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             return ttData.value;
         if (staticState.legalMoveCount < 35 && std::abs(ttData.value) > 60)
         {
-            const bool isQuietRoot =
+            const bool areQuietKings =
               !staticState.stmKingExposed && !staticState.opponentKingExposed;
-            if (!dynamicDerived.isStrategical && isQuietRoot)
+            if (!dynamicDerived.isStrategical && areQuietKings)
             {
                 const bool depthCondition =
                   ttData.depth >= ADJUSTED_QS_DEPTH && ttData.depth > MIN_DEPTH_FOR_QS_CUTOFF;
