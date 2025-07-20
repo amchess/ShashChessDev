@@ -732,8 +732,9 @@ void Search::Worker::iterative_deepening() {
         (ss + i)->ply = i;
 
     ss->pv = pv;
-    localShashinManager.initDynamicRootShashinState(
-      networks[numaAccessToken], accumulatorStack, refreshTable, rootPos, ss, VALUE_ZERO, shConfig);
+    localShashinManager.initDynamicRootShashinState(networks[numaAccessToken], accumulatorStack,
+                                                    refreshTable, rootPos, ss, VALUE_ZERO, shConfig,
+                                                    rootDepth);
     if (mainThread)
     {
         if (mainThread->bestPreviousScore == VALUE_INFINITE)
@@ -1805,8 +1806,6 @@ moves_loop:  // When in check, search starts here
 
     int moveCount = 0;
 
-    //from Crystal-Shashin end
-
     // Step 13. Loop through all pseudo-legal moves until no moves remain
     // or a beta cutoff occurs.
     while ((move = mp.next_move()) != Move::none())
@@ -2330,11 +2329,11 @@ skipExtensionAndPruning:  // full threads search patch
                 if (depth > 2 && depth < 16 && !is_decisive(value))
                 {
                     const int baseReduction = 2;
-                    int reduction = baseReduction;
-                    
+                    int       reduction     = baseReduction;
+
                     // Specific tactical conditions for style (Shashin-correct)
-                    const bool criticalTactical = (staticState.opponentKingExposed && isTal) || 
-                                                (staticState.stmKingExposed && isPetrosian);
+                    const bool criticalTactical = (staticState.opponentKingExposed && isTal)
+                                               || (staticState.stmKingExposed && isPetrosian);
 
                     // Hybrid Shashin Strategy
                     if (criticalTactical)
@@ -2343,13 +2342,14 @@ skipExtensionAndPruning:  // full threads search patch
                         reduction = 1;
                     }
                     else if (isStrategical && !staticState.stmKingExposed
-                            && !staticState.opponentKingExposed)
+                             && !staticState.opponentKingExposed)
                     {
                         // Positional scenario: more aggressive reduction
                         reduction = (depth > 8) ? 3 : 2;
 
                         // Extra caution in congested positions
-                        if (staticState.allPiecesCount > 20) {
+                        if (staticState.allPiecesCount > 20)
+                        {
                             reduction = std::min(reduction, 2);
                         }
                     }
@@ -2361,7 +2361,7 @@ skipExtensionAndPruning:  // full threads search patch
 
                     // Adaptive safety clamp
                     reduction = std::clamp(reduction, 1, depth - 1);
-                    
+
                     depth -= reduction;
                 }
                 //from crystal-shashin end
@@ -3306,7 +3306,7 @@ void SearchManager::pv(Search::Worker&           worker,
         // Update the root Shashin state only for the main (first) PV line.
         if (updateShashin && (i == 0) && d > worker.lastShashinUpdatedDepth)
         {
-            worker.getShashinManager().updateRootShashinState(v, pos, d);
+            worker.getShashinManager().updateRootShashinState(v, pos, d, worker.rootDepth);
             worker.lastShashinUpdatedDepth = d;
         }
         //from shashin end

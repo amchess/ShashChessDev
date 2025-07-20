@@ -141,14 +141,19 @@ Value Search::Worker::search(
     ss->secondaryLine = false;
     ss->mainLine      = false;
     // from Crystal-shashin end
-	...    
-	//from crystal shashin begin
-    const auto& dynamicDerived     = rootShashinState.dynamicDerived;
-    const auto& staticState        = rootShashinState.staticState;
-    bool        isStrategical      = dynamicDerived.isStrategical;
-    bool        isAggressive       = dynamicDerived.isAggressive;
-    bool        isTacticalReactive = dynamicDerived.isTacticalReactive;
-    bool        quietKingSafe = !staticState.isSacrificial && (staticState.kingSafetyScore > -30);
+	...
+    //from crystal shashin begin
+    const auto&     dynamicBase        = rootShashinState.dynamicBase;
+    const auto&     dynamicDerived     = rootShashinState.dynamicDerived;
+    const auto&     staticState        = rootShashinState.staticState;
+    bool            isStrategical      = dynamicDerived.isStrategical;
+    bool            isAggressive       = dynamicDerived.isAggressive;
+    bool            isTacticalReactive = dynamicDerived.isTacticalReactive;
+    bool            quietKingSafe = !staticState.isSacrificial && (!staticState.stmKingExposed);
+    ShashinPosition style         = dynamicBase.currentRange;
+    bool            isCapablanca  = (style == ShashinPosition::CAPABLANCA);
+    bool            isTal         = localShashinManager.isTal();
+    bool            isPetrosian   = localShashinManager.isPetrosian();
     //from crystal shashin end
     if (!rootNode)
     {
@@ -168,23 +173,22 @@ Value Search::Worker::search(
         // Step 2. Check for aborted search and immediate draw
 		...        
 		// Step 3. Mate distance pruning. Even if we mate at the next move our score
-		...    
-	}
+		...  
+    }
+
 	...
+
     // Step 4. Transposition table lookup
 	...
+
     // Step 5. Tablebases probe
-	...    
-	//from shashin-crystal begin
+	...
+    //from shashin-crystal begin
     Depth originalDepth = (Depth) 0;
     //from shashin-crystal end
     // Step 6. Static evaluation of the position
 	...
-    //from Shashin begin
-    int  nullThreshold;
-    bool commonNullMoveConditions;
-    //from Shashin end
-	...
+
     // Step 7. Razoring
 	...
     // Step 8. Futility pruning: child node
@@ -244,7 +248,7 @@ Value Search::Worker::search(
                                            && (ss->ply >= thisThread->nmpMinPly) && !is_loss(beta);
 
         //only from Stockfish end
-        // only from shashin crystal begin - MODIFICA CHIAVE QUI
+        // only from shashin crystal begin
         bool allowNullMoveOnlyFromCrystal =
           !thisThread->nmpGuard && (gameCycle ? (depth < 8 && positionSafe) : true)
           && (eval >= ss->staticEval + 20) && positionSafe
@@ -345,7 +349,7 @@ Value Search::Worker::search(
                           &thisThread->captureHistory);
             Depth      probCutDepth = std::max(depth - 5, 0);
             // Shashin adjustment: reduce depth more in Capablanca positions
-            if (localShashinManager.isCapablanca() && depth > 8)
+            if (isCapablanca && depth > 8)
                 probCutDepth = std::max(depth - 7, 0);
             while ((move = mp.next_move()) != Move::none())
             {
@@ -407,7 +411,7 @@ moves_loop:  // When in check, search starts here
 
             if (crystalConditions)
             {
-                // Riduzione piÃ¹ aggressiva in profonditÃ  elevate
+                // Riduzione più aggressiva in profondità elevate
                 const Depth probCutDepth = depth - (depth >= 12 ? 5 : 4);
                 if (ttData.depth >= probCutDepth)
                     return probCutBeta;
@@ -512,22 +516,23 @@ moves_loop:  // When in check, search starts here
 
         // Step 15. Extensions
 		...
-        //shashin crystal begin
         if (!rootNode && move == ttData.move && !excludedMove
             && depth >= 6 - (thisThread->completedDepth > 27) + ss->ttPv && is_valid(ttData.value)
             && !is_decisive(ttData.value) && (ttData.bound & BOUND_LOWER)
             && ttData.depth >= depth - 3)
         {
-            const bool isPv               = PvNode;
-            const bool isTtPv             = ss->ttPv;
-            const int  marginBase         = 58 + 76 * (isTtPv && !isPv);
-            Value      singularBeta       = ttData.value - marginBase * depth / 57;
-            Depth      singularDepth      = newDepth / 2;
-            bool       isCriticalTactical = false;
-            if (depth >= 8 || staticState.kingSafetyScore < -40)
-            {
-                isCriticalTactical = localShashinManager.isTalTacticalHighMiddle();
-            }
+            // Shashin crystal adjustments begin
+            const bool isPv          = PvNode;
+            const bool isTtPv        = ss->ttPv;
+            const int  marginBase    = 58 + 76 * (isTtPv && !isPv);
+            Value      singularBeta  = ttData.value - marginBase * depth / 57;
+            Depth      singularDepth = newDepth / 2;
+
+            // Precise position style identification
+            bool isPotentiallyPetrosian = (depth >= 6 || staticState.stmKingExposed);
+            bool isPotentiallyTal       = (depth >= 6 || staticState.opponentKingExposed);
+            // Shashin crystal adjustments end
+
             ss->excludedMove = move;
             value = search<NonPV>(pos, ss, singularBeta - 1, singularBeta, singularDepth, cutNode);
             ss->excludedMove = Move::none();
@@ -540,17 +545,50 @@ moves_loop:  // When in check, search starts here
                                  - (ss->ply > thisThread->rootDepth) * 47;
                 int tripleMargin = 84 + 269 * PvNode - 253 * !ttCapture + 91 * ss->ttPv - corrValAdj
                                  - (ss->ply * 2 > thisThread->rootDepth * 3) * 54;
-
-
-                if (isCriticalTactical)
+                // Dynamic adjustment based on Shashin intensity
+                if (isTal && isPotentiallyTal)
                 {
-                    doubleMargin -= 45;
-                    tripleMargin -= 60;
+                    // Tal: higher intensity = more reduction
+                    double talIntensity = ShashinManager::getTalIntensity(style);
+                    doubleMargin -= static_cast<int>(55 * talIntensity);
+                    tripleMargin -= static_cast<int>(75 * talIntensity);
                 }
-                else if (isStrategical)
+                else if (isPetrosian && isPotentiallyPetrosian)
                 {
-                    doubleMargin += 40;
-                    tripleMargin += 60;
+                    // Petrosian: higher intensity = less reduction
+                    double petrosianIntensity = ShashinManager::getPetrosianIntensity(style);
+                    doubleMargin -= static_cast<int>(55 * (1.0 - petrosianIntensity));
+                    tripleMargin -= static_cast<int>(75 * (1.0 - petrosianIntensity));
+                }
+
+                if (isCapablanca)
+                {
+                    // Pure positional strategy
+                    doubleMargin += 45;
+                    tripleMargin += 65;
+                }
+                // Hybrid styles (should not occur but maintained as fallback)
+                else
+                {
+                    // Hybrid positions with dynamic weighting
+                    bool isAttackingHybrid =
+                      (style == ShashinPosition::CAPABLANCA_TAL
+                       || (style == ShashinPosition::TAL_CAPABLANCA_PETROSIAN));
+                    bool isDefensiveHybrid =
+                      (style == ShashinPosition::CAPABLANCA_PETROSIAN
+                       || (style == ShashinPosition::TAL_CAPABLANCA_PETROSIAN));
+                    if (isAttackingHybrid)
+                    {
+                        // Hybrid with tactical emphasis
+                        doubleMargin -= isPotentiallyTal ? 32 : 18;
+                        tripleMargin -= isPotentiallyTal ? 48 : 28;
+                    }
+                    else if (isDefensiveHybrid)
+                    {
+                        // Hybrid with strategic emphasis
+                        doubleMargin += isPotentiallyPetrosian ? 15 : 38;
+                        tripleMargin += isPotentiallyPetrosian ? 22 : 56;
+                    }
                 }
                 extension =
                   1 + (value < singularBeta - doubleMargin) + (value < singularBeta - tripleMargin);
@@ -637,7 +675,7 @@ moves_loop:  // When in check, search starts here
                 bool doDeeperSearch    = value > bestValue + 42 + 2 * newDepth;
                 bool doShallowerSearch = value < bestValue + 9;
 
-                if (applyCrystalLMR && doDeeperSearch && !localShashinManager.isStrategical())
+                if (applyCrystalLMR && doDeeperSearch && !isStrategical)
                 {
                     Depth extDepth = newDepth + 1;
 
@@ -667,6 +705,26 @@ moves_loop:  // When in check, search starts here
 
         // Step 18. Full-depth search when LMR is skipped
 				...
+
+        // Step 19. Undo move
+		...
+        // Step 20. Check for a new best move
+		...        
+		if (threads.stop.load(std::memory_order_relaxed))
+            return VALUE_ZERO;
+
+        if (rootNode)
+        {
+			...
+        }
+		...
+
+        if (value + inc > bestValue)
+        {
+            bestValue = value;
+
+            if (value + inc > alpha)
+            {
                 if (value >= beta)
                 {
                     // (* Scaler) Especially if they make cutoffCnt increment more often.
@@ -679,35 +737,39 @@ moves_loop:  // When in check, search starts here
                 // Reduce other moves if we have found at least one score improvement
                 if (depth > 2 && depth < 16 && !is_decisive(value))
                 {
-                    const int  baseReduction = 2;
-                    int        reduction     = baseReduction;
-                    const bool isTactical =
-                      localShashinManager.isTal() || localShashinManager.isPetrosian();
-                    const bool kingInDanger = staticState.stmKingDanger;
+                    const int baseReduction = 2;
+                    int reduction = baseReduction;
+                    
+                    // Specific tactical conditions for style (Shashin-correct)
+                    const bool criticalTactical = (staticState.opponentKingExposed && isTal) || 
+                                                (staticState.stmKingExposed && isPetrosian);
 
-                    // Ottimizzazione 3: Riduzione dinamica
-                    if (isTactical && kingInDanger)
+                    // Hybrid Shashin Strategy
+                    if (criticalTactical)
                     {
-                        // Riduzione minima in posizioni tattiche critiche
+                        // Depth preserved in critical positions for style
                         reduction = 1;
                     }
-                    else if (isStrategical && !kingInDanger && depth > 6)
+                    else if (isStrategical && !staticState.stmKingExposed
+                            && !staticState.opponentKingExposed)
                     {
-                        // Riduzione maggiore in posizioni strategiche tranquille
-                        reduction = 3;
+                        // Positional scenario: more aggressive reduction
+                        reduction = (depth > 8) ? 3 : 2;
+
+                        // Extra caution in congested positions
+                        if (staticState.allPiecesCount > 20) {
+                            reduction = std::min(reduction, 2);
+                        }
                     }
                     else if (gameCycle)
                     {
-                        // Riduzione intermedia durante i cicli di gioco
-                        reduction = baseReduction;
+                        // Cycle management: balancing safety and progress
+                        reduction = (pos.rule50_count() > 20) ? 3 : 1;
                     }
 
-                    // Ottimizzazione 4: Evitare riduzioni eccessive
-                    if (reduction >= depth)
-                    {
-                        reduction = depth - 1;
-                    }
-
+                    // Adaptive safety clamp
+                    reduction = std::clamp(reduction, 1, depth - 1);
+                    
                     depth -= reduction;
                 }
                 //from crystal-shashin end
@@ -758,11 +820,15 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             return ttData.value;
         if (staticState.legalMoveCount < 35 && std::abs(ttData.value) > 60)
         {
-            if (!dynamicDerived.isStrategical && !staticState.kingDanger)
+            const bool areQuietKings =
+              !staticState.stmKingExposed && !staticState.opponentKingExposed;
+            if (!dynamicDerived.isStrategical && areQuietKings)
             {
                 const bool depthCondition =
                   ttData.depth >= ADJUSTED_QS_DEPTH && ttData.depth > MIN_DEPTH_FOR_QS_CUTOFF;
-                const bool kingSafety = !staticState.kingExposed || ttData.depth > DEPTH_QS + 4;
+                const bool kingSafety =
+                  (!staticState.stmKingExposed && !staticState.opponentKingExposed)
+                  || ttData.depth > DEPTH_QS + 4;
                 if (depthCondition && kingSafety)
                     return ttData.value;
             }

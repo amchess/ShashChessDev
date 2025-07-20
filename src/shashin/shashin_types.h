@@ -70,6 +70,7 @@ struct ShashinConfig {
 // Packed structs for better cache utilization
 struct DynamicBaseState {
     int             currentDepth = 0;
+    int rootDepth = 0;
     ShashinPosition currentRange = ShashinPosition::CAPABLANCA;
 };
 

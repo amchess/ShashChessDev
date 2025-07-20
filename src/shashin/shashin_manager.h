@@ -30,8 +30,8 @@ class ShashinManager {
     explicit ShashinManager(const ShashinParams& params_ = {});
 
     // Core interface
-    ShashinPosition         getResilientShashinRange(ShashinPosition range, int depth = 0);
-    void                    updateRootShashinState(Value score, const Position& rootPos, int depth);
+    ShashinPosition         getResilientShashinRange(ShashinPosition range, int depth);
+    void                    updateRootShashinState(Value score, const Position& rootPos, int depth, int rootDepth);
     ShashinPosition         getShashinRange(Value value, const Position& rootPos);
     const RootShashinState& getState() const { return state; }
     void                    setDepth(int depth) { state.dynamicBase.currentDepth = depth; }
@@ -61,10 +61,10 @@ class ShashinManager {
                                      Position&                     rootPos,
                                      Search::Stack*                ss,
                                      Value                         optimism,
-                                     const ShashinConfig&          config);
-    void setDynamicBaseState(Value score, const Position& rootPos, int depth);
+                                     const ShashinConfig&          config, Depth rootDepth);
+    void setDynamicBaseState(Value score, const Position& rootPos, int depth, int rootDepth);
     void setDynamicDerivedState();
-    void initDynamicBaseState(Value currentValue, Position& rootPos, const ShashinConfig& config);
+    void initDynamicBaseState(Value currentValue, Position& rootPos, const ShashinConfig& config, int rootDepth);
 
     // Feature flags
     bool useMoveGenCrystalLogic() const;

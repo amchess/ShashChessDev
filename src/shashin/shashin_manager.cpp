@@ -10,30 +10,34 @@ ShashinManager::ShashinManager(const ShashinParams& params_) :
     params(params_) {}
 
 ShashinPosition ShashinManager::getResilientShashinRange(ShashinPosition range, int depth) {
+    int rootDepth = state.dynamicBase.rootDepth;
 
-    size_t mvCount          = state.staticState.legalMoveCount;
-    int    dynamicThreshold = (mvCount > params.highMobilityMoves) ? params.highDepthLimit
-                            : (mvCount > params.lowMobilityMoves)  ? params.midDepthLimit
-                                                                   : params.lowDepthLimit;
+    if (rootDepth <= 0)
+        return range;  // no division by zero
 
-    // It implements the Shashin max resilience principle
+    // current/max depth ratio calculation
+    double           depthRatio        = static_cast<double>(depth) / rootDepth;
+    constexpr double highThreshold     = 0.6;  // 60% of max depth
+    constexpr double midThreshold      = 0.4;  // 40% of max depth
+    constexpr double advancedThreshold = 0.8;  // 80% of max depth
+
     switch (range)
     {
-    // Direct transistion for hybrids
     case ShashinPosition::CAPABLANCA_TAL :
-        return (depth <= dynamicThreshold) ? ShashinPosition::LOW_TAL : ShashinPosition::CAPABLANCA;
+        return (depthRatio <= highThreshold) ? ShashinPosition::LOW_TAL
+                                             : ShashinPosition::CAPABLANCA;
 
     case ShashinPosition::CAPABLANCA_PETROSIAN :
-        return (depth <= dynamicThreshold) ? ShashinPosition::CAPABLANCA
-                                           : ShashinPosition::LOW_PETROSIAN;
+        return (depthRatio <= highThreshold) ? ShashinPosition::CAPABLANCA
+                                             : ShashinPosition::LOW_PETROSIAN;
 
     case ShashinPosition::TAL_CAPABLANCA_PETROSIAN :
-        if (depth <= dynamicThreshold)
+        if (depthRatio <= midThreshold)
             return ShashinPosition::LOW_TAL;
-        if (depth <= params.advancedDepthLimit)
+        if (depthRatio <= advancedThreshold)
             return ShashinPosition::CAPABLANCA;
         return ShashinPosition::LOW_PETROSIAN;
-    //no hybrids
+
     default :
         return range;
     }
@@ -190,16 +194,22 @@ bool ShashinManager::isCapablanca() const { return inRange<ShashinPosition::CAPA
 
 void ShashinManager::initDynamicBaseState(Value                currentValue,
                                           Position&            rootPos,
-                                          const ShashinConfig& config) {
+                                          const ShashinConfig& config,
+                                          int                  rootDepth) {
     state.dynamicBase.currentDepth = 0;
+    state.dynamicBase.rootDepth    = rootDepth;  // Memorizza la profondità massima
     ShashinPosition currentRange   = getInitialShashinRange(rootPos, currentValue, config);
-    state.dynamicBase.currentRange = getResilientShashinRange(currentRange);
+    state.dynamicBase.currentRange = getResilientShashinRange(currentRange, 0);
 }
 
-void ShashinManager::setDynamicBaseState(Value score, const Position& rootPos, int depth) {
-    ShashinPosition range          = static_cast<ShashinPosition>(getShashinRange(score, rootPos));
+void ShashinManager::setDynamicBaseState(Value           score,
+                                         const Position& rootPos,
+                                         int             depth,
+                                         int             rootDepth) {
+    ShashinPosition range          = getShashinRange(score, rootPos);
     state.dynamicBase.currentRange = getResilientShashinRange(range, depth);
     state.dynamicBase.currentDepth = depth;
+    state.dynamicBase.rootDepth    = rootDepth;
 }
 
 void ShashinManager::initDynamicRootShashinState(const Eval::NNUE::Networks&   networks,
@@ -208,18 +218,22 @@ void ShashinManager::initDynamicRootShashinState(const Eval::NNUE::Networks&   n
                                                  Position&                     rootPos,
                                                  Search::Stack*                ss,
                                                  int                           optimism,
-                                                 const ShashinConfig&          config) {
+                                                 const ShashinConfig&          config,
+                                                 Depth                         rootDepth) {
     const auto& alignedNetworks = networks;
     initDynamicBaseState(
       static_value(alignedNetworks, accumulators, refreshTable, rootPos, ss, optimism), rootPos,
-      config);
+      config, rootDepth);
     setDynamicDerivedState();
     MoveConfig::useMoveShashinLogic = state.dynamicDerived.useMoveGenCrystalLogic;
     MoveConfig::isStrategical       = isStrategical();
     MoveConfig::isAggressive        = state.dynamicDerived.isAggressive;
 }
 
-void ShashinManager::updateRootShashinState(Value score, const Position& rootPos, int depth) {
+void ShashinManager::updateRootShashinState(Value           score,
+                                            const Position& rootPos,
+                                            int             depth,
+                                            int             rootDepth) {
     if (depth <= state.dynamicBase.currentDepth && depth != 0)
         return;
 
@@ -227,7 +241,7 @@ void ShashinManager::updateRootShashinState(Value score, const Position& rootPos
     if (newRange == state.dynamicBase.currentRange && depth == state.dynamicBase.currentDepth)
         return;
 
-    setDynamicBaseState(score, rootPos, depth);
+    setDynamicBaseState(score, rootPos, depth, rootDepth);
     setDynamicDerivedState();
 
     // Direct comparison without temporaries
