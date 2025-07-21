@@ -22,32 +22,19 @@ ShashinPosition ShashinManager::getResilientShashinRange(ShashinPosition range, 
     switch (range)
     {
     case ShashinPosition::CAPABLANCA_TAL :
-        // Dynamic threshold based on position complexity
-        threshold = state.staticState.kingDanger ? 0.55 : 0.50;
+        // Soglia base 60% + 2% extra solo per re in grave pericolo
+        threshold = (state.staticState.kingDanger) ? 0.62 : 0.60;
         return (depthRatio <= threshold) ? ShashinPosition::LOW_TAL : ShashinPosition::CAPABLANCA;
 
     case ShashinPosition::CAPABLANCA_PETROSIAN :
-        // Adjust based on material advantage
-        threshold = state.staticState.highMaterial ? 0.60 : 0.45;
-        return (depthRatio <= threshold) ? ShashinPosition::CAPABLANCA
-                                         : ShashinPosition::LOW_PETROSIAN;
+        return (depthRatio <= 0.60) ? ShashinPosition::CAPABLANCA : ShashinPosition::LOW_PETROSIAN;
 
-    case ShashinPosition::TAL_CAPABLANCA_PETROSIAN : {
-        // Triple hybrid with progressive transitions
-        const double segment          = 1.0 / 3.0;
-        const double adjustedSegments = state.staticState.legalMoveCount > 30
-                                        ? segment * 0.9   // More time for Tal in complex positions
-                                        : segment * 1.1;  // Less time for Tal in simple positions
-
-        double talThreshold        = adjustedSegments;
-        double capablancaThreshold = 2 * adjustedSegments;
-
-        if (depthRatio <= talThreshold)
+    case ShashinPosition::TAL_CAPABLANCA_PETROSIAN :
+        if (depthRatio <= 0.40)
             return ShashinPosition::LOW_TAL;
-        if (depthRatio <= capablancaThreshold)
+        if (depthRatio <= 0.80)
             return ShashinPosition::CAPABLANCA;
         return ShashinPosition::LOW_PETROSIAN;
-    }
     default :
         return range;
     }
