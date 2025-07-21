@@ -16,28 +16,38 @@ ShashinPosition ShashinManager::getResilientShashinRange(ShashinPosition range, 
         return range;  // no division by zero
 
     // current/max depth ratio calculation
-    double           depthRatio         = static_cast<double>(depth) / rootDepth;
-    constexpr double balancedThreshold  = 0.5;        // 50% of max depth (equally balanced)
-    constexpr double thirdThreshold     = 1.0 / 3.0;  // 33.3% of max depth
-    constexpr double twoThirdsThreshold = 2.0 / 3.0;  // 66.7% of max depth
+    double depthRatio = static_cast<double>(depth) / rootDepth;
+    double threshold;
 
     switch (range)
     {
     case ShashinPosition::CAPABLANCA_TAL :
-        return (depthRatio <= balancedThreshold) ? ShashinPosition::LOW_TAL
-                                                 : ShashinPosition::CAPABLANCA;
+        // Dynamic threshold based on position complexity
+        threshold = state.staticState.kingDanger ? 0.55 : 0.50;
+        return (depthRatio <= threshold) ? ShashinPosition::LOW_TAL : ShashinPosition::CAPABLANCA;
 
     case ShashinPosition::CAPABLANCA_PETROSIAN :
-        return (depthRatio <= balancedThreshold) ? ShashinPosition::CAPABLANCA
-                                                 : ShashinPosition::LOW_PETROSIAN;
+        // Adjust based on material advantage
+        threshold = state.staticState.highMaterial ? 0.60 : 0.45;
+        return (depthRatio <= threshold) ? ShashinPosition::CAPABLANCA
+                                         : ShashinPosition::LOW_PETROSIAN;
 
-    case ShashinPosition::TAL_CAPABLANCA_PETROSIAN :
-        if (depthRatio <= thirdThreshold)
+    case ShashinPosition::TAL_CAPABLANCA_PETROSIAN : {
+        // Triple hybrid with progressive transitions
+        const double segment          = 1.0 / 3.0;
+        const double adjustedSegments = state.staticState.legalMoveCount > 30
+                                        ? segment * 0.9   // More time for Tal in complex positions
+                                        : segment * 1.1;  // Less time for Tal in simple positions
+
+        double talThreshold        = adjustedSegments;
+        double capablancaThreshold = 2 * adjustedSegments;
+
+        if (depthRatio <= talThreshold)
             return ShashinPosition::LOW_TAL;
-        if (depthRatio <= twoThirdsThreshold)
+        if (depthRatio <= capablancaThreshold)
             return ShashinPosition::CAPABLANCA;
         return ShashinPosition::LOW_PETROSIAN;
-
+    }
     default :
         return range;
     }
