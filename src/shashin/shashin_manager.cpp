@@ -16,25 +16,25 @@ ShashinPosition ShashinManager::getResilientShashinRange(ShashinPosition range, 
         return range;  // no division by zero
 
     // current/max depth ratio calculation
-    double           depthRatio        = static_cast<double>(depth) / rootDepth;
-    constexpr double highThreshold     = 0.6;  // 60% of max depth
-    constexpr double midThreshold      = 0.4;  // 40% of max depth
-    constexpr double advancedThreshold = 0.8;  // 80% of max depth
+    double           depthRatio         = static_cast<double>(depth) / rootDepth;
+    constexpr double balancedThreshold  = 0.5;        // 50% of max depth (equally balanced)
+    constexpr double thirdThreshold     = 1.0 / 3.0;  // 33.3% of max depth
+    constexpr double twoThirdsThreshold = 2.0 / 3.0;  // 66.7% of max depth
 
     switch (range)
     {
     case ShashinPosition::CAPABLANCA_TAL :
-        return (depthRatio <= highThreshold) ? ShashinPosition::LOW_TAL
-                                             : ShashinPosition::CAPABLANCA;
+        return (depthRatio <= balancedThreshold) ? ShashinPosition::LOW_TAL
+                                                 : ShashinPosition::CAPABLANCA;
 
     case ShashinPosition::CAPABLANCA_PETROSIAN :
-        return (depthRatio <= highThreshold) ? ShashinPosition::CAPABLANCA
-                                             : ShashinPosition::LOW_PETROSIAN;
+        return (depthRatio <= balancedThreshold) ? ShashinPosition::CAPABLANCA
+                                                 : ShashinPosition::LOW_PETROSIAN;
 
     case ShashinPosition::TAL_CAPABLANCA_PETROSIAN :
-        if (depthRatio <= midThreshold)
+        if (depthRatio <= thirdThreshold)
             return ShashinPosition::LOW_TAL;
-        if (depthRatio <= advancedThreshold)
+        if (depthRatio <= twoThirdsThreshold)
             return ShashinPosition::CAPABLANCA;
         return ShashinPosition::LOW_PETROSIAN;
 
