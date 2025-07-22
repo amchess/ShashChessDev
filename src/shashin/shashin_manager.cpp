@@ -9,36 +9,7 @@ using namespace ShashChess::Shashin;
 ShashinManager::ShashinManager(const ShashinParams& params_) :
     params(params_) {}
 
-ShashinPosition ShashinManager::getResilientShashinRange(ShashinPosition range, int depth) {
-    int rootDepth = state.dynamicBase.rootDepth;
 
-    if (rootDepth <= 0)
-        return range;  // no division by zero
-
-    // current/max depth ratio calculation
-    double depthRatio = static_cast<double>(depth) / rootDepth;
-    double threshold;
-
-    switch (range)
-    {
-    case ShashinPosition::CAPABLANCA_TAL :
-        // Soglia base 60% + 2% extra solo per re in grave pericolo
-        threshold = (state.staticState.kingDanger) ? 0.62 : 0.60;
-        return (depthRatio <= threshold) ? ShashinPosition::LOW_TAL : ShashinPosition::CAPABLANCA;
-
-    case ShashinPosition::CAPABLANCA_PETROSIAN :
-        return (depthRatio <= 0.60) ? ShashinPosition::CAPABLANCA : ShashinPosition::LOW_PETROSIAN;
-
-    case ShashinPosition::TAL_CAPABLANCA_PETROSIAN :
-        if (depthRatio <= 0.40)
-            return ShashinPosition::LOW_TAL;
-        if (depthRatio <= 0.80)
-            return ShashinPosition::CAPABLANCA;
-        return ShashinPosition::LOW_PETROSIAN;
-    default :
-        return range;
-    }
-}
 __attribute__((hot)) bool ShashinManager::useMoveGenCrystalLogic() const {
     const auto& s = state.staticState;
     return (state.dynamicBase.currentRange >= ShashinPosition::MIDDLE_LOW_TAL
@@ -148,7 +119,44 @@ bool ShashinManager::isComplexPosition() const {
     return (staticState.legalMoveCount >= 25 && staticState.highMaterial) || staticState.kingDanger
         || staticState.pawnsNearPromotion;
 }
+ShashinPosition ShashinManager::getResilientShashinRange(ShashinPosition range, int depth) {
+    int rootDepth = state.dynamicBase.rootDepth;
+    if (rootDepth <= 0)
+        return range;
 
+    double             depthRatio  = static_cast<double>(depth) / rootDepth;
+    const StaticState& staticState = state.staticState;
+    bool               complex     = isComplexPosition();
+
+    switch (range)
+    {
+    case ShashinPosition::CAPABLANCA_TAL :
+        // +2% per complessità + re esposto
+        if (complex && staticState.opponentKingExposed)
+            return (depthRatio <= 0.62) ? ShashinPosition::LOW_TAL : ShashinPosition::CAPABLANCA;
+
+        return (depthRatio <= 0.60) ? ShashinPosition::LOW_TAL : ShashinPosition::CAPABLANCA;
+
+    case ShashinPosition::CAPABLANCA_PETROSIAN :
+        // +2% per complessità + re avversario esposto
+        if (complex && staticState.stmKingExposed)
+            return (depthRatio <= 0.62) ? ShashinPosition::CAPABLANCA
+                                        : ShashinPosition::LOW_PETROSIAN;
+
+        return (depthRatio <= 0.60) ? ShashinPosition::CAPABLANCA : ShashinPosition::LOW_PETROSIAN;
+
+    case ShashinPosition::TAL_CAPABLANCA_PETROSIAN :
+        // Manteniamo le soglie originali per l'ibrido triplo
+        if (depthRatio <= 0.40)
+            return ShashinPosition::LOW_TAL;
+        if (depthRatio <= 0.80)
+            return ShashinPosition::CAPABLANCA;
+        return ShashinPosition::LOW_PETROSIAN;
+
+    default :
+        return range;
+    }
+}
 bool ShashinManager::isHighPieceDensityCapablancaPosition() const {
     return isInRange(ShashinPosition::CAPABLANCA) && isHighPieceDensity();
 }
