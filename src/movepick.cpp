@@ -121,7 +121,7 @@ MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceTo
 // Captures are ordered by Most Valuable Victim (MVV), preferring captures
 // with a good history. Quiets moves are ordered using the history tables.
 template<GenType Type>
-void MovePicker::score() {
+ExtMove* MovePicker::score(MoveList<Type>& ml) {
 
     static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
@@ -143,8 +143,12 @@ void MovePicker::score() {
         threatByLesser[QUEEN] = pos.attacks_by<ROOK>(~us) | threatByLesser[ROOK];
     }
 
-    for (auto& m : *this)
+    ExtMove* it = cur;
+    for (auto move : ml)
     {
+        ExtMove& m = *it++;
+        m          = move;
+
         const Square    from          = m.from_sq();
         const Square    to            = m.to_sq();
         const Piece     pc            = pos.moved_piece(m);
@@ -261,6 +265,7 @@ void MovePicker::score() {
         }
         //fortress end
     }
+    return it;
 }
 
 
@@ -295,14 +300,16 @@ top:
 
     case CAPTURE_INIT :
     case PROBCUT_INIT :
-    case QCAPTURE_INIT :
-        cur = endBadCaptures = moves;
-        endCur = endCaptures = generate<CAPTURES>(pos, cur);
+    case QCAPTURE_INIT : {
+        MoveList<CAPTURES> ml(pos);
 
-        score<CAPTURES>();
+        cur = endBadCaptures = moves;
+        endCur = endCaptures = score<CAPTURES>(ml);
+
         partial_insertion_sort(cur, endCur, std::numeric_limits<int>::min());
         ++stage;
         goto top;
+    }
 
     case GOOD_CAPTURE :
         if (select([&]() {
@@ -319,9 +326,10 @@ top:
     case QUIET_INIT :
         if (!skipQuiets)
         {
-            endCur = endGenerated = generate<QUIETS>(pos, cur);
+            MoveList<QUIETS> ml(pos);
 
-            score<QUIETS>();
+            endCur = endGenerated = score<QUIETS>(ml);
+
             partial_insertion_sort(cur, endCur, -3560 * depth);
         }
 
@@ -356,14 +364,16 @@ top:
 
         return Move::none();
 
-    case EVASION_INIT :
-        cur    = moves;
-        endCur = endGenerated = generate<EVASIONS>(pos, cur);
+    case EVASION_INIT : {
+        MoveList<EVASIONS> ml(pos);
 
-        score<EVASIONS>();
+        cur    = moves;
+        endCur = endGenerated = score<EVASIONS>(ml);
+
         partial_insertion_sort(cur, endCur, std::numeric_limits<int>::min());
         ++stage;
         [[fallthrough]];
+    }
 
     case EVASION :
     case QCAPTURE :
