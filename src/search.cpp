@@ -2149,6 +2149,10 @@ skipExtensionAndPruning:  // full threads search patch
                                            newDepth + !allNode + (PvNode && !bestMove)))
                     + PvNode;
 
+            ss->reduction = newDepth - d;
+            value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
+            ss->reduction = 0;
+
             // Do a full-depth search when reduced LMR search fails high
             // (*Scaler) Usually doing more shallower searches
             // doesn't scale well to longer TCs
