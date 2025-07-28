@@ -2149,13 +2149,6 @@ skipExtensionAndPruning:  // full threads search patch
                                            newDepth + !allNode + (PvNode && !bestMove)))
                     + PvNode;
 
-            if (isCrystal && isStrategical && !capture && moveCount > 6)
-                d = std::max(1, d - 1);
-
-            ss->reduction = newDepth - d;
-            value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
-            ss->reduction = 0;
-
             // Do a full-depth search when reduced LMR search fails high
             // (*Scaler) Usually doing more shallower searches
             // doesn't scale well to longer TCs
@@ -2163,10 +2156,10 @@ skipExtensionAndPruning:  // full threads search patch
             {
                 // Adjust full-depth search based on LMR results - if the result was
                 // good enough search deeper, if it was bad enough search shallower.
-                bool doDeeperSearch    = value > bestValue + 42 + 2 * newDepth;
-                bool doShallowerSearch = value < bestValue + 9;
-
-                if (applyCrystalLMR && doDeeperSearch && !isStrategical)
+                const bool doDeeperSearch    = value > (bestValue + 42 + 2 * newDepth);
+                const bool doShallowerSearch = value < bestValue + 9;
+                if (isCrystal && applyCrystalLMR && doDeeperSearch
+                    && !localShashinManager.isStrategical())
                 {
                     Depth extDepth = newDepth + 1;
 
@@ -2178,13 +2171,14 @@ skipExtensionAndPruning:  // full threads search patch
                 else
                 {
                     newDepth += doDeeperSearch - doShallowerSearch;
+
                     if (newDepth > d)
                         value =
                           -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, newDepth, !cutNode);
                 }
 
-                // Bonus storia differenziato
-                int bonus = applyCrystalLMR ? 1808 : 1508;
+                // Differianted bonus history by Shashin
+                int bonus = (isCrystal && applyCrystalLMR) ? 1808 : 1508;
                 update_continuation_histories(ss, movedPiece, move.to_sq(), bonus);
             }
             else if (value > alpha && value < bestValue + 9)
