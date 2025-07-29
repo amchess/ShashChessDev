@@ -1964,7 +1964,7 @@ moves_loop:  // When in check, search starts here
             // Shashin crystal adjustments begin
             const bool isPv          = PvNode;
             const bool isTtPv        = ss->ttPv;
-            const int  marginBase    = 56 + 79 * (ss->ttPv && !PvNode);
+            const int  marginBase    = 56 + 79 * (isTtPv && !isPv);
             Value      singularBeta  = ttData.value - marginBase * depth / 58;
             Depth      singularDepth = newDepth / 2;
 
