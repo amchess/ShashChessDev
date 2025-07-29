@@ -113,7 +113,7 @@ int correction_value(const Worker& w, const Position& pos, const Stack* const ss
       m.is_ok() ? (*(ss - 2)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()]
                  : 0;
 
-    return 7696 * pcv + 7689 * micv + 9708 * (wnpcv + bnpcv) + 6978 * cntcv;
+    return 8867 * pcv + 8136 * micv + 10757 * (wnpcv + bnpcv) + 7232 * cntcv;
 }
 
 // Add correctionHistory value to raw staticEval and guarantee evaluation
@@ -129,11 +129,11 @@ void update_correction_history(const Position& pos,
     const Move  m  = (ss - 1)->currentMove;
     const Color us = pos.side_to_move();
 
-    static constexpr int nonPawnWeight = 172;
+    static constexpr int nonPawnWeight = 165;
 
     workerThread.pawnCorrectionHistory[pawn_structure_index<Correction>(pos)][us]
-      << bonus * 111 / 128;
-    workerThread.minorPieceCorrectionHistory[minor_piece_index(pos)][us] << bonus * 151 / 128;
+      << bonus * 128 / 128;
+    workerThread.minorPieceCorrectionHistory[minor_piece_index(pos)][us] << bonus * 153 / 128;
     workerThread.nonPawnCorrectionHistory[non_pawn_index<WHITE>(pos)][WHITE][us]
       << bonus * nonPawnWeight / 128;
     workerThread.nonPawnCorrectionHistory[non_pawn_index<BLACK>(pos)][BLACK][us]
@@ -141,7 +141,7 @@ void update_correction_history(const Position& pos,
 
     if (m.is_ok())
         (*(ss - 2)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()]
-          << bonus * 141 / 128;
+          << bonus * 153 / 128;
 }
 
 // Add a small random component to draw evaluations to avoid 3-fold blindness
@@ -1781,14 +1781,14 @@ moves_loop:  // When in check, search starts here
 
             if (crystalConditions)
             {
-                // Riduzione più aggressiva in profondità elevate
+                // More aggressive reduction in high depth
                 const Depth probCutDepth = depth - (depth >= 12 ? 5 : 4);
                 if (ttData.depth >= probCutDepth)
                     return probCutBeta;
             }
         }
 
-        // 2. ProbCut Stockfish: condizioni standard per tutte le altre posizioni
+        // 2. ProbCut Stockfish: standard conditions for all other positions
         return probCutBeta;
     }
     //from Shashin Crystal end
