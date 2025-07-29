@@ -1962,10 +1962,10 @@ moves_loop:  // When in check, search starts here
             && ttData.depth >= depth - 3)
         {
             // Shashin crystal adjustments begin
-            const bool isPv         = PvNode;
-            const bool isTtPv       = ss->ttPv;
-            const int  marginBase   = 58 + 76 * (isTtPv && !isPv);
-            Value      singularBeta = ttData.value - (56 + 79 * (ss->ttPv && !PvNode)) * depth / 58;
+            const bool isPv          = PvNode;
+            const bool isTtPv        = ss->ttPv;
+            const int  marginBase    = 56 + 79 * (ss->ttPv && !PvNode);
+            Value      singularBeta  = ttData.value - marginBase * depth / 58;
             Depth      singularDepth = newDepth / 2;
 
             // Precise position style identification
