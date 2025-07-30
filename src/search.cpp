@@ -1774,7 +1774,7 @@ moves_loop:  // When in check, search starts here
 
     if (commonProbcut)
     {
-        // 1. ProbCut Crystal: solo per posizioni tattiche complesse
+        // 1. ProbCut Crystal: only for complex tactical positions
         if (localShashinManager.allowCrystalProbCut() && depth >= 8)
         {
             const bool crystalConditions = !PvNode && ttCapture && !gameCycle;
@@ -2155,6 +2155,8 @@ skipExtensionAndPruning:  // full threads search patch
             // To prevent problems when the max value is less than the min value,
             // std::clamp has been replaced by a more robust implementation.
             Depth d = std::max(1, std::min(newDepth - r / 1024, newDepth + 1 + PvNode)) + PvNode;
+            if (isCrystal && isStrategical && !capture && moveCount > 6)
+                d = std::max(1, d - 1);
 
             ss->reduction = newDepth - d;
             value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
@@ -2169,9 +2171,10 @@ skipExtensionAndPruning:  // full threads search patch
                 // good enough search deeper, if it was bad enough search shallower.
                 const bool doDeeperSearch    = value > (bestValue + 43 + 2 * newDepth);
                 const bool doShallowerSearch = value < bestValue + 9;
-                if (isCrystal && applyCrystalLMR && doDeeperSearch
-                    && !localShashinManager.isStrategical())
+
+                if (applyCrystalLMR && doDeeperSearch && !isStrategical)
                 {
+
                     Depth extDepth = newDepth + 1;
 
                     if (localShashinManager.isTactical() && value > alpha + 150)
@@ -2189,7 +2192,7 @@ skipExtensionAndPruning:  // full threads search patch
                 }
 
                 // Differianted bonus history by Shashin
-                int bonus = (isCrystal && applyCrystalLMR) ? 1712 : 1412;
+                int bonus = applyCrystalLMR ? 1712 : 1412;
                 update_continuation_histories(ss, movedPiece, move.to_sq(), bonus);
             }
         }
