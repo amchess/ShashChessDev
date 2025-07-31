@@ -1211,6 +1211,7 @@ Value Search::Worker::search(
     const auto&     dynamicDerived     = rootShashinState.dynamicDerived;
     const auto&     staticState        = rootShashinState.staticState;
     bool            isStrategical      = dynamicDerived.isStrategical;
+    bool            isTactical         = localShashinManager.isTactical();
     bool            isAggressive       = dynamicDerived.isAggressive;
     bool            isTacticalReactive = dynamicDerived.isTacticalReactive;
     bool            quietKingSafe = !staticState.isSacrificial && (!staticState.stmKingExposed);
@@ -1587,17 +1588,17 @@ Value Search::Worker::search(
             return adjustedMargin * d - improving * adjustedMargin * 2
                  - opponentWorsening * adjustedMargin / 3 + (ss - 1)->statScore / 356
                  + std::abs(correctionValue) / 171290
-                 - 50 * staticState.legalMoveCount / 40;  // Account for mobility
+                 - 35 * staticState.legalMoveCount / 32;  // Account for mobility
         };
 
-        bool allowPruning = !staticState.kingDanger || (dynamicDerived.isStrategical && depth < 8);
+        bool allowPruning = !staticState.kingDanger || (isStrategical && depth < 8);
 
         if (allowPruning && !ss->ttPv && depth < 14 && eval - futility_margin(depth) >= beta
             && eval >= beta && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval))
         {
             // Less aggressive reduction in critical positions
-            Value reduction = (dynamicDerived.isAggressive) ? (eval - beta) / 4 : (eval - beta) / 3;
-            return beta + reduction;
+            Value reduction = (isAggressive || kingDanger) ? (eval - beta) / 4 : (eval - beta) / 3;
+            return beta + std::min(reduction, 150);
         }
     }
 
@@ -2155,7 +2156,7 @@ skipExtensionAndPruning:  // full threads search patch
             // To prevent problems when the max value is less than the min value,
             // std::clamp has been replaced by a more robust implementation.
             Depth d = std::max(1, std::min(newDepth - r / 1024, newDepth + 1 + PvNode)) + PvNode;
-            if (isCrystal && isStrategical && !capture && moveCount > 6)
+            if (isCrystal && isStrategical && !capture && depth > 8)
                 d = std::max(1, d - 1);
 
             ss->reduction = newDepth - d;
@@ -2172,12 +2173,12 @@ skipExtensionAndPruning:  // full threads search patch
                 const bool doDeeperSearch    = value > (bestValue + 43 + 2 * newDepth);
                 const bool doShallowerSearch = value < bestValue + 9;
 
-                if (applyCrystalLMR && doDeeperSearch && !isStrategical)
+                if (applyCrystalLMR && doDeeperSearch && isTactical)
                 {
 
                     Depth extDepth = newDepth + 1;
 
-                    if (localShashinManager.isTactical() && value > alpha + 150)
+                    if (value > alpha + 150)
                         extDepth += allowExt ? 1 : 0;
 
                     value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, extDepth, !cutNode);
