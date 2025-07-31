@@ -1990,22 +1990,22 @@ moves_loop:  // When in check, search starts here
                 {
                     // Tal: higher intensity = more reduction
                     double talIntensity = ShashinManager::getTalIntensity(style);
-                    doubleMargin -= static_cast<int>(55 * talIntensity);
-                    tripleMargin -= static_cast<int>(75 * talIntensity);
+                    doubleMargin -= static_cast<int>(40 * talIntensity);
+                    tripleMargin -= static_cast<int>(55 * talIntensity);
                 }
                 else if (isPetrosian && isPotentiallyPetrosian)
                 {
                     // Petrosian: higher intensity = less reduction
                     double petrosianIntensity = ShashinManager::getPetrosianIntensity(style);
-                    doubleMargin -= static_cast<int>(55 * (1.0 - petrosianIntensity));
-                    tripleMargin -= static_cast<int>(75 * (1.0 - petrosianIntensity));
+                    doubleMargin -= static_cast<int>(40 * (1.0 - petrosianIntensity));
+                    tripleMargin -= static_cast<int>(55 * (1.0 - petrosianIntensity));
                 }
 
                 if (isCapablanca)
                 {
                     // Pure positional strategy
-                    doubleMargin += 45;
-                    tripleMargin += 65;
+                    doubleMargin += 30;
+                    tripleMargin += 45;
                 }
                 // Hybrid styles (should not occur but maintained as fallback)
                 else
@@ -2020,14 +2020,14 @@ moves_loop:  // When in check, search starts here
                     if (isAttackingHybrid)
                     {
                         // Hybrid with tactical emphasis
-                        doubleMargin -= isPotentiallyTal ? 32 : 18;
-                        tripleMargin -= isPotentiallyTal ? 48 : 28;
+                        doubleMargin -= isPotentiallyTal ? 20 : 10;
+                        tripleMargin -= isPotentiallyTal ? 30 : 15;
                     }
                     else if (isDefensiveHybrid)
                     {
                         // Hybrid with strategic emphasis
-                        doubleMargin += isPotentiallyPetrosian ? 15 : 38;
-                        tripleMargin += isPotentiallyPetrosian ? 22 : 56;
+                        doubleMargin += isPotentiallyPetrosian ? 10 : 20;
+                        tripleMargin += isPotentiallyPetrosian ? 15 : 30;
                     }
                 }
 
