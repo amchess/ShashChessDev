@@ -1839,7 +1839,10 @@ moves_loop:  // When in check, search starts here
         capture    = pos.capture_stage(move);
         movedPiece = pos.moved_piece(move);
         givesCheck = pos.gives_check(move);
-
+        ss->secondaryLine =
+          ((rootNode && moveCount > 1)
+           || (!ourMove && (ss - 1)->secondaryLine && !excludedMove && moveCount == 1)
+           || (ourMove && (ss - 1)->secondaryLine));
         (ss + 1)->quietMoveStreak = (!capture && !givesCheck) ? (ss->quietMoveStreak + 1) : 0;
 
         // Calculate new depth for this move
