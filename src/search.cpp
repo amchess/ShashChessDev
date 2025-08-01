@@ -1214,18 +1214,17 @@ Value Search::Worker::search(
     bool            isTactical         = localShashinManager.isTactical();
     bool            isAggressive       = dynamicDerived.isAggressive;
     bool            isTacticalReactive = dynamicDerived.isTacticalReactive;
-    bool            quietKingSafe     = !staticState.isSacrificial && (!staticState.stmKingExposed);
-    ShashinPosition style             = dynamicBase.currentRange;
-    bool            isCapablanca      = (style == ShashinPosition::CAPABLANCA);
-    bool            isTal             = localShashinManager.isTal();
-    bool            isPetrosian       = localShashinManager.isPetrosian();
-    bool            isComplexPosition = localShashinManager.isComplexPosition();
+    bool            quietKingSafe = !staticState.isSacrificial && (!staticState.stmKingExposed);
+    ShashinPosition style         = dynamicBase.currentRange;
+    bool            isCapablanca  = (style == ShashinPosition::CAPABLANCA);
+    bool            isTal         = localShashinManager.isTal();
+    bool            isPetrosian   = localShashinManager.isPetrosian();
     //from crystal shashin end
     if (!rootNode)
     {
         // from Crystal-Shashin begin
         bool allowCycleDetection =
-          (isStrategical && isComplexPosition)
+          (isStrategical && localShashinManager.isComplexPosition())
           || (localShashinManager.isTacticalDefensive() && localShashinManager.isLowActivity());
 
         if (allowCycleDetection && !ss->excludedMove)
@@ -1646,7 +1645,7 @@ Value Search::Worker::search(
             {
                 if (!ourMove && (ss - 1)->secondaryLine)
                     R = std::min(R, 8);
-                if (isComplexPosition && depth > 10)
+                if (localShashinManager.isComplexPosition() && depth > 10)
                 {
                     R = std::max(R - 1, 3);
                 }
@@ -1898,12 +1897,12 @@ moves_loop:  // When in check, search starts here
         // Depth conditions are important for mate finding.
         if (!rootNode && pos.non_pawn_material(us) && !is_loss(bestValue))
         {
-            // Shashin condition: apply pruning only in strategical positions
             const bool allowPruning = !kingDanger || (isStrategical && depth < 8);
             if (allowPruning)
             {
                 // Skip quiet moves if movecount exceeds our FutilityMoveCount threshold
-                if (moveCount >= (3 + depth * depth) / (2 - improving))
+                if ((isStrategical && depth > 6 && moveCount > 15)
+                    || (moveCount >= (3 + depth * depth) / (2 - improving)))
                     mp.skip_quiet_moves();
 
                 // Reduced depth of the next LMR search
@@ -1914,18 +1913,17 @@ moves_loop:  // When in check, search starts here
                     Piece capturedPiece = pos.piece_on(move.to_sq());
                     int captHist = captureHistory[movedPiece][move.to_sq()][type_of(capturedPiece)];
 
-                    // Enhanced futility for captures with positional awareness
+                    // Futility pruning for captures
                     if (!givesCheck && lmrDepth < 7 && !ss->inCheck)
                     {
                         Value futilityValue = ss->staticEval + 225 + 220 * lmrDepth
                                             + 275 * (move.to_sq() == prevSq)
                                             + PieceValue[capturedPiece] + 131 * captHist / 1024;
-                        // Shashin adjustment: reduce pruning in tactical positions
-                        if (futilityValue <= alpha && !(isAggressive && depth > 4))
+                        if (futilityValue <= alpha)
                             continue;
                     }
 
-                    // SEE pruning with dynamic margins
+                    // SEE based pruning for captures and checks
                     int margin = std::clamp(158 * depth + captHist / 31, 0, 283 * depth);
                     if (!pos.see_ge(move, -margin))
                     {
@@ -1948,15 +1946,14 @@ moves_loop:  // When in check, search starts here
                                 + (*contHist[1])[movedPiece][move.to_sq()]
                                 + pawnHistory[pawn_structure_index(pos)][movedPiece][move.to_sq()];
 
-                    // Continuation history pruning with Shashin scaling
-                    if (history < -4361 * depth * (isStrategical ? 0.8 : 1.0))
+                    // Continuation history based pruning
+                    if (history < -4361 * depth)
                         continue;
 
                     history += 71 * mainHistory[us][move.from_to()] / 32;
 
                     lmrDepth += history / 3233;
 
-                    // Positionally aware futility pruning
                     Value baseFutility  = (bestMove ? 46 : 230);
                     Value futilityValue = ss->staticEval + baseFutility + 131 * lmrDepth
                                         + 91 * (ss->staticEval > alpha);
@@ -1964,23 +1961,18 @@ moves_loop:  // When in check, search starts here
                     // Futility pruning: parent node
                     // (*Scaler): Generally, more frequent futility pruning
                     // scales well with respect to time and threads
-                    // Shashin: reduce pruning in complex positions
-                    if (!ss->inCheck && lmrDepth < 11 && futilityValue <= alpha
-                        && !(isComplexPosition && depth > 6))
+                    if (!ss->inCheck && lmrDepth < 11 && futilityValue <= alpha)
                     {
-                        if (bestValue <= futilityValue && !is_decisive(bestValue))
+                        if (bestValue <= futilityValue && !is_decisive(bestValue)
+                            && !is_win(futilityValue))
                             bestValue = futilityValue;
                         continue;
                     }
 
                     lmrDepth = std::max(lmrDepth, 0);
 
-                    // SEE pruning with style-based adjustment
-                    int seeMargin = -26 * lmrDepth * lmrDepth;
-                    if (isAggressive)
-                        seeMargin -= 50;  // Reduce pruning in attacks
                     // Prune moves with negative SEE
-                    if (!pos.see_ge(move, seeMargin))
+                    if (!pos.see_ge(move, -26 * lmrDepth * lmrDepth))
                         continue;
                 }
             }
