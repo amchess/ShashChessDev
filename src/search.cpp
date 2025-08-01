@@ -1460,9 +1460,6 @@ Value Search::Worker::search(
             }
         }
     }
-    //from shashin-crystal begin
-    Depth originalDepth = (Depth) 0;
-    //from shashin-crystal end
     // Step 6. Static evaluation of the position
     Value      unadjustedStaticEval = VALUE_NONE;
     const auto correctionValue      = correction_value(*this, pos, ss);
@@ -1689,21 +1686,43 @@ Value Search::Worker::search(
     //by Shashin begin
     // At sufficient depth, reduce depth for PV/Cut nodes without a TTMove.
     // (*Scaler) Especially if they make IIR less aggressive.
-    originalDepth = depth;
-    if (!allNode && depth >= 6 && !ttData.move)
     {
-        depth--;
-    }
-    if (quietKingSafe && !localShashinManager.avoidStep10() && depth >= 6)
-    {
-        const bool ttReduction = cutNode && ttData.move && ttData.bound == BOUND_UPPER;
+        const int originalDepth = depth;
 
-        if (ttReduction)
+        // Base Stockfish reduction
+        if (!allNode && depth >= 6 && !ttData.move)
         {
-            const int reduction = isStrategical ? 2 : (isAggressive || isTacticalReactive) ? 0 : 1;
+            depth--;
+        }
 
-            // Applica la riduzione aggiuntiva solo se giustificata
-            depth = std::max(originalDepth - reduction, 1);
+        // Shashin adaptive reduction
+        if (quietKingSafe && depth >= 6)
+        {
+            const bool ttReduction = cutNode && ttData.move && ttData.bound == BOUND_UPPER;
+
+            if (ttReduction && !localShashinManager.avoidStep10())
+            {
+                int reduction = 0;
+
+                // Strategical positions: more aggressive reduction
+                if (isStrategical)
+                {
+                    reduction = 2;
+                }
+                // Tactical positions: preserve depth
+                else if (isAggressive || isTacticalReactive)
+                {
+                    reduction = 0;
+                }
+                // Default: moderate reduction
+                else
+                {
+                    reduction = 1;
+                }
+
+                // Apply reduction only if justified
+                depth = std::max(originalDepth - reduction, 1);
+            }
         }
     }
     //by Shashin end
