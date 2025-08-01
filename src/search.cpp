@@ -1795,20 +1795,29 @@ moves_loop:  // When in check, search starts here
     if (commonProbcut)
     {
         // 1. ProbCut Crystal: only for complex tactical positions
-        if (localShashinManager.allowCrystalProbCut() && depth >= 8)
+        if (localShashinManager.allowCrystalProbCut())
         {
-            const bool crystalConditions = !PvNode && ttCapture && !gameCycle;
+            const bool crystalConditions = !PvNode && ttCapture && !gameCycle && depth >= 8;
 
             if (crystalConditions)
             {
-                // More aggressive reduction in high depth
-                const Depth probCutDepth = depth - (depth >= 12 ? 5 : 4);
-                if (ttData.depth >= probCutDepth)
+                // Depth reduction based on position type
+                Depth reduction = 4;
+                if (localShashinManager.isTalTacticalHighMiddle())
+                {
+                    reduction = 3;  // Less reduction for Tal-style positions
+                }
+                else if (localShashinManager.isFortress(rootPos))
+                {
+                    reduction = 5;  // More reduction in fortress positions
+                }
+
+                if (ttData.depth >= depth - reduction)
                     return probCutBeta;
             }
         }
 
-        // 2. ProbCut Stockfish: standard conditions for all other positions
+        // 2. Standard ProbCut for other positions
         return probCutBeta;
     }
     //from Shashin Crystal end
