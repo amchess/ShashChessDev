@@ -1587,7 +1587,7 @@ Value Search::Worker::search(
                  - 1324 * opponentWorsening * adjustedMargin / 4096  //
                  + (ss - 1)->statScore / 331                         //
                  + std::abs(correctionValue) / 158105
-                 - 40 * staticState.legalMoveCount / 32;  // Account for mobility
+                 - 35 * staticState.legalMoveCount / 32;  // Account for mobility
         };
 
         bool allowPruning = !staticState.kingDanger || (isStrategical && depth < 8);
