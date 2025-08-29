@@ -1587,7 +1587,7 @@ Value Search::Worker::search(
                  - 1324 * opponentWorsening * adjustedMargin / 4096  //
                  + (ss - 1)->statScore / 331                         //
                  + std::abs(correctionValue) / 158105
-                 - 35 * staticState.legalMoveCount / 32;  // Account for mobility
+                 - 40 * staticState.legalMoveCount / 32;  // Account for mobility
         };
 
         bool allowPruning = !staticState.kingDanger || (isStrategical && depth < 8);
@@ -2227,7 +2227,7 @@ skipExtensionAndPruning:  // full threads search patch
                 }
 
                 // Differianted bonus history by Shashin
-                int bonus = applyCrystalLMR ? 1700 : 1365;
+                int bonus = applyCrystalLMR ? 1712 : 1365;
                 update_continuation_histories(ss, movedPiece, move.to_sq(), bonus);
             }
         }
