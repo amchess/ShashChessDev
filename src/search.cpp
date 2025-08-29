@@ -2227,7 +2227,7 @@ skipExtensionAndPruning:  // full threads search patch
                 }
 
                 // Differianted bonus history by Shashin
-                int bonus = applyCrystalLMR ? 1712 : 1365;
+                int bonus = applyCrystalLMR ? 1720 : 1365;
                 update_continuation_histories(ss, movedPiece, move.to_sq(), bonus);
             }
         }
