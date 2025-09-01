@@ -1277,7 +1277,10 @@ Value Search::Worker::search(
     if (!PvNode && !excludedMove && ttData.depth > depth - (ttData.value <= beta)
         && is_valid(ttData.value)  // Can happen when !ttHit or when access race in probe()
         && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER))
-        && (cutNode == (ttData.value >= beta) || depth > 5))
+        && (cutNode == (ttData.value >= beta) || depth > 5)
+        // avoid a TT cutoff if the rule50 count is high and the TT move is zeroing
+        && (depth > 8 || ttData.move == Move::none() || pos.rule50_count() < 80
+            || (!ttCapture && type_of(pos.moved_piece(ttData.move)) != PAWN)))
     {
         // If ttMove is quiet, update move sorting heuristics on TT hit
         if (ttData.move && ttData.value >= beta)
@@ -1364,7 +1367,10 @@ Value Search::Worker::search(
             // At non-PV nodes we check for an early Global Learning Table cutoff
             if (!PvNode && !excludedMove && updatedLearning
                 && learningMove->depth > depth - (expTTValue <= beta) && is_valid(expTTValue)
-                && (cutNode == (expTTValue >= beta) || depth > 5))
+                && (cutNode == (expTTValue >= beta) || depth > 5)
+                // avoid a exp cutoff if the rule50 count is high and the exp move is zeroing
+		        && (depth > 8 || expTTMove == Move::none() || pos.rule50_count() < 80
+	            || (!expTTCapture && type_of(pos.moved_piece(expTTMove)) != PAWN)))                
             {
                 // If expTTMove is quiet, update move sorting heuristics on Global learning table hit
                 if (expTTMove && expTTValue >= beta)
@@ -1759,9 +1765,9 @@ Value Search::Worker::search(
 
                 assert(pos.capture_stage(move));
 
-                movedPiece = pos.moved_piece(move);
+            assert(pos.capture_stage(move));
 
-                do_move(pos, move, st, ss);
+            do_move(pos, move, st, ss);
 
 
                 // Perform a preliminary qsearch to verify that the move holds
@@ -1918,10 +1924,10 @@ moves_loop:  // When in check, search starts here
                     int captHist = captureHistory[movedPiece][move.to_sq()][type_of(capturedPiece)];
 
                     // Futility pruning for captures
-                    if (!givesCheck && lmrDepth < 7 && !ss->inCheck)
+                    if (!givesCheck && lmrDepth < 7)
                     {
-                        Value futilityValue = ss->staticEval + 231 + 211 * lmrDepth
-                                            + PieceValue[capturedPiece] + 130 * captHist / 1024;
+	                    Value futilityValue = ss->staticEval + 231 + 211 * lmrDepth
+	                                        + PieceValue[capturedPiece] + 130 * captHist / 1024;
                         if (futilityValue <= alpha)
                             continue;
                     }
@@ -1930,12 +1936,8 @@ moves_loop:  // When in check, search starts here
                     int margin = std::max(157 * depth + captHist / 29, 0);
                     if (!pos.see_ge(move, -margin))
                     {
-                        bool mayStalemateTrap =
-                          depth > 2 && alpha < 0
-                          && pos.non_pawn_material(us) == PieceValue[movedPiece]
-                          && PieceValue[movedPiece] >= RookValue
-                          // it can't be stalemate if we moved a piece adjacent to the king
-                          && !(attacks_bb<KING>(pos.square<KING>(us)) & move.from_sq());
+	                    bool mayStalemateTrap =
+	                      depth > 2 && alpha < 0 && pos.non_pawn_material(us) == PieceValue[movedPiece];
 
                         // avoid pruning sacrifices of our last piece for stalemate
                         if (!mayStalemateTrap)
@@ -1956,9 +1958,8 @@ moves_loop:  // When in check, search starts here
 
                     lmrDepth += history / 3220;
 
-                    Value baseFutility  = (bestMove ? 47 : 218);
-                    Value futilityValue = ss->staticEval + baseFutility + 134 * lmrDepth
-                                        + 90 * (ss->staticEval > alpha);
+	                Value futilityValue = ss->staticEval + 47 + 171 * !bestMove + 134 * lmrDepth
+	                                    + 90 * (ss->staticEval > alpha);
 
                     // Futility pruning: parent node
                     // (*Scaler): Generally, more frequent futility pruning
@@ -2087,6 +2088,8 @@ moves_loop:  // When in check, search starts here
             // (ttValue - margin) is lower than the original beta, we do not know
             // if the ttMove is singular or can do a multi-cut, so we reduce the
             // ttMove in favor of other moves based on some conditions:
+
+            // If the ttMove is assumed to fail high over current beta
             else if (ttData.value >= beta)
             {
                 extension = -3;
@@ -2340,7 +2343,7 @@ skipExtensionAndPruning:  // full threads search patch
 
                 if (value >= beta)
                 {
-                    // (* Scaler) Especially if they make cutoffCnt increment more often.
+                    // (*Scaler) Especially if they make cutoffCnt increment more often.
                     ss->cutoffCnt += (extension < 2) || PvNode;
                     assert(value >= beta);  // Fail high
                     break;
