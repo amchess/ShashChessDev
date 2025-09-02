@@ -106,10 +106,9 @@ class Position {
     Square square(Color c) const;
 
     // Castling
-    CastlingRights castling_rights(Color c) const;
-    bool           can_castle(CastlingRights cr) const;
-    bool           castling_impeded(CastlingRights cr) const;
-    Square         castling_rook_square(CastlingRights cr) const;
+    bool   can_castle(CastlingRights cr) const;
+    bool   castling_impeded(CastlingRights cr) const;
+    Square castling_rook_square(CastlingRights cr) const;
 
     // Checking
     Bitboard checkers() const;
