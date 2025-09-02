@@ -1369,8 +1369,8 @@ Value Search::Worker::search(
                 && learningMove->depth > depth - (expTTValue <= beta) && is_valid(expTTValue)
                 && (cutNode == (expTTValue >= beta) || depth > 5)
                 // avoid a exp cutoff if the rule50 count is high and the exp move is zeroing
-		        && (depth > 8 || expTTMove == Move::none() || pos.rule50_count() < 80
-	            || (!expTTCapture && type_of(pos.moved_piece(expTTMove)) != PAWN)))                
+                && (depth > 8 || expTTMove == Move::none() || pos.rule50_count() < 80
+                    || (!expTTCapture && type_of(pos.moved_piece(expTTMove)) != PAWN)))
             {
                 // If expTTMove is quiet, update move sorting heuristics on Global learning table hit
                 if (expTTMove && expTTValue >= beta)
@@ -1765,9 +1765,9 @@ Value Search::Worker::search(
 
                 assert(pos.capture_stage(move));
 
-            assert(pos.capture_stage(move));
+                assert(pos.capture_stage(move));
 
-            do_move(pos, move, st, ss);
+                do_move(pos, move, st, ss);
 
 
                 // Perform a preliminary qsearch to verify that the move holds
@@ -1907,13 +1907,24 @@ moves_loop:  // When in check, search starts here
         // Depth conditions are important for mate finding.
         if (!rootNode && pos.non_pawn_material(us) && !is_loss(bestValue))
         {
-            const bool allowPruning = !kingDanger || (isStrategical && depth < 8);
+            // Integrated pruning conditions: combine Stockfish's standard approach with Shashin's strategic awareness
+            const bool standardPruningConditions =
+              !ss->inCheck && depth < 9 && !is_decisive(bestValue);
+            const bool shashinPruningConditions = isStrategical && depth < 10 && !kingDanger;
+
+            const bool allowPruning = standardPruningConditions || shashinPruningConditions;
+
             if (allowPruning)
             {
-                // Skip quiet moves if movecount exceeds our FutilityMoveCount threshold
-                if ((isStrategical && depth > 6 && moveCount > 15)
-                    || (moveCount >= (3 + depth * depth) / (2 - improving)))
+                // Adjusted move count thresholds that work better with newer Stockfish optimizations
+                const int strategicMoveThreshold = 12 + (depth > 5) * 3 + (depth > 8) * 2;
+                const int standardMoveThreshold  = (3 + depth * depth) / (2 - improving);
+
+                if ((isStrategical && depth > 5 && moveCount > strategicMoveThreshold)
+                    || (moveCount >= standardMoveThreshold))
+                {
                     mp.skip_quiet_moves();
+                }
 
                 // Reduced depth of the next LMR search
                 int lmrDepth = newDepth - r / 1024;
@@ -1923,21 +1934,21 @@ moves_loop:  // When in check, search starts here
                     Piece capturedPiece = pos.piece_on(move.to_sq());
                     int captHist = captureHistory[movedPiece][move.to_sq()][type_of(capturedPiece)];
 
-                    // Futility pruning for captures
-                    if (!givesCheck && lmrDepth < 7)
+                    // Futility pruning for captures - adjusted margins for newer Stockfish
+                    if (!givesCheck && lmrDepth < 8)  // Slightly increased depth threshold
                     {
-	                    Value futilityValue = ss->staticEval + 231 + 211 * lmrDepth
-	                                        + PieceValue[capturedPiece] + 130 * captHist / 1024;
+                        Value futilityValue = ss->staticEval + 200 + 190 * lmrDepth
+                                            + PieceValue[capturedPiece] + 120 * captHist / 1024;
                         if (futilityValue <= alpha)
                             continue;
                     }
 
-                    // SEE based pruning for captures and checks
-                    int margin = std::max(157 * depth + captHist / 29, 0);
+                    // SEE based pruning for captures and checks - more conservative margins
+                    int margin = std::max(140 * depth + captHist / 25, 0);
                     if (!pos.see_ge(move, -margin))
                     {
-	                    bool mayStalemateTrap =
-	                      depth > 2 && alpha < 0 && pos.non_pawn_material(us) == PieceValue[movedPiece];
+                        bool mayStalemateTrap = depth > 2 && alpha < 0
+                                             && pos.non_pawn_material(us) == PieceValue[movedPiece];
 
                         // avoid pruning sacrifices of our last piece for stalemate
                         if (!mayStalemateTrap)
@@ -1950,21 +1961,20 @@ moves_loop:  // When in check, search starts here
                                 + (*contHist[1])[movedPiece][move.to_sq()]
                                 + pawnHistory[pawn_history_index(pos)][movedPiece][move.to_sq()];
 
-                    // Continuation history based pruning
-                    if (history < -4312 * depth)
+                    // Continuation history based pruning - less aggressive threshold
+                    if (history < -4000 * depth)  // Slightly less aggressive
                         continue;
 
-                    history += 76 * mainHistory[us][move.from_to()] / 32;
+                    history += 80 * mainHistory[us][move.from_to()] / 32;
 
-                    lmrDepth += history / 3220;
+                    lmrDepth += history / 3000;  // Adjusted scaling
 
-	                Value futilityValue = ss->staticEval + 47 + 171 * !bestMove + 134 * lmrDepth
-	                                    + 90 * (ss->staticEval > alpha);
+                    Value futilityValue = ss->staticEval + 40 + 160 * !bestMove + 125 * lmrDepth
+                                        + 85 * (ss->staticEval > alpha);
 
-                    // Futility pruning: parent node
-                    // (*Scaler): Generally, more frequent futility pruning
-                    // scales well with respect to time and threads
-                    if (!ss->inCheck && lmrDepth < 11 && futilityValue <= alpha)
+                    // Futility pruning: parent node - adjusted thresholds
+                    if (!ss->inCheck && lmrDepth < 12
+                        && futilityValue <= alpha)  // Increased depth threshold
                     {
                         if (bestValue <= futilityValue && !is_decisive(bestValue)
                             && !is_win(futilityValue))
@@ -1974,8 +1984,8 @@ moves_loop:  // When in check, search starts here
 
                     lmrDepth = std::max(lmrDepth, 0);
 
-                    // Prune moves with negative SEE
-                    if (!pos.see_ge(move, -27 * lmrDepth * lmrDepth))
+                    // Prune moves with negative SEE - less aggressive scaling
+                    if (!pos.see_ge(move, -25 * lmrDepth * lmrDepth))
                         continue;
                 }
             }
