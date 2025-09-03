@@ -1907,21 +1907,20 @@ moves_loop:  // When in check, search starts here
         // Depth conditions are important for mate finding.
         if (!rootNode && pos.non_pawn_material(us) && !is_loss(bestValue))
         {
-            // Use Stockfish's standard pruning condition: not in check and depth less than 9
-            const bool stockfishPruning = !ss->inCheck && depth < 9;
-            // Use Shashin strategic pruning only when very safe and shallow
-            const bool shashinPruning = isStrategical && !kingDanger && depth < 8;
+            // Stockfish's original condition: not in check and depth less than 9
+            bool allowPruning = !ss->inCheck && depth < 9;
 
-            const bool allowPruning = stockfishPruning || shashinPruning;
+            // Add Shashin condition: in strategic positions without king danger, allow pruning at slightly higher depth
+            if (isStrategical && !kingDanger)
+                allowPruning =
+                  allowPruning
+                  || depth < 10;  // Extend pruning to depth 10 only in safe strategic positions
 
             if (allowPruning)
             {
                 // Skip quiet moves if movecount exceeds our FutilityMoveCount threshold
-                // Use Stockfish's move count threshold
+                // Use Stockfish's original move count formula
                 if (moveCount >= (3 + depth * depth) / (2 - improving))
-                    mp.skip_quiet_moves();
-                // Additionally, for strategic positions, skip early if move count is high
-                if (isStrategical && depth > 6 && moveCount > 18)  // Slightly higher threshold
                     mp.skip_quiet_moves();
 
                 // Reduced depth of the next LMR search
@@ -1932,7 +1931,7 @@ moves_loop:  // When in check, search starts here
                     Piece capturedPiece = pos.piece_on(move.to_sq());
                     int captHist = captureHistory[movedPiece][move.to_sq()][type_of(capturedPiece)];
 
-                    // Futility pruning for captures - use Stockfish coefficients
+                    // Futility pruning for captures - Stockfish's original coefficients
                     if (!givesCheck && lmrDepth < 7)
                     {
                         Value futilityValue = ss->staticEval + 231 + 211 * lmrDepth
@@ -1941,7 +1940,7 @@ moves_loop:  // When in check, search starts here
                             continue;
                     }
 
-                    // SEE based pruning for captures and checks - use Stockfish margin
+                    // SEE based pruning for captures and checks - Stockfish's original margin
                     int margin = std::max(157 * depth + captHist / 29, 0);
                     if (!pos.see_ge(move, -margin))
                     {
@@ -1959,7 +1958,7 @@ moves_loop:  // When in check, search starts here
                                 + (*contHist[1])[movedPiece][move.to_sq()]
                                 + pawnHistory[pawn_history_index(pos)][movedPiece][move.to_sq()];
 
-                    // Continuation history based pruning - use Stockfish threshold
+                    // Continuation history based pruning - Stockfish's original threshold
                     if (history < -4312 * depth)
                         continue;
 
@@ -1970,7 +1969,7 @@ moves_loop:  // When in check, search starts here
                     Value futilityValue = ss->staticEval + 47 + 171 * !bestMove + 134 * lmrDepth
                                         + 90 * (ss->staticEval > alpha);
 
-                    // Futility pruning: parent node - use Stockfish threshold
+                    // Futility pruning: parent node - Stockfish's original threshold
                     if (!ss->inCheck && lmrDepth < 11 && futilityValue <= alpha)
                     {
                         if (bestValue <= futilityValue && !is_decisive(bestValue)
@@ -1981,7 +1980,7 @@ moves_loop:  // When in check, search starts here
 
                     lmrDepth = std::max(lmrDepth, 0);
 
-                    // Prune moves with negative SEE - use Stockfish coefficient
+                    // Prune moves with negative SEE - Stockfish's original coefficient
                     if (!pos.see_ge(move, -27 * lmrDepth * lmrDepth))
                         continue;
                 }
