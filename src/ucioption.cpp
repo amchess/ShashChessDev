@@ -168,7 +168,7 @@ bool Option::operator!=(const char* s) const { return !(*this == s); }
 Option& Option::operator=(const std::string& v) {
 
     assert(!type.empty());
-
+    //combo management begin
     if ((type != "button" && type != "string" && v.empty())
         || (type == "check" && v != "true" && v != "false")
         || (type == "spin" && (std::stoi(v) < min || std::stoi(v) > max)))
