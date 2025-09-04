@@ -1274,13 +1274,16 @@ Value Search::Worker::search(
     // to save indentation, we list the condition in all code between here and there.
 
     // At non-PV nodes we check for an early TT cutoff
+    bool avoidTTCutoff = depth > 8 || ttData.move == Move::none() || pos.rule50_count() < 80
+                      || (!ttCapture && type_of(pos.moved_piece(ttData.move)) != PAWN);
+    // Shashin adjustment: allow TT cutoff in fortresses and strategical positions
+    if (isFortressNode || isStrategical)
+        avoidTTCutoff = true;
+
     if (!PvNode && !excludedMove && ttData.depth > depth - (ttData.value <= beta)
-        && is_valid(ttData.value)  // Can happen when !ttHit or when access race in probe()
+        && is_valid(ttData.value)
         && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER))
-        && (cutNode == (ttData.value >= beta) || depth > 5)
-        // avoid a TT cutoff if the rule50 count is high and the TT move is zeroing
-        && (depth > 8 || ttData.move == Move::none() || pos.rule50_count() < 80
-            || (!ttCapture && type_of(pos.moved_piece(ttData.move)) != PAWN)))
+        && (cutNode == (ttData.value >= beta) || depth > 5) && avoidTTCutoff)
     {
         // If ttMove is quiet, update move sorting heuristics on TT hit
         if (ttData.move && ttData.value >= beta)
@@ -1960,8 +1963,8 @@ moves_loop:  // When in check, search starts here
 
                     lmrDepth += history / 3220;
 
-	                Value futilityValue = ss->staticEval + 47 + 171 * !bestMove + 134 * lmrDepth
-	                                    + 90 * (ss->staticEval > alpha);
+                    Value futilityValue = ss->staticEval + 47 + 171 * !bestMove + 134 * lmrDepth
+                                        + 90 * (ss->staticEval > alpha);
 
                     // Futility pruning: parent node
                     // (*Scaler): Generally, more frequent futility pruning
