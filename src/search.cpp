@@ -1281,7 +1281,7 @@ Value Search::Worker::search(
         // avoid a TT cutoff if the rule50 count is high and the TT move is zeroing
         && (depth > 8 || ttData.move == Move::none() || pos.rule50_count() < 80
             || (!ttCapture && type_of(pos.moved_piece(ttData.move)) != PAWN)
-            || isFortressNode || isStrategical))
+            || isFortressNode || (isStrategical && rootNode)))
     {
         // If ttMove is quiet, update move sorting heuristics on TT hit
         if (ttData.move && ttData.value >= beta)
