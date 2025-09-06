@@ -1750,7 +1750,7 @@ Value Search::Worker::search(
             assert(probCutBeta < VALUE_INFINITE && probCutBeta > beta);
 
             MovePicker mp(pos, ttData.move, probCutBeta - ss->staticEval, &captureHistory);
-            Depth      dynamicReduction = (ss->staticEval - beta) / 306;
+            Depth      dynamicReduction = std::max((ss->staticEval - beta) / 306, -1);
             Depth      probCutDepth     = std::max(depth - 5 - dynamicReduction, 0);
 
             // Shashin adjustment: reduce depth more in Capablanca positions
