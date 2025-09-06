@@ -1932,16 +1932,9 @@ moves_loop:  // When in check, search starts here
 
                     // SEE based pruning for captures and checks
                     int margin = std::max(157 * depth + captHist / 29, 0);
-                    if (!pos.see_ge(move, -margin))
-                    {
-	                    bool mayStalemateTrap =
-	                      depth > 2 && alpha < 0 && pos.non_pawn_material(us) == PieceValue[movedPiece];
-
-
-                        // avoid pruning sacrifices of our last piece for stalemate
-                        if (!mayStalemateTrap)
-                            continue;
-                    }
+                    if ((alpha >= VALUE_DRAW || pos.non_pawn_material(us) != PieceValue[movedPiece])
+                        && !pos.see_ge(move, -margin))
+                        continue;
                 }
                 else
                 {
@@ -1957,8 +1950,8 @@ moves_loop:  // When in check, search starts here
 
                     lmrDepth += history / 3220;
 
-	                Value futilityValue = ss->staticEval + 47 + 171 * !bestMove + 134 * lmrDepth
-	                                    + 90 * (ss->staticEval > alpha);
+                    Value futilityValue = ss->staticEval + 47 + 171 * !bestMove + 134 * lmrDepth
+                                        + 90 * (ss->staticEval > alpha);
 
                     // Futility pruning: parent node
                     // (*Scaler): Generally, more frequent futility pruning
