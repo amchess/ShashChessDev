@@ -2173,37 +2173,60 @@ skipExtensionAndPruning:  // full threads search patch
         r -= ss->statScore * 794 / 8192;
 
         // Step 17. Late moves reduction / extension (LMR)
-        //from shashin crystal begin
-        if (depth >= 2 && moveCount > std::max(sibs, static_cast<int>(1)) && doLMRStep)  //learning
+        if (depth >= 2 && moveCount > std::max(sibs, static_cast<int>(1)) && doLMRStep)
         {
-            bool isCrystal       = localShashinManager.useStep17CrystalLogic();
+            // Calcola una volta le informazioni Shashin rilevanti
+            const bool isStrategical = localShashinManager.isStrategical();
+            const bool isAggressive  = localShashinManager.isAggressive();
+            const bool isCrystal     = localShashinManager.useStep17CrystalLogic();
+            const bool isTactical    = localShashinManager.isTactical();
+
+            // Determina se applicare la logica Crystal
             bool applyCrystalLMR = false;
             bool allowExt        = false;
-            bool kingDangerThem  = false;
-            bool lmrCapture      = false;
+
             if (isCrystal)
             {
-                kingDangerThem  = ourMove && king_danger(pos, ~us);
-                lmrCapture      = cutNode && (ss - 1)->moveCount > 1;
-                allowExt        = (ss->ply + depth < MAX_PLY - 2) && (ss->ply < 2 * rootDepth);
+                const bool kingDangerThem = ourMove && king_danger(pos, ~us);
+                const bool lmrCapture     = cutNode && (ss - 1)->moveCount > 1;
+                allowExt = (ss->ply + depth < MAX_PLY - 2) && (ss->ply < 2 * rootDepth);
+
                 bool allowLMR   = depth > 1 && !gameCycle;
                 allowLMR        = allowLMR && (!kingDangerThem || ss->ply > 6);
                 allowLMR        = allowLMR && (!PvNode || ss->ply > 1);
                 applyCrystalLMR = allowLMR && (!capture || lmrCapture) && moveCount > 3;
             }
+
+            // Calcola la profondità ridotta
             // In general we want to cap the LMR depth search at newDepth, but when
             // reduction is negative, we allow this move a limited search extension
             // beyond the first move depth.
             // To prevent problems when the max value is less than the min value,
             // std::clamp has been replaced by a more robust implementation.
             Depth d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
+
+            // Applica le regole Crystal se attive
             if (isCrystal && isStrategical && !capture && depth > 8)
                 d = std::max(1, d - 1);
 
+            // Adjustments aggiuntivi basati sullo stile Shashin
+            if (isStrategical)
+            {
+                // Riduzione più aggressiva nelle posizioni strategiche
+                d = std::max(1, d - 1);
+            }
+            else if (isAggressive)
+            {
+                // Riduzione meno aggressiva nelle posizioni aggressive
+                d = std::min(d + 1, newDepth);
+            }
+
+            // Esegui la ricerca ridotta
             ss->reduction = newDepth - d;
             value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
             ss->reduction = 0;
 
+            // Gestione del re-search
             // Do a full-depth search when reduced LMR search fails high
             // (*Scaler) Usually doing more shallower searches
             // doesn't scale well to longer TCs
@@ -2216,9 +2239,8 @@ skipExtensionAndPruning:  // full threads search patch
 
                 if (applyCrystalLMR && doDeeperSearch && isTactical)
                 {
-
+                    // Logica Crystal per ricerca più profonda
                     Depth extDepth = newDepth + 1;
-
                     if (value > alpha + 150)
                         extDepth += allowExt ? 1 : 0;
 
@@ -2226,19 +2248,30 @@ skipExtensionAndPruning:  // full threads search patch
                 }
                 else
                 {
+                    // Logica standard per re-search
                     newDepth += doDeeperSearch - doShallowerSearch;
-
                     if (newDepth > d)
                         value =
                           -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, newDepth, !cutNode);
                 }
 
-                // Differianted bonus history by Shashin
-                int bonus = applyCrystalLMR ? 1720 : 1365;
+                // Aggiornamento history con bonus differenziato
+                int bonus = 1365;  // Valore base di Stockfish
+
+                // Bonus aumentato per logica Crystal
+                if (applyCrystalLMR)
+                    bonus = 1720;
+
+                // Adjustments basati sullo stile Shashin
+                if (isStrategical)
+                    bonus += 100;  // Bonus extra per posizioni strategiche
+                else if (isAggressive)
+                    bonus += 150;  // Bonus extra per posizioni aggressive
+
+                // Post LMR continuation history updates
                 update_continuation_histories(ss, movedPiece, move.to_sq(), bonus);
             }
         }
-        //from shashin crystal end
 
         // Step 18. Full-depth search when LMR is skipped
         else if (!PvNode || moveCount > 1)

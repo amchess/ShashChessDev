@@ -126,14 +126,17 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
     static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
     Color us = pos.side_to_move();
-    //for fortress begin
-    const bool fortress = MoveConfig::isFortress;
 
-    int phase           = std::clamp(pos.game_ply() / 25, 0, 3);
-    int breakingPenalty = 1800 + 600 * phase;
-    int preservingBonus = 900 + 300 * (3 - phase);
+    // Pre-calcola i valori solo se necessario
+    const bool fortress        = MoveConfig::isFortress;
+    int        breakingPenalty = 0, preservingBonus = 0;
+    if (fortress)
+    {
+        int phase       = std::clamp(pos.game_ply() / 25, 0, 3);
+        breakingPenalty = 1800 + 600 * phase;
+        preservingBonus = 900 + 300 * (3 - phase);
+    }
 
-    //for fotress end
     [[maybe_unused]] Bitboard threatByLesser[KING + 1];
     if constexpr (Type == QUIETS)
     {
@@ -162,10 +165,9 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
             m.value = (*captureHistory)[pc][to][type_of(capturedPiece)]
                     + 7 * int(PieceValue[capturedPiece]) + 1024 * bool(pos.check_squares(pt) & to);
 
-            //for fortress begin
+            // Ottimizzazione: evita controlli multipli per fortress
             if (fortress && MoveConfig::isAggressive)
                 m.value += 500;
-            //for fortress end
         }
         else if constexpr (Type == QUIETS)
         {
@@ -190,17 +192,15 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
 
             if (ply < LOW_PLY_HISTORY_SIZE)
                 m.value += 8 * (*lowPlyHistory)[ply][m.from_to()] / (1 + ply);
-            //for fortress begin
+
+            // Ottimizzazione: sposta il bonus strategico fuori dal blocco fortress
             if (fortress && MoveConfig::isStrategical)
                 m.value += 200;
-            //for fortress end
         }
-        else
-        {  // EVASIONS
+        else  // Type == EVASIONS
+        {
             if (pos.capture_stage(m))
-            {
-                m.value = PieceValue[pos.piece_on(to)] + (1 << 28);
-            }
+                m.value = PieceValue[capturedPiece] + (1 << 28);
             else
             {
                 m.value = (*mainHistory)[us][m.from_to()] + (*continuationHistory[0])[pc][to];
@@ -208,10 +208,12 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
                     m.value += 2 * (*lowPlyHistory)[ply][m.from_to()] / (1 + ply);
             }
         }
-        //for fortress begin
+
+        // Ottimizzazione: raggruppa tutta la logica delle fortezze
         if (fortress)
         {
             bool preserve = is_fortress_preserving_move(pos, m);
+
             if (is_fortress_breaking_move(pos, m))
             {
                 // Penalità maggiore per mosse che rompono la fortezza
@@ -233,7 +235,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
                 // Bonus aggiuntivo per mosse di pedone che rafforzano la struttura
                 if (type_of(pc) == PAWN)
                 {
-                    // Bonus per pedoni connessi (corretto con attacks_bb)
+                    // Bonus per pedoni connessi
                     Bitboard adjacentPawns = attacks_bb<PAWN>(to, us) & pos.pieces(us, PAWN);
                     if (adjacentPawns)
                         m.value += 200;
@@ -248,9 +250,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
 
             // Gestione regola delle 50 mosse
             if (no_progress_for(pos, 15) && preserve)
-            {
                 m.value += 300;
-            }
 
             // Logica Shashin dinamica
             if (MoveConfig::useMoveShashinLogic)
@@ -263,7 +263,6 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
                     m.value += static_cast<int>(180 * plyFactor);
             }
         }
-        //fortress end
     }
     return it;
 }
