@@ -1732,7 +1732,7 @@ Value Search::Worker::search(
 
         // Compute conditions once
         bool positionSafe = !kingDanger && quietKingSafe;
-        bool gameCycle    = pos.upcoming_repetition(ss->ply);
+        gameCycle    = pos.upcoming_repetition(ss->ply);
 
         // Determine null move eligibility based on Shashin style
         bool allowNullMove = false;
@@ -2073,9 +2073,6 @@ moves_loop:  // When in check, search starts here
         // Depth conditions are important for mate finding.
         if (!rootNode && pos.non_pawn_material(us) && !is_loss(bestValue))
         {
-            // Calcola una volta le informazioni Shashin rilevanti
-            const bool kingDanger = !ourMove && king_danger(pos, us);
-
             // Determina se applicare il pruning
             const bool allowPruning = !kingDanger || (isStrategical && depth < 8);
 
