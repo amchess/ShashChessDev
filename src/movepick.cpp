@@ -129,10 +129,11 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
 
     // Pre-calcola i valori solo se necessario
     const bool fortress        = MoveConfig::isFortress;
+    int        phase           = 0;
     int        breakingPenalty = 0, preservingBonus = 0;
     if (fortress)
     {
-        int phase       = std::clamp(pos.game_ply() / 25, 0, 3);
+        phase           = std::clamp(pos.game_ply() / 25, 0, 3);
         breakingPenalty = 1800 + 600 * phase;
         preservingBonus = 900 + 300 * (3 - phase);
     }
