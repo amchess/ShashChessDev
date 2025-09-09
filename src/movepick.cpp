@@ -218,20 +218,20 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
             if (is_fortress_breaking_move(pos, m))
             {
                 // Penalità maggiore per mosse che rompono la fortezza
-                m.value -= breakingPenalty * 1.5;
+                m.value -= breakingPenalty;
 
                 // Penalità extra per pezzi chiave
                 if (is_fortress_key_piece(pc))
-                    m.value -= 600;
+                    m.value -= 300;
             }
             else if (preserve)
             {
                 // Bonus maggiore per mosse che mantengono la fortezza
-                m.value += preservingBonus * 1.8;
+                m.value += preservingBonus;
 
                 // Bonus speciale per mosse di re in fase finale
                 if (type_of(pc) == KING && phase == 3)
-                    m.value += 300;
+                    m.value += 150;
 
                 // Bonus aggiuntivo per mosse di pedone che rafforzano la struttura
                 if (type_of(pc) == PAWN)
@@ -239,13 +239,13 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
                     // Bonus per pedoni connessi
                     Bitboard adjacentPawns = attacks_bb<PAWN>(to, us) & pos.pieces(us, PAWN);
                     if (adjacentPawns)
-                        m.value += 200;
+                        m.value += 100;
 
                     // Bonus per pedoni avanzati
                     Rank r          = rank_of(to);
                     bool isAdvanced = (us == WHITE) ? (r >= RANK_5) : (r <= RANK_4);
                     if (isAdvanced)
-                        m.value += 150;
+                        m.value += 75;
                 }
             }
 
