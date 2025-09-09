@@ -852,10 +852,16 @@ void Search::Worker::iterative_deepening() {
                 // Narrow window for strategical positions (Capablanca/Petrosian)
                 delta = 5 + threadIdx % 4;
 
+                // Widen the window as depth increases to reduce re-searches
+                if (rootDepth > 10)
+                    delta += (rootDepth - 10) / 2;
+
                 // Even narrower window for fortresses
                 if (MoveConfig::isFortress)
                 {
                     delta = 3 + threadIdx % 2;
+                    if (rootDepth > 10)
+                        delta += (rootDepth - 10) / 2;
                 }
             }
             else if (isAggressive)
@@ -1732,7 +1738,7 @@ Value Search::Worker::search(
 
         // Compute conditions once
         bool positionSafe = !kingDanger && quietKingSafe;
-        gameCycle    = pos.upcoming_repetition(ss->ply);
+        gameCycle         = pos.upcoming_repetition(ss->ply);
 
         // Determine null move eligibility based on Shashin style
         bool allowNullMove = false;
