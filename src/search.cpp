@@ -854,14 +854,14 @@ void Search::Worker::iterative_deepening() {
 
                 // Widen the window as depth increases to reduce re-searches
                 if (rootDepth > 10)
-                    delta += (rootDepth - 10) / 2;
+                    delta += (rootDepth - 10) / 3;
 
                 // Even narrower window for fortresses
                 if (MoveConfig::isFortress)
                 {
                     delta = 3 + threadIdx % 2;
                     if (rootDepth > 10)
-                        delta += (rootDepth - 10) / 2;
+                        delta += (rootDepth - 10) / 3;
                 }
             }
             else if (isAggressive)
@@ -1967,7 +1967,7 @@ Value Search::Worker::search(
     // Shashin: Reduce depth in fortress positions to avoid wasting time
     if (isFortressNode && depth > 12)
     {
-        depth = std::max(depth - 2, 8);
+        depth = std::max(depth - 1, 8);
     }
 moves_loop:  // When in check, search starts here
 
@@ -2934,7 +2934,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         // Shashin: Increase futility margin for aggressive positions to avoid cutting tactical moves
         // Utilizza rootShashinState per determinare se siamo in una posizione aggressiva
         if (isAggressive)
-            futilityBase += 20;  // Increase margin by 20 points
+            futilityBase += 10;  // Increase margin by 20 points
     }
 
     const PieceToHistory* contHist[] = {(ss - 1)->continuationHistory,
@@ -3145,9 +3145,12 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 Depth Search::Worker::reduction(
   bool i, Depth d, int mn, int delta, bool isStrategical, bool isAggressive) const {
     int reductionScale = reductions[d] * reductions[mn];
+    // Additional adjustment for high depths
+    if (d > 10)
+        reductionScale = reductionScale * 0.98; // Slightly reduce reduction for high depths   
     // Aggiusta based on Shashin style
     if (isStrategical)                          // Supponi che isStrategical sia accessibile
-        reductionScale = reductionScale * 0.9;  // Riduci del 10%
+        reductionScale = reductionScale * 0.95;  // Riduci del 10%
     else if (isAggressive)
         reductionScale = reductionScale * 1.1;  // Aumenta del 10%
     //mcts begin
