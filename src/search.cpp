@@ -854,25 +854,24 @@ void Search::Worker::iterative_deepening() {
 
                 // Widen the window as depth increases to reduce re-searches
                 if (rootDepth > 10)
-                    delta += (rootDepth - 10) / 3;
-
+                    delta += (rootDepth - 10) / 4;
                 // Even narrower window for fortresses
                 if (MoveConfig::isFortress)
                 {
                     delta = 3 + threadIdx % 2;
                     if (rootDepth > 10)
-                        delta += (rootDepth - 10) / 3;
+                        delta += (rootDepth - 10) / 4;  // Same for fortresses
                 }
             }
             else if (isAggressive)
             {
                 // Wide window for aggressive positions (Tal)
-                delta = 20 + threadIdx % 12;
+                delta = 19 + threadIdx % 11;
 
                 // Adjust for specific aggressive subtypes
                 if (isHighTal)
                 {
-                    delta = 25 + threadIdx % 15;  // Even wider for High Tal
+                    delta = 23 + threadIdx % 14;  // Even wider for High Tal
                 }
             }
             else
@@ -1267,17 +1266,20 @@ Value Search::Worker::search(
     if (PvNode && selDepth < ss->ply + 1)
         selDepth = ss->ply + 1;
     //from crystal shashin begin
-    const auto& dynamicDerived     = rootShashinState.dynamicDerived;
-    const auto& staticState        = rootShashinState.staticState;
-    bool        isStrategical      = localShashinManager.isStrategical();
-    bool        isTacticalReactive = dynamicDerived.isTacticalReactive;
-    bool        quietKingSafe      = !staticState.isSacrificial && (!staticState.stmKingExposed);
-    bool        isTal              = localShashinManager.isTal();
-    bool        isPetrosian        = localShashinManager.isPetrosian();
-    bool        isCapablanca       = localShashinManager.isCapablanca();
-    bool        isAggressive       = localShashinManager.isAggressive();
-    bool        isTactical         = localShashinManager.isTactical();
-    bool        isComplex          = localShashinManager.isComplexPosition();
+    const auto& dynamicDerived      = rootShashinState.dynamicDerived;
+    const auto& staticState         = rootShashinState.staticState;
+    bool        isStrategical       = localShashinManager.isStrategical();
+    bool        isTacticalReactive  = dynamicDerived.isTacticalReactive;
+    bool        stmKingExposed      = staticState.stmKingExposed;
+    bool        opponentKingExposed = staticState.opponentKingExposed;
+    bool        quietKingSafe       = !staticState.isSacrificial && (!stmKingExposed);
+    bool        isTal               = localShashinManager.isTal();
+    bool        isPetrosian         = localShashinManager.isPetrosian();
+    bool        isCapablanca        = localShashinManager.isCapablanca();
+    bool        isAggressive        = localShashinManager.isAggressive();
+    bool        isTactical          = localShashinManager.isTactical();
+    bool        isComplex           = localShashinManager.isComplexPosition();
+    uint8_t     legalMoveCount      = staticState.legalMoveCount;
     //from crystal shashin end
     if (!rootNode)
     {
@@ -1659,8 +1661,7 @@ Value Search::Worker::search(
         if (isAggressive)
         {
             // Reduce pruning in aggressive positions to preserve tactical opportunities
-            styleFactor =
-              85 - 10 * (staticState.legalMoveCount < 20);  // Even less pruning with low mobility
+            styleFactor = 85 - 10 * (legalMoveCount < 20);  // Even less pruning with low mobility
         }
         else if (isStrategical)
         {
@@ -1684,10 +1685,22 @@ Value Search::Worker::search(
             Value baseMargin     = 91 - 21 * !ss->ttHit;
             Value adjustedMargin = (baseMargin * styleFactor) / 100;
 
-            return adjustedMargin * d - 2094 * improving * adjustedMargin / 1024
-                 - 1324 * opponentWorsening * adjustedMargin / 4096 + (ss - 1)->statScore / 331
-                 + std::abs(correctionValue) / 158105
-                 - 35 * staticState.legalMoveCount / 32;  // Account for mobility
+            Value margin = adjustedMargin * d - 2094 * improving * adjustedMargin / 1024
+                         - 1324 * opponentWorsening * adjustedMargin / 4096
+                         + (ss - 1)->statScore / 331 + std::abs(correctionValue) / 158105
+                         - 35 * legalMoveCount / 32;  // Account for mobility
+
+            // Shashin: Reduce pruning in positions with high mobility or exposed king
+            if (isStrategical && legalMoveCount > 30)
+                margin *= 0.98;
+
+            // Additional reduction if king is exposed
+            if (stmKingExposed || opponentKingExposed)
+            {
+                margin *= 0.93;
+            }
+
+            return margin;
         };
 
         // Determine if pruning is allowed based on position characteristics
@@ -1696,7 +1709,7 @@ Value Search::Worker::search(
         {
             allowPruning = depth < 6;  // Only allow shallow pruning in king danger
         }
-        else if (isAggressive && staticState.legalMoveCount < 15)
+        else if (isAggressive && legalMoveCount < 15)
         {
             allowPruning = depth < 10;  // Limit pruning in aggressive positions with low mobility
         }
@@ -1964,10 +1977,11 @@ Value Search::Worker::search(
             }
         }
     }
-    // Shashin: Reduce depth in fortress positions to avoid wasting time
+
+    // Shashin: Reduce depth in fortress positions only if not in check and depth is high
     if (isFortressNode && depth > 12)
     {
-        depth = std::max(depth - 1, 8);
+        depth = std::max(depth - 2, 9);
     }
 moves_loop:  // When in check, search starts here
 
@@ -2608,8 +2622,8 @@ skipExtensionAndPruning:  // full threads search patch
                     int       reduction     = baseReduction;
 
                     // Specific tactical conditions for style (Shashin-correct)
-                    const bool criticalTactical = (staticState.opponentKingExposed && isTal)
-                                               || (staticState.stmKingExposed && isPetrosian);
+                    const bool criticalTactical =
+                      (opponentKingExposed && isTal) || (stmKingExposed && isPetrosian);
 
                     // Hybrid Shashin Strategy
                     if (criticalTactical)
@@ -2617,8 +2631,7 @@ skipExtensionAndPruning:  // full threads search patch
                         // Depth preserved in critical positions for style
                         reduction = 1;
                     }
-                    else if (isStrategical && !staticState.stmKingExposed
-                             && !staticState.opponentKingExposed)
+                    else if (isStrategical && !stmKingExposed && !opponentKingExposed)
                     {
                         // Positional scenario: more aggressive reduction
                         reduction = (depth > 8) ? 3 : 2;
@@ -2816,23 +2829,23 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     const auto& dynamicDerived = rootShashinState.dynamicDerived;
     const bool  canUseTTValue  = !PvNode && is_valid(ttData.value)
                             && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER));
-    const bool isStrategical = dynamicDerived.isStrategical;
-    const bool isAggressive  = dynamicDerived.isAggressive;
+    const bool isStrategical       = dynamicDerived.isStrategical;
+    const bool isAggressive        = dynamicDerived.isAggressive;
+    const bool stmKingExposed      = staticState.stmKingExposed;
+    const bool opponentKingExposed = opponentKingExposed;
     if (canUseTTValue)
     {
         if (ttData.depth >= DEPTH_QS)
             return ttData.value;
         if (staticState.legalMoveCount < 35 && std::abs(ttData.value) > 60)
         {
-            const bool areQuietKings =
-              !staticState.stmKingExposed && !staticState.opponentKingExposed;
+            const bool areQuietKings = !stmKingExposed && !opponentKingExposed;
             if (!isStrategical && areQuietKings)
             {
                 const bool depthCondition =
                   ttData.depth >= ADJUSTED_QS_DEPTH && ttData.depth > MIN_DEPTH_FOR_QS_CUTOFF;
                 const bool kingSafety =
-                  (!staticState.stmKingExposed && !staticState.opponentKingExposed)
-                  || ttData.depth > DEPTH_QS + 4;
+                  (!stmKingExposed && !opponentKingExposed) || ttData.depth > DEPTH_QS + 4;
                 if (depthCondition && kingSafety)
                     return ttData.value;
             }
@@ -2934,7 +2947,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         // Shashin: Increase futility margin for aggressive positions to avoid cutting tactical moves
         // Utilizza rootShashinState per determinare se siamo in una posizione aggressiva
         if (isAggressive)
-            futilityBase += 10;  // Increase margin by 20 points
+            futilityBase += 3;  // Increase margin by 20 points
     }
 
     const PieceToHistory* contHist[] = {(ss - 1)->continuationHistory,
@@ -3145,15 +3158,14 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 Depth Search::Worker::reduction(
   bool i, Depth d, int mn, int delta, bool isStrategical, bool isAggressive) const {
     int reductionScale = reductions[d] * reductions[mn];
-    // Additional adjustment for high depths
-    if (d > 10)
-        reductionScale = reductionScale * 0.98; // Slightly reduce reduction for high depths   
-    // Aggiusta based on Shashin style
-    if (isStrategical)                          // Supponi che isStrategical sia accessibile
-        reductionScale = reductionScale * 0.95;  // Riduci del 10%
+    // Adjust based on Shashin style - slightly more reduction for strategical positions
+    if (isStrategical)
+        reductionScale = reductionScale * 0.95;
     else if (isAggressive)
-        reductionScale = reductionScale * 1.1;  // Aumenta del 10%
+        reductionScale = reductionScale * 1.05;
+
     //mcts begin
+
     if (rootDelta != 0)
         return reductionScale - delta * 757 / rootDelta + !i * reductionScale * 218 / 512 + 1200;
     else  // avoid divide by zero error
