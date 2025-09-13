@@ -1736,59 +1736,22 @@ Value Search::Worker::search(
         }
     }
 
-
     // Step 9. Null move search with verification search
     //crystal-shashin logic begin
-    //common null move conditions begin
-    nullThreshold            = beta - 18 * depth + 390;
-    commonNullMoveConditions = cutNode && !disableNMAndPC && ss->staticEval >= nullThreshold
-                            && !excludedMove && pos.non_pawn_material(us);
-
-    if (commonNullMoveConditions)
+    if (cutNode && ss->staticEval >= beta - 18 * depth + 390 && !excludedMove
+        && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && !is_loss(beta))
     {
-        // Calcola una volta le informazioni Shashin rilevanti
-        const bool useNullMoveByShashin = localShashinManager.useNullMoveByShashinForStockfish();
+        // Check if we should skip null move based on Shashin style and depth
+        bool skipNullMove = false;
 
-        // Compute conditions once
-        bool positionSafe = !kingDanger && quietKingSafe;
-        gameCycle         = pos.upcoming_repetition(ss->ply);
+        if (isStrategical && depth >= 14)
+            skipNullMove = true;
+        else if (isAggressive && depth >= 10)
+            skipNullMove = true;
+        else if (isFortressNode && depth >= 6)
+            skipNullMove = true;
 
-        // Determine null move eligibility based on Shashin style
-        bool allowNullMove = false;
-
-        if (useNullMoveByShashin)
-        {
-            // Use Stockfish-style null move conditions
-            allowNullMove = (ss->ply >= nmpMinPly) && !is_loss(beta);
-        }
-        else
-        {
-            // Use Crystal-style null move conditions
-            allowNullMove = !nmpGuard && (gameCycle ? (depth < 8 && positionSafe) : true)
-                         && (eval >= ss->staticEval + 20) && positionSafe
-                         && (rootDepth < 11 || ourMove || (MoveList<LEGAL>(pos).size() > 8));
-        }
-
-        // Additional Shashin-based adjustments
-        if (isStrategical)
-        {
-            // More permissive null move in strategical positions
-            allowNullMove = allowNullMove && depth < 14;
-        }
-        else if (isAggressive)
-        {
-            // More restrictive null move in aggressive positions
-            allowNullMove = allowNullMove && depth < 10 && positionSafe;
-        }
-
-        // Special handling for fortresses
-        if (isFortressNode)
-        {
-            // Very restrictive null move in fortresses
-            allowNullMove = allowNullMove && depth < 6 && positionSafe;
-        }
-
-        if (allowNullMove)
+        if (!skipNullMove)
         {
             assert((ss - 1)->currentMove != Move::null());
             assert(eval - beta >= 0);
@@ -1797,25 +1760,21 @@ Value Search::Worker::search(
             Depth R = 6 + depth / 3;
 
             // Shashin-based adjustments to reduction
-            if (!useNullMoveByShashin)
-            {
-                // Crystal-specific adjustment
-                if (!ourMove && (ss - 1)->secondaryLine)
-                    R = std::min(R, 8);
-                if (isComplex && depth > 10)
-                    R = std::max(R - 1, 3);
-            }
-
-            // Additional adjustments based on Shashin style
             if (isStrategical)
+            {
+                // More reduction in strategical positions (shallower search)
+                R = std::min(R + 1, 8);
+            }
+            else if (isAggressive)
             {
                 // Less reduction in strategical positions
                 R = std::max(R - 1, 3);
             }
-            else if (isAggressive)
+
+            // For fortresses, we can use even more reduction
+            if (isFortressNode)
             {
-                // More reduction in aggressive positions
-                R = std::min(R + 1, 8);
+                R = std::min(R + 2, 10);
             }
 
             ss->currentMove                   = Move::null();
@@ -1848,6 +1807,7 @@ Value Search::Worker::search(
     }
 
     improving |= ss->staticEval >= beta;
+
 
     // Step 10. Internal iterative reductions
     //by Shashin begin
