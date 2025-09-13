@@ -1845,8 +1845,10 @@ Value Search::Worker::search(
         // probCut there
         && !(is_valid(ttData.value) && ttData.value < probCutBeta))
     {
-        // Shashin adjustment: skip ProbCut in fortress positions or quiet strategical positions
-        if (!isFortressNode && !(isStrategical && !kingDanger))
+        // Shashin adjustment: skip ProbCut in inappropriate positions
+        bool skipProbCut = isFortressNode || (isStrategical && !staticState.kingDanger);
+
+        if (!skipProbCut)
         {
             assert(probCutBeta < VALUE_INFINITE && probCutBeta > beta);
 
@@ -1854,20 +1856,18 @@ Value Search::Worker::search(
             Depth      dynamicReduction = std::max((ss->staticEval - beta) / 306, -1);
             Depth      probCutDepth     = std::max(depth - 5 - dynamicReduction, 0);
 
-            // Shashin adjustment: reduce depth more in Capablanca positions
+            // Shashin-based depth adjustments
             if (isCapablanca && depth > 8)
+            {
                 probCutDepth = std::max(depth - 7 - dynamicReduction, 0);
-
-            // Additional Shashin-based adjustments
-            if (isStrategical)
-            {
-                // Less aggressive ProbCut in strategical positions
-                probCutDepth = std::max(probCutDepth - 1, 0);
             }
-            else if (isAggressive)
+            else
             {
-                // More aggressive ProbCut in aggressive positions
-                probCutDepth = std::max(probCutDepth + 1, 0);
+                // Adjust depth based on Shashin style
+                if (isStrategical)
+                    probCutDepth = std::max(probCutDepth - 1, 0);  // Less aggressive in strategical
+                else if (isAggressive)
+                    probCutDepth = std::max(probCutDepth + 1, 0);  // More aggressive in tactical
             }
 
             while ((move = mp.next_move()) != Move::none())
@@ -1886,8 +1886,10 @@ Value Search::Worker::search(
 
                 // If the qsearch held, perform the regular search
                 if (value >= probCutBeta && probCutDepth > 0)
+                {
                     value = -search<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1,
                                            probCutDepth, !cutNode);
+                }
 
                 undo_move(pos, move);
 
@@ -1904,11 +1906,12 @@ Value Search::Worker::search(
         }
     }
 
-    // Shashin: Reduce depth in fortress positions only if not in check and depth is high
-    if (isFortressNode && depth > 12)
+    // Shashin: Reduce depth in fortress positions when appropriate
+    if (isFortressNode && depth > 12 && !ss->inCheck)
     {
         depth = std::max(depth - 2, 9);
     }
+
 moves_loop:  // When in check, search starts here
 
     // Step 12. A small Probcut idea
