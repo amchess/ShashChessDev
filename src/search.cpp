@@ -904,8 +904,7 @@ void Search::Worker::iterative_deepening() {
                 // effective increment for every four searchAgain steps (see issue #2717).
                 Depth adjustedDepth =
                   std::max(1, rootDepth - failedHighCnt - 3 * (searchAgainCounter + 1) / 4);
-                rootDelta                      = beta - alpha;
-                size_t previousBestMoveChanges = bestMoveChanges;
+                rootDelta = beta - alpha;
                 bestValue = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
 
                 // Bring the best move to the front. It is critical that sorting
@@ -934,9 +933,7 @@ void Search::Worker::iterative_deepening() {
                 // otherwise exit the loop.
                 if (bestValue <= alpha)
                 {
-                    beta =
-                      (alpha * 123 + beta * 9 + std::min(bestValue + delta, VALUE_INFINITE) * 12)
-                      / 144;
+                    beta  = alpha;
                     alpha = std::max(bestValue - delta, -VALUE_INFINITE);
 
                     failedHighCnt = 0;
@@ -945,15 +942,6 @@ void Search::Worker::iterative_deepening() {
                 }
                 else if (bestValue >= beta)
                 {
-                    if (bestMoveChanges > previousBestMoveChanges)
-                        alpha =
-                          (alpha * 116 + beta + std::max(bestValue - delta, -VALUE_INFINITE) * 7)
-                          / 124;
-                    else
-                        alpha = (alpha * 119 + beta * 6
-                                 + std::max(bestValue - delta, -VALUE_INFINITE) * 16)
-                              / 141;
-
                     beta = std::min(bestValue + delta, VALUE_INFINITE);
                     ++failedHighCnt;
                 }
@@ -1598,10 +1586,6 @@ Value Search::Worker::search(
             pawnHistory[pawn_history_index(pos)][pos.piece_on(prevSq)][prevSq]
               << bonus * 1438 / 1024;
     }
-    //from Shashin begin
-    int  nullThreshold;
-    bool commonNullMoveConditions;
-    //from Shashin end
     // full threads patch begin
     if (fullSearch)
         goto moves_loop;  // full threads patch
@@ -1653,86 +1637,68 @@ Value Search::Worker::search(
         if (eval < razorThreshold)
             return qsearch<NonPV>(pos, ss, alpha, beta);
     }
-    // Step 8. Futility pruning: child node with enhanced Shashin adjustments
+    // Step 8. Futility pruning: child node with Shashin adjustments
     {
-        // Calculate dynamic style factor based on multiple criteria
-        Value styleFactor = 100;  // Default neutral
+        // Calculate dynamic margin adjustment based on Shashin style
+        Value marginMultiplier = 100;  // Default 100%
 
         if (isAggressive)
         {
-            // Reduce pruning in aggressive positions to preserve tactical opportunities
-            styleFactor = 85 - 10 * (legalMoveCount < 20);  // Even less pruning with low mobility
+            // Reduce pruning in aggressive positions: smaller margin
+            marginMultiplier = 85 - 10 * (legalMoveCount < 20);
         }
         else if (isStrategical)
         {
-            // Increase pruning in strategical positions
-            styleFactor = 115 + 5 * (staticState.highMaterial);  // More pruning with high material
+            // Increase pruning in strategical positions: larger margin
+            marginMultiplier = 115 + 5 * staticState.highMaterial;
         }
 
-        // Additional adjustments for specific conditions
+        // Further adjustments for king danger and fortresses
         if (staticState.kingDanger)
         {
-            styleFactor =
-              std::min(styleFactor, 70);  // Significantly reduce pruning when king is in danger
+            marginMultiplier = std::min(marginMultiplier, 70);
         }
 
         if (isFortressNode)
         {
-            styleFactor = 60;  // Very low pruning in fortresses to ensure thorough search
+            marginMultiplier = 60;
+        }
+
+        // Adjust for king exposure
+        if (stmKingExposed || opponentKingExposed)
+        {
+            marginMultiplier = marginMultiplier * 93 / 100;
+        }
+
+        // Adjust for mobility in strategical positions
+        if (isStrategical && legalMoveCount > 30)
+        {
+            marginMultiplier = marginMultiplier * 98 / 100;
         }
 
         auto futility_margin = [&](Depth d) {
-            Value baseMargin     = 91 - 21 * !ss->ttHit;
-            Value adjustedMargin = (baseMargin * styleFactor) / 100;
+            Value baseMargin         = 91 - 21 * !ss->ttHit;
+            Value adjustedBaseMargin = (baseMargin * marginMultiplier) / 100;
 
-            Value margin = adjustedMargin * d - 2094 * improving * adjustedMargin / 1024
-                         - 1324 * opponentWorsening * adjustedMargin / 4096
-                         + (ss - 1)->statScore / 331 + std::abs(correctionValue) / 158105
-                         - 35 * legalMoveCount / 32;  // Account for mobility
-
-            // Shashin: Reduce pruning in positions with high mobility or exposed king
-            if (isStrategical && legalMoveCount > 30)
-                margin *= 0.98;
-
-            // Additional reduction if king is exposed
-            if (stmKingExposed || opponentKingExposed)
-            {
-                margin *= 0.93;
-            }
-
-            return margin;
+            return adjustedBaseMargin * d - 2094 * improving * adjustedBaseMargin / 1024
+                 - 1324 * opponentWorsening * adjustedBaseMargin / 4096 + (ss - 1)->statScore / 331
+                 + std::abs(correctionValue) / 158105 - 35 * legalMoveCount / 32;
         };
 
-        // Determine if pruning is allowed based on position characteristics
-        bool allowPruning = true;
-        if (staticState.kingDanger)
+        if (!ss->ttPv && depth < 14 && eval - futility_margin(depth) >= beta && eval >= beta
+            && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval))
         {
-            allowPruning = depth < 6;  // Only allow shallow pruning in king danger
-        }
-        else if (isAggressive && legalMoveCount < 15)
-        {
-            allowPruning = depth < 10;  // Limit pruning in aggressive positions with low mobility
-        }
-
-        if (allowPruning && !ss->ttPv && depth < 14 && eval - futility_margin(depth) >= beta
-            && eval >= beta && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval))
-        {
-            // Adjust reduction based on position style
             Value reduction;
             if (isAggressive || staticState.kingDanger)
-            {
                 reduction = (eval - beta) / 4;  // Less reduction in aggressive/dangerous positions
-            }
             else if (isStrategical)
-            {
                 reduction = (eval - beta) / 2;  // More reduction in strategical positions
-            }
             else
-            {
                 reduction = (eval - beta) / 3;  // Default reduction
-            }
 
-            return beta + std::min(reduction, staticState.kingDanger ? Value(100) : Value(150));
+            // Clamp reduction to avoid too large values
+            reduction = std::min(reduction, Value(150));
+            return beta + reduction;
         }
     }
 
@@ -2364,97 +2330,85 @@ skipExtensionAndPruning:  // full threads search patch
         r -= ss->statScore * 794 / 8192;
 
         // Step 17. Late moves reduction / extension (LMR)
-        if (depth >= 2 && moveCount > std::max(sibs, static_cast<int>(1)) && doLMRStep)
+        if (depth >= 2 && moveCount > std::max(sibs, 1) && doLMRStep)
         {
-            // Calcola una volta le informazioni Shashin rilevanti
-            const bool isCrystal = localShashinManager.useStep17CrystalLogic();
-
-            // Determina se applicare la logica Crystal
-            bool applyCrystalLMR = false;
-            bool allowExt        = false;
-
-            if (isCrystal)
-            {
-                const bool kingDangerThem = ourMove && king_danger(pos, ~us);
-                const bool lmrCapture     = cutNode && (ss - 1)->moveCount > 1;
-                allowExt = (ss->ply + depth < MAX_PLY - 2) && (ss->ply < 2 * rootDepth);
-
-                bool allowLMR   = depth > 1 && !gameCycle;
-                allowLMR        = allowLMR && (!kingDangerThem || ss->ply > 6);
-                allowLMR        = allowLMR && (!PvNode || ss->ply > 1);
-                applyCrystalLMR = allowLMR && (!capture || lmrCapture) && moveCount > 3;
-            }
-
-            // Calcola la profondita' ridotta
-            // In general we want to cap the LMR depth search at newDepth, but when
-            // reduction is negative, we allow this move a limited search extension
-            // beyond the first move depth.
-            // To prevent problems when the max value is less than the min value,
-            // std::clamp has been replaced by a more robust implementation.
+            // Calculate base reduced depth
             Depth d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
 
-            // Applica le regole Crystal se attive
-            if (isCrystal && isStrategical && !capture && depth > 8)
-                d = std::max(1, d - 1);
-
+            // Apply Shashin-style adjustments
             // Adjustments aggiuntivi basati sullo stile Shashin
             if (isStrategical)
             {
-                // Riduzione piu' aggressiva nelle posizioni strategiche
+                // More reduction in strategical positions (Capablanca/Petrosian)
                 d = std::max(1, d - 1);
+
+                // Additional reduction for quiet moves in strategical positions
+                if (!capture && depth > 8)
+                    d = std::max(1, d - 1);
             }
             else if (isAggressive)
             {
-                // Riduzione meno aggressiva nelle posizioni aggressive
+                // Less reduction in aggressive positions (Tal)
                 d = std::min(d + 1, newDepth);
+
+                // Even less reduction for checks and tactical moves
+                if (givesCheck || isTactical)
+                    d = std::min(d + 1, newDepth);
             }
 
-            // Esegui la ricerca ridotta
+            // Special handling for fortress positions
+            if (isFortressNode)
+            {
+                // Maximum reduction in fortress positions
+                d = std::max(1, d - 2);
+            }
+
+            // Execute reduced search
             ss->reduction = newDepth - d;
             value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
             ss->reduction = 0;
 
-            // Gestione del re-search
-            // Do a full-depth search when reduced LMR search fails high
-            // (*Scaler) Usually doing more shallower searches
-            // doesn't scale well to longer TCs
             if (value > alpha)
             {
-                // Adjust full-depth search based on LMR results - if the result was
-                // good enough search deeper, if it was bad enough search shallower.
                 const bool doDeeperSearch = d < newDepth && value > (bestValue + 43 + 2 * newDepth);
                 const bool doShallowerSearch = value < bestValue + 9;
+                // Calcola una volta le informazioni Shashin rilevanti
+                const bool isCrystal = localShashinManager.useStep17CrystalLogic();
+                // Determine if we should use Crystal-style re-search
+                bool useCrystalResearch = isCrystal && doDeeperSearch && isTactical;
+                useCrystalResearch &= (ss->ply + depth < MAX_PLY - 2);
+                useCrystalResearch &= (ss->ply < 2 * rootDepth);
+                useCrystalResearch &= (value > alpha + 150);
 
-                if (applyCrystalLMR && doDeeperSearch && isTactical)
+                if (useCrystalResearch)
                 {
-                    // Logica Crystal per ricerca piu' profonda
-                    Depth extDepth = newDepth + 1;
-                    if (value > alpha + 150)
-                        extDepth += allowExt ? 1 : 0;
-
+                    // Crystal-style deeper research
+                    Depth extDepth = newDepth + 2;
                     value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, extDepth, !cutNode);
                 }
                 else
                 {
-                    // Logica standard per re-search
+                    // Standard re-search logic
                     newDepth += doDeeperSearch - doShallowerSearch;
                     if (newDepth > d)
                         value =
                           -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, newDepth, !cutNode);
                 }
 
-                // Aggiornamento history con bonus differenziato
-                int bonus = 1365;  // Valore base di Stockfish
+                // Calculate history bonus based on Shashin style
+                int bonus = 1365;  // Base Stockfish value
 
-                // Bonus aumentato per logica Crystal
-                if (applyCrystalLMR)
-                    bonus = 1720;
+                // Increase bonus for aggressive positions
+                if (isAggressive)
+                    bonus += 150;
 
-                // Adjustments basati sullo stile Shashin
-                if (isStrategical)
-                    bonus += 100;  // Bonus extra per posizioni strategiche
-                else if (isAggressive)
-                    bonus += 150;  // Bonus extra per posizioni aggressive
+                // Moderate bonus for strategical positions
+                else if (isStrategical)
+                    bonus += 100;
+
+                // Special bonus for fortress positions
+                if (isFortressNode)
+                    bonus += 200;
 
                 // Post LMR continuation history updates
                 update_continuation_histories(ss, movedPiece, move.to_sq(), bonus);
