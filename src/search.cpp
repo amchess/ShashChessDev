@@ -2173,39 +2173,37 @@ moves_loop:  // When in check, search starts here
         }
 
         // Step 15. Extensions
-        // Singular extension search. If all moves but one
-        // fail low on a search of (alpha-s, beta-s), and just one fails high on
-        // (alpha, beta), then that move is singular and should be extended. To
-        // verify this we do a reduced search on the position excluding the ttMove
-        // and if the result is lower than ttValue minus a margin, then we will
-        // extend the ttMove. Recursive singular search is avoided.
-
-        // (*Scaler) Generally, higher singularBeta (i.e closer to ttValue)
-        // and lower extension margins scale well.
+        // Singular extension search. If all moves but one fail low on a search of (alpha-s, beta-s),
+        // and just one fails high on (alpha, beta), then that move is singular and should be extended.
         if (!rootNode && move == ttData.move && !excludedMove && depth >= 6 + ss->ttPv
             && is_valid(ttData.value) && !is_decisive(ttData.value) && (ttData.bound & BOUND_LOWER)
             && ttData.depth >= depth - 3)
         {
-
-            // Adjust singularBeta based on style
+            // Adjust singularBeta based on Shashin style
             int styleMarginAdjust = 0;
             if (isAggressive)
             {
-                styleMarginAdjust = -12;  // Più aggressivo per Tal
+                styleMarginAdjust = -12;  // More aggressive for Tal-style positions
             }
             else if (isStrategical)
             {
-                styleMarginAdjust = 8;  // Più cauto per Petrosian
+                styleMarginAdjust = 8;  // More cautious for Petrosian-style positions
             }
 
             Value singularBeta =
               ttData.value - (56 + 81 * (ss->ttPv && !PvNode) + styleMarginAdjust) * depth / 60;
             Depth singularDepth = newDepth / 2;
 
-            // Adjust depth based on complexity
+            // Adjust depth based on complexity and Shashin style
             if (isComplex && depth > 8)
             {
                 singularDepth += 1;
+            }
+
+            // Additional adjustment for aggressive positions
+            if (isAggressive && depth > 10)
+            {
+                singularDepth += 1;  // Deeper search for tactical positions
             }
 
             ss->excludedMove = move;
@@ -2214,11 +2212,11 @@ moves_loop:  // When in check, search starts here
 
             if (value < singularBeta)
             {
-                int corrValAdj   = std::abs(correctionValue) / 249096;
-                int doubleMargin = 4 + 205 * PvNode - 223 * !ttCapture - corrValAdj
-                                 - 959 * ttMoveHistory / 131072 - (ss->ply > rootDepth) * 45;
-                int tripleMargin = 80 + 276 * PvNode - 249 * !ttCapture + 86 * ss->ttPv - corrValAdj
-                                 - (ss->ply * 2 > rootDepth * 3) * 53;
+                int corrValAdj   = std::abs(correctionValue) / 229958;
+                int doubleMargin = -4 + 198 * PvNode - 212 * !ttCapture - corrValAdj
+                                 - 921 * ttMoveHistory / 127649 - (ss->ply > rootDepth) * 45;
+                int tripleMargin = 76 + 308 * PvNode - 250 * !ttCapture + 92 * ss->ttPv - corrValAdj
+                                 - (ss->ply * 2 > rootDepth * 3) * 52;
 
                 // Shashin-based adjustments
                 if (isAggressive)
@@ -2236,7 +2234,6 @@ moves_loop:  // When in check, search starts here
                   1 + (value < singularBeta - doubleMargin) + (value < singularBeta - tripleMargin);
                 depth++;
             }
-
             // Multi-cut pruning
             // Our ttMove is assumed to fail high based on the bound of the TT entry,
             // and if after excluding the ttMove with a reduced search we fail high
@@ -2247,7 +2244,6 @@ moves_loop:  // When in check, search starts here
             {
                 return value;
             }
-
             // Negative extensions
             // If other moves failed high over (ttValue - margin) without the
             // ttMove on a reduced search, but we cannot do multi-cut because
