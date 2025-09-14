@@ -1774,49 +1774,44 @@ Value Search::Worker::search(
 
     improving |= ss->staticEval >= beta;
 
-
     // Step 10. Internal iterative reductions
-    //by Shashin begin
     // At sufficient depth, reduce depth for PV/Cut nodes without a TTMove.
-    // (*Scaler) Especially if they make IIR less aggressive.
+    // (*Scaler) Especially if they make IIR less aggressive.    
+    if (!allNode && depth >= 6 && !ttData.move && priorReduction <= 3)
     {
-        // Calcola una volta le informazioni Shashin rilevanti
-        const bool avoidStep10 = localShashinManager.avoidStep10();
-
         Depth originalDepth = depth;
 
-        // Base Stockfish reduction
-        if (!allNode && depth >= 6 && !ttData.move && priorReduction <= 3)
-        {
-            depth--;
-        }
+        // Apply base Stockfish reduction
+        depth--;
 
-        // Shashin adaptive reduction
-        if (quietKingSafe && !avoidStep10 && depth >= 6)
+        // Shashin adaptive reduction: apply additional reductions based on position style
+        const bool avoidStep10 = localShashinManager.avoidStep10();
+        if (quietKingSafe && !avoidStep10
+            && originalDepth >= 6)  // Use originalDepth for consistent conditions
         {
             const bool ttReduction = cutNode && ttData.move && ttData.bound == BOUND_UPPER;
-
             if (ttReduction)
             {
                 int reduction = 0;
 
+                // Determine reduction based on Shashin style
                 // Strategical positions: more aggressive reduction
                 if (isStrategical)
                 {
-                    reduction = 2;
+                    reduction = 2;  // More aggressive reduction in strategical positions
                 }
-                // Tactical positions: preserve depth
+				// Tactical positions: preserve depth
                 else if (isAggressive || isTacticalReactive)
                 {
-                    reduction = 0;
+                    reduction = 0;  // Preserve depth in tactical positions
                 }
-                // Default: moderate reduction
+				// Default: moderate reduction
                 else
                 {
                     reduction = 1;
                 }
 
-                // Additional adjustments based on specific conditions
+                // Additional adjustments for special conditions
                 if (isFortressNode)
                 {
                     // Extra reduction in fortresses
@@ -1825,11 +1820,10 @@ Value Search::Worker::search(
 
                 if (gameCycle)
                 {
-                    // Less reduction in game cycle positions
-                    reduction = std::max(reduction - 1, 0);
+                    reduction = std::max(reduction - 1, 0);  // Less reduction in game cycles
                 }
 
-                // Apply reduction only if justified
+                // Apply the additional reduction, ensuring depth doesn't drop below 1
                 depth = std::max(originalDepth - reduction, 1);
             }
         }
