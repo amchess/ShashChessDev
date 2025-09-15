@@ -135,7 +135,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
 
     if (fortress)
     {
-        phase       = std::clamp(pos.game_ply() / 25, 0, 3);
+        phase           = std::clamp(pos.game_ply() / 25, 0, 3);
         breakingPenalty = 1200 + 400 * phase;
         preservingBonus = 600 + 200 * (3 - phase);
         noProgress15    = no_progress_for(pos, 15);

@@ -1260,7 +1260,7 @@ Value Search::Worker::search(
     bool        isTacticalReactive  = dynamicDerived.isTacticalReactive;
     bool        stmKingExposed      = staticState.stmKingExposed;
     bool        opponentKingExposed = staticState.opponentKingExposed;
-    bool isSacrificial = staticState.isSacrificial;
+    bool        isSacrificial       = staticState.isSacrificial;
     bool        quietKingSafe       = !isSacrificial && (!stmKingExposed);
     bool        isTal               = localShashinManager.isTal();
     bool        isPetrosian         = localShashinManager.isPetrosian();
@@ -1718,7 +1718,7 @@ Value Search::Worker::search(
         else if (isFortressNode && depth >= 6)
             skipNullMove = true;
         else if (isTactical || isSacrificial)
-            skipNullMove = true
+            skipNullMove = true;
         if (!skipNullMove)
         {
             assert((ss - 1)->currentMove != Move::null());
@@ -1778,7 +1778,7 @@ Value Search::Worker::search(
 
     // Step 10. Internal iterative reductions
     // At sufficient depth, reduce depth for PV/Cut nodes without a TTMove.
-    // (*Scaler) Especially if they make IIR less aggressive.    
+    // (*Scaler) Especially if they make IIR less aggressive.
     if (!allNode && depth >= 6 && !ttData.move && priorReduction <= 3)
     {
         Depth originalDepth = depth;
@@ -1802,12 +1802,12 @@ Value Search::Worker::search(
                 {
                     reduction = 2;  // More aggressive reduction in strategical positions
                 }
-				// Tactical positions: preserve depth
+                // Tactical positions: preserve depth
                 else if (isAggressive || isTacticalReactive || isTactical || isSacrificial)
                 {
                     reduction = 0;  // Preserve depth in tactical positions
                 }
-				// Default: moderate reduction
+                // Default: moderate reduction
                 else
                 {
                     reduction = 1;
