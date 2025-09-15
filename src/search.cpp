@@ -1260,7 +1260,8 @@ Value Search::Worker::search(
     bool        isTacticalReactive  = dynamicDerived.isTacticalReactive;
     bool        stmKingExposed      = staticState.stmKingExposed;
     bool        opponentKingExposed = staticState.opponentKingExposed;
-    bool        quietKingSafe       = !staticState.isSacrificial && (!stmKingExposed);
+    bool isSacrificial = staticState.isSacrificial;
+    bool        quietKingSafe       = !isSacrificial && (!stmKingExposed);
     bool        isTal               = localShashinManager.isTal();
     bool        isPetrosian         = localShashinManager.isPetrosian();
     bool        isCapablanca        = localShashinManager.isCapablanca();
@@ -1716,7 +1717,8 @@ Value Search::Worker::search(
             skipNullMove = true;
         else if (isFortressNode && depth >= 6)
             skipNullMove = true;
-
+        else if (isTactical || isSacrificial)
+            skipNullMove = true
         if (!skipNullMove)
         {
             assert((ss - 1)->currentMove != Move::null());
@@ -1801,7 +1803,7 @@ Value Search::Worker::search(
                     reduction = 2;  // More aggressive reduction in strategical positions
                 }
 				// Tactical positions: preserve depth
-                else if (isAggressive || isTacticalReactive)
+                else if (isAggressive || isTacticalReactive || isTactical || isSacrificial)
                 {
                     reduction = 0;  // Preserve depth in tactical positions
                 }
@@ -2223,7 +2225,12 @@ moves_loop:  // When in check, search starts here
                     doubleMargin += 25;  // Extend less in strategical positions
                     tripleMargin += 35;
                 }
-
+                // Additional adjustments for tactical and sacrificial positions
+                if (isTactical || isSacrificial)
+                {
+                    doubleMargin -= 20;  // Extend more in tactical and sacrificial positions
+                    tripleMargin -= 30;
+                }
                 extension =
                   1 + (value < singularBeta - doubleMargin) + (value < singularBeta - tripleMargin);
                 depth++;
@@ -2274,10 +2281,8 @@ skipExtensionAndPruning:  // full threads search patch
         // Shashin style based adjustements
         if (!fullSearch)
         {
-            // Shashin logic here
-            bool isShashinTactical = isTal || isTacticalReactive;
-            // Tactical style: less reduction to preserve depth
-            if (isShashinTactical && depth > 8)
+            // Tactical and sacrificial positions: less reduction to preserve depth
+            if ((isTactical || isSacrificial) && depth > 8)
             {
                 r -= 512;  // Reduction by 0.5 plies
             }
