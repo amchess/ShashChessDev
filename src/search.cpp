@@ -1805,7 +1805,11 @@ Value Search::Worker::search(
                 // Tactical positions: preserve depth
                 else if (isAggressive || isTacticalReactive || isTactical || isSacrificial)
                 {
-                    reduction = 0;  // Preserve depth in tactical positions
+                    // Preserve depth, but allow some reduction at very high depths
+                    if (depth > 12)
+                        reduction = 1;
+                    else
+                        reduction = 0;
                 }
                 // Default: moderate reduction
                 else
@@ -2228,8 +2232,13 @@ moves_loop:  // When in check, search starts here
                 // Additional adjustments for tactical and sacrificial positions
                 if (isTactical || isSacrificial)
                 {
-                    doubleMargin -= 20;  // Extend more in tactical and sacrificial positions
-                    tripleMargin -= 30;
+                    // Only extend if the position is critical (e.g., near alpha/beta or with checks)
+                    if (abs(ss->staticEval - alpha) < 100 || abs(ss->staticEval - beta) < 100
+                        || givesCheck)
+                    {
+                        doubleMargin -= 20;
+                        tripleMargin -= 30;
+                    }
                 }
                 extension =
                   1 + (value < singularBeta - doubleMargin) + (value < singularBeta - tripleMargin);
@@ -2284,7 +2293,7 @@ skipExtensionAndPruning:  // full threads search patch
             // Tactical and sacrificial positions: less reduction to preserve depth
             if ((isTactical || isSacrificial) && depth > 8)
             {
-                r -= 512;  // Reduction by 0.5 plies
+                r -= 256;  // Reduction by 0.5 plies
             }
             // Strategical style: more reduction in quiet phases
             else if (isStrategical && !ss->inCheck && depth > 6)

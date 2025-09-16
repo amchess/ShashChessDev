@@ -177,6 +177,15 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
         {
             m.value = (*captureHistory)[pc][to][type_of(capturedPiece)]
                     + 7 * int(PieceValue[capturedPiece]) + 1024 * bool(pos.check_squares(pt) & to);
+
+            // Bonus aggiuntivi per posizioni aggressive
+            if (MoveConfig::isAggressive)
+            {
+                if (pos.gives_check(m))
+                    m.value += 5000;   // Bonus per scacco
+                if (pos.see_ge(m, 0))  // Bonus per SEE positivo
+                    m.value += 1000;
+            }
         }
         else if constexpr (Type == QUIETS)
         {
@@ -199,6 +208,14 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
 
             if (ply < LOW_PLY_HISTORY_SIZE)
                 m.value += 8 * (*lowPlyHistory)[ply][m.from_to()] / (1 + ply);
+            // Bonus aggiuntivi per posizioni aggressive
+            if (MoveConfig::isAggressive)
+            {
+                if (pos.gives_check(m))
+                    m.value += 5000;   // Bonus per scacco
+                if (pos.see_ge(m, 0))  // Bonus per SEE positivo
+                    m.value += 1000;
+            }
         }
         else
         {  // Type == EVASIONS
