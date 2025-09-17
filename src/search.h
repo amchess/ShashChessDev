@@ -84,10 +84,10 @@ struct Stack {
     int                         cutoffCnt;
     int                         reduction;
     int                         quietMoveStreak;
-    //from Shashin Crystal-shashin begin
+    //from Shashin Crystal begin
     bool secondaryLine = false;
     bool mainLine      = false;
-    //from Shashin Crystal-shashin end
+    //from Shashin Crystal end
 };
 
 

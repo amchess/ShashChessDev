@@ -361,8 +361,10 @@ Search::Worker::Worker(SharedState&                    sharedState,
     tt(sharedState.tt),
     networks(sharedState.networks),
     refreshTable(networks[token]),
+    //Shashin begin
     shashinManager(std::make_unique<ShashinManager>()),
     shConfig(sharedState.shashinConfig) {
+    //Shashin end
     clear();
 }
 //from shashin begin
