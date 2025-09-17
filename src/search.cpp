@@ -1707,7 +1707,7 @@ Value Search::Worker::search(
 
     // Step 9. Null move search with verification search
     //crystal-shashin logic begin
-    if (cutNode && ss->staticEval >= beta - 18 * depth + 390 && !excludedMove
+    if (cutNode && !disableNMAndPC && ss->staticEval >= beta - 18 * depth + 390 && !excludedMove //learning
         && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && !is_loss(beta))
     {
         // Check if we should skip null move based on Shashin style and depth
