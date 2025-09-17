@@ -1707,7 +1707,8 @@ Value Search::Worker::search(
 
     // Step 9. Null move search with verification search
     //crystal-shashin logic begin
-    if (cutNode && !disableNMAndPC && ss->staticEval >= beta - 18 * depth + 390 && !excludedMove //learning
+    if (cutNode && !disableNMAndPC && ss->staticEval >= beta - 18 * depth + 390
+        && !excludedMove  //learning
         && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && !is_loss(beta))
     {
         // Check if we should skip null move based on Shashin style and depth
@@ -2794,20 +2795,28 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             {
                 ttData.move = expTTMove;
             }
-
-            if (learningMove->depth >= DEPTH_QS)
+            const bool canUseExpTTValue = !PvNode && is_valid(expTTValue);
+            if (canUseExpTTValue)
             {
-                updatedLearning = true;
-                // Cutoff solo se non siamo in scacco
-                if (!PvNode && !ss->inCheck && is_valid(expTTValue))
+                if (learningMove->depth >= DEPTH_QS)
                 {
-                    if (expTTValue >= beta)
+                    updatedLearning = true;
+                    return expTTValue;
+                }
+                if (staticState.legalMoveCount < 35 && std::abs(expTTValue) > 60)
+                {
+                    const bool areQuietKings = !stmKingExposed && !opponentKingExposed;
+                    if (!isStrategical && areQuietKings)
                     {
-                        return beta;
-                    }
-                    if (expTTValue <= alpha)
-                    {
-                        return alpha;
+                        const bool depthCondition = learningMove->depth >= ADJUSTED_QS_DEPTH
+                                                 && learningMove->depth > MIN_DEPTH_FOR_QS_CUTOFF;
+                        const bool kingSafety = (!stmKingExposed && !opponentKingExposed)
+                                             || learningMove->depth > DEPTH_QS + 4;
+                        if (depthCondition && kingSafety)
+                        {
+                            updatedLearning = true;
+                            return expTTValue;
+                        }
                     }
                 }
             }
@@ -2867,10 +2876,11 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             alpha = bestValue;
 
         futilityBase = ss->staticEval + 352;
-        // Shashin: Increase futility margin for aggressive positions to avoid cutting tactical moves
+        // Shashin begin: Increase futility margin for aggressive positions to avoid cutting tactical moves
         // Utilizza rootShashinState per determinare se siamo in una posizione aggressiva
         if (isAggressive)
             futilityBase += 3;  // Increase margin by 20 points
+        //Shashin end
     }
 
     const PieceToHistory* contHist[] = {(ss - 1)->continuationHistory,
@@ -3092,7 +3102,7 @@ Depth Search::Worker::reduction(
     if (rootDelta != 0)
         return reductionScale - delta * 757 / rootDelta + !i * reductionScale * 218 / 512 + 1200;
     else  // avoid divide by zero error
-        return reductionScale - delta * 757 + !i * reductionScale * 216 / 512 + 1200;
+        return reductionScale - delta * 757 + !i * reductionScale * 218 / 512 + 1200;
     //mcts end
 }
 
