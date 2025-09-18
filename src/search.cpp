@@ -2783,7 +2783,8 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     if (useLearning && LD.is_enabled())
     {
         const LearningMove* learningMove = nullptr;
-
+        int siblings = LD.probeByMaxDepthAndScore(posKey, learningMove);
+        (void)siblings; // Sopprime l'avviso di variabile inutilizzata
         if (learningMove)
         {
             expTTHit   = true;
