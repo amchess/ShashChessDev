@@ -1691,17 +1691,18 @@ Value Search::Worker::search(
         if (!ss->ttPv && depth < 14 && eval - futility_margin(depth) >= beta && eval >= beta
             && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval))
         {
-            Value reduction;
-            if (isAggressive || staticState.kingDanger)
-                reduction = (eval - beta) / 4;  // Less reduction in aggressive/dangerous positions
-            else if (isStrategical)
-                reduction = (eval - beta) / 2;  // More reduction in strategical positions
-            else
-                reduction = (eval - beta) / 3;  // Default reduction
+            Value returnValue;
+            if (isAggressive |
 
-            // Clamp reduction to avoid too large values
-            reduction = std::min(reduction, Value(150));
-            return beta + reduction;
+                | staticState.kingDanger)
+                returnValue = (3 * beta + eval) / 4;  // Less reduction (N=4)
+            else if (isStrategical)
+                returnValue = (beta + eval) / 2;  // More reduction (N=2)
+            else
+                returnValue = (2 * beta + eval) / 3;  // Default reduction (N=3)
+
+            // Applica il clamp al valore di ritorno per mantenere la logica originale
+            return std::min(returnValue, beta + Value(150));
         }
     }
 
@@ -2784,8 +2785,8 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     if (useLearning && LD.is_enabled())
     {
         const LearningMove* learningMove = nullptr;
-        int siblings = LD.probeByMaxDepthAndScore(posKey, learningMove);
-        (void)siblings; // Sopprime l'avviso di variabile inutilizzata
+        int                 siblings     = LD.probeByMaxDepthAndScore(posKey, learningMove);
+        (void) siblings;  // Sopprime l'avviso di variabile inutilizzata
         if (learningMove)
         {
             expTTHit   = true;
