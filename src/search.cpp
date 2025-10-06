@@ -1692,9 +1692,7 @@ Value Search::Worker::search(
             && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval))
         {
             Value returnValue;
-            if (isAggressive |
-
-                | staticState.kingDanger)
+            if (isAggressive || staticState.kingDanger)
                 returnValue = (3 * beta + eval) / 4;  // Less reduction (N=4)
             else if (isStrategical)
                 returnValue = (beta + eval) / 2;  // More reduction (N=2)
