@@ -1855,20 +1855,23 @@ Value Search::Worker::search(
             assert(probCutBeta < VALUE_INFINITE && probCutBeta > beta);
 
             MovePicker mp(pos, ttData.move, probCutBeta - ss->staticEval, &captureHistory);
-            Depth probCutDepth = std::clamp(depth - 5 - (ss->staticEval - beta) / 306, 0, depth);
+            Depth      dynamicReduction = std::max((ss->staticEval - beta) / 306, -1);
+            Depth      probCutDepth     = std::clamp(depth - 5 - dynamicReduction, 0, depth);
 
             // Shashin-based depth adjustments
             if (isCapablanca && depth > 8)
             {
-                probCutDepth = std::max(depth - 7 - dynamicReduction, 0);
+                probCutDepth = std::clamp(depth - 7 - dynamicReduction, 0, depth);
             }
             else
             {
                 // Adjust depth based on Shashin style
                 if (isStrategical)
-                    probCutDepth = std::max(probCutDepth - 1, 0);  // Less aggressive in strategical
+                    probCutDepth =
+                      std::clamp(probCutDepth - 1, 0, depth);  // Less aggressive in strategical
                 else if (isAggressive)
-                    probCutDepth = std::max(probCutDepth + 1, 0);  // More aggressive in tactical
+                    probCutDepth =
+                      std::clamp(probCutDepth + 1, 0, depth);  // More aggressive in tactical
             }
 
             while ((move = mp.next_move()) != Move::none())
@@ -2128,6 +2131,7 @@ moves_loop:  // When in check, search starts here
 
                     history += 76 * mainHistory[us][move.from_to()] / 32;
 
+                    // (*Scaler): Generally, a lower divisor scales well
                     lmrDepth += history / 3220;
 
                     // Adjust futility value based on Shashin style
@@ -2961,7 +2965,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             }
 
             // Continuation history based pruning - adjust threshold based on style
-            int historyThreshold = 5475;
+            int historyThreshold = 7300;
             if (isAggressive)
             {
                 // In aggressive styles, require higher history value to prune
@@ -2974,9 +2978,8 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             }
 
             if (!capture
-                && (*contHist[0])[pos.moved_piece(move)][move.to_sq()]
-                       + pawnHistory[pawn_history_index(pos)][pos.moved_piece(move)][move.to_sq()]
-                     <= historyThreshold)
+                && pawnHistory[pawn_history_index(pos)][pos.moved_piece(move)][move.to_sq()]
+                     < historyThreshold)
                 continue;
 
             // SEE pruning - adjust SEE margin based on style
