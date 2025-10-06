@@ -2002,7 +2002,6 @@ moves_loop:  // When in check, search starts here
           ((rootNode && moveCount > 1)
            || (!ourMove && (ss - 1)->secondaryLine && !excludedMove && moveCount == 1)
            || (ourMove && (ss - 1)->secondaryLine));
-        (ss + 1)->quietMoveStreak = capture ? 0 : (ss->quietMoveStreak + 1);
 
         // Calculate new depth for this move
         newDepth = depth - 1;
@@ -2306,7 +2305,7 @@ skipExtensionAndPruning:  // full threads search patch
         }
         // These reduction adjustments have no proven non-linear scaling
 
-        r += 543;  // Base reduction offset to compensate for other tweaks
+        r += 843;  // Base reduction offset to compensate for other tweaks
         r -= moveCount * 66;
         r -= std::abs(correctionValue) / 30450;
 
@@ -2321,8 +2320,6 @@ skipExtensionAndPruning:  // full threads search patch
         // Increase reduction if next ply has a lot of fail high
         if ((ss + 1)->cutoffCnt > 2)
             r += 1051 + allNode * 814;
-
-        r += (ss + 1)->quietMoveStreak * 50;
 
         // For first picked move (ttMove) reduce reduction
         if (move == ttData.move)
