@@ -2978,13 +2978,13 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                 {
                     // In aggressive styles, require higher history value to prune
                     // Make pruning harder by increasing threshold by ~15%
-                    threshold = 8400;
+                    threshold = 8600;
                 }
                 else if (isStrategical)
                 {
                     // In strategical styles, prune more easily
                     // Make pruning easier by decreasing threshold by ~15%
-                    threshold = 6200;
+                    threshold = 6000;
                 }
 
                 if (historyScore < threshold)
