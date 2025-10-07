@@ -2964,23 +2964,32 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                 }
             }
 
-            // Continuation history based pruning - adjust threshold based on style
-            int historyThreshold = 7300;
-            if (isAggressive)
+            // Continuation history based pruning - Shashin-adapted version
+            if (!capture)
             {
-                // In aggressive styles, require higher history value to prune
-                historyThreshold += 1000;  // Make pruning harder
-            }
-            else if (isStrategical)
-            {
-                // In strategical styles, prune more easily
-                historyThreshold -= 1000;  // Make pruning easier
-            }
+                int historyScore =
+                  pawnHistory[pawn_history_index(pos)][pos.moved_piece(move)][move.to_sq()];
 
-            if (!capture
-                && pawnHistory[pawn_history_index(pos)][pos.moved_piece(move)][move.to_sq()]
-                     < historyThreshold)
-                continue;
+                // Base threshold from Stockfish
+                int threshold = 7300;
+
+                // Shashin style adjustments
+                if (isAggressive)
+                {
+                    // In aggressive styles, require higher history value to prune
+                    // Make pruning harder by increasing threshold by ~15%
+                    threshold = 8400;
+                }
+                else if (isStrategical)
+                {
+                    // In strategical styles, prune more easily
+                    // Make pruning easier by decreasing threshold by ~15%
+                    threshold = 6200;
+                }
+
+                if (historyScore < threshold)
+                    continue;
+            }
 
             // SEE pruning - adjust SEE margin based on style
             int seeMargin = -78;
