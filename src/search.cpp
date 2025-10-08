@@ -146,8 +146,27 @@ void update_correction_history(const Position& pos,
     {
         const Square to = m.to_sq();
         const Piece  pc = pos.piece_on(m.to_sq());
+
+        //by shashin begin
+        // Base: correzione standard per ply-2
         (*(ss - 2)->continuationCorrectionHistory)[pc][to] << bonus * 137 / 128;
-        (*(ss - 4)->continuationCorrectionHistory)[pc][to] << bonus * 64 / 128;
+
+        // MODIFICA CRITICA: Riduzione aggressiva per ply-4
+        int ply4_bonus = bonus * 24 / 128;  // Ridotto ulteriormente a ~19%
+
+        // Riduzione EXTRA per posizioni aggressive (dove la patch aggressiva è attiva)
+        if (MoveConfig::isAggressive)
+        {
+            ply4_bonus = ply4_bonus * 1 / 2;  // -50% aggiuntivo → ~9.5% totale
+        }
+        // Leggero aumento per posizioni strategiche (dove il pruning è già aggressivo)
+        else if (MoveConfig::isStrategical)
+        {
+            ply4_bonus = ply4_bonus * 3 / 2;  // +50% aggiuntivo → ~28.5% totale
+        }
+
+        (*(ss - 4)->continuationCorrectionHistory)[pc][to] << ply4_bonus;
+        //by shashin end
     }
 }
 
