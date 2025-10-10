@@ -95,31 +95,29 @@ namespace {
 std::string get_shashin_zone(uint8_t winProb, Color sideToMove) {
     if (sideToMove == WHITE)
     {
-        if (winProb <= 2)
+        if (winProb <= 5)
             return "High Petrosian (Losing position)";
-        else if (winProb <= 5)
-            return "High-Middle Petrosian (Decisive disadvantage)";
         else if (winProb <= 10)
+            return "High-Middle Petrosian (Decisive disadvantage)";
+        else if (winProb <= 15)
             return "Middle Petrosian (Clear disadvantage)";
         else if (winProb <= 20)
             return "Middle-Low Petrosian (Significant disadvantage)";
-        else if (winProb <= 35)
+        else if (winProb <= 24)
             return "Low Petrosian (Slight disadvantage)";
-        else if (winProb <= 45)
+        else if (winProb <= 49)
             return "Chaos: Capablanca-Petrosian (Balanced with opponent pressure)";
-        else if (winProb >= 55 && winProb <= 65)
+        else if (winProb == 50)
             return "Capablanca (Equal position)";
-        else if (winProb <= 55)
-            return "Chaos: Capablanca-Petrosian (Balanced with opponent pressure)";
         else if (winProb <= 75)
             return "Chaos: Capablanca-Tal (Initiative)";
-        else if (winProb <= 80)
+        else if (winProb <= 79)
             return "Low Tal (Slight advantage)";
-        else if (winProb <= 85)
+        else if (winProb <= 84)
             return "Middle-Low Tal (Growing advantage)";
-        else if (winProb <= 90)
+        else if (winProb <= 89)
             return "Middle Tal (Clear advantage)";
-        else if (winProb <= 95)
+        else if (winProb <= 94)
             return "High-Middle Tal (Dominant position)";
         else
             return "High Tal (Winning position)";
@@ -128,31 +126,31 @@ std::string get_shashin_zone(uint8_t winProb, Color sideToMove) {
     {
         // Per il nero, invertiamo le probabilità
         uint8_t blackWinProb = 100 - winProb;
-        if (blackWinProb <= 2)
+        if (blackWinProb <= 5)
             return "High Petrosian (Losing position)";
-        else if (blackWinProb <= 5)
-            return "High-Middle Petrosian (Decisive disadvantage)";
         else if (blackWinProb <= 10)
+            return "High-Middle Petrosian (Decisive disadvantage)";
+        else if (blackWinProb <= 15)
             return "Middle Petrosian (Clear disadvantage)";
         else if (blackWinProb <= 20)
             return "Middle-Low Petrosian (Significant disadvantage)";
-        else if (blackWinProb <= 35)
+        else if (blackWinProb <= 24)
             return "Low Petrosian (Slight disadvantage)";
-        else if (blackWinProb <= 45)
+        else if (blackWinProb <= 49)
             return "Chaos: Capablanca-Petrosian (Balanced with opponent pressure)";
-        else if (blackWinProb >= 55 && blackWinProb <= 65)
+        else if (blackWinProb == 50)
             return "Capablanca (Equal position)";
-        else if (blackWinProb <= 55)
+        else if (blackWinProb <= 75)
             return "Chaos: Capablanca-Petrosian (Balanced with opponent pressure)";
         else if (blackWinProb <= 75)
             return "Chaos: Capablanca-Tal (Initiative)";
-        else if (blackWinProb <= 80)
+        else if (blackWinProb <= 79)
             return "Low Tal (Slight advantage)";
-        else if (blackWinProb <= 85)
+        else if (blackWinProb <= 84)
             return "Middle-Low Tal (Growing advantage)";
-        else if (blackWinProb <= 90)
+        else if (blackWinProb <= 89)
             return "Middle Tal (Clear advantage)";
-        else if (blackWinProb <= 95)
+        else if (blackWinProb <= 94)
             return "High-Middle Tal (Dominant position)";
         else
             return "High Tal (Winning position)";
@@ -328,37 +326,40 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Networks& networks, boo
     }
 
     // Calcola la valutazione finale
-    Value v       = evaluate(networks, pos, accumulators, *caches, VALUE_ZERO);
+    Value v = evaluate(networks, pos, accumulators, *caches, VALUE_ZERO);
+
+    // Converti SEMPRE al punto di vista del bianco
     Value v_white = pos.side_to_move() == WHITE ? v : -v;
 
     if (showWDL)
     {
-        // Calcola win probability e WDL
-        uint8_t       winProb = WDLModel::get_win_probability(v, pos);
-        WDLModel::WDL wdl     = WDLModel::get_wdl(v, pos);
+        // Calcola win probability e WDL DAL PUNTO DI VISTA DEL BIANCO
+        uint8_t       winProbWhite = WDLModel::get_win_probability(v_white, pos);
+        WDLModel::WDL wdl          = WDLModel::get_wdl(v_white, pos);
 
-        // Determina la zona di Shashin
-        std::string shashinZone = get_shashin_zone(winProb, pos.side_to_move());
+        // Determina la zona di Shashin per il bianco
+        std::string shashinZone = get_shashin_zone(winProbWhite, WHITE);
 
         // Mostra la trace NNUE in centipawn
         ss << std::showpoint << std::noshowpos << std::fixed << std::setprecision(2);
-        ss << '\n' << NNUE::trace(pos, networks, *caches) << '\n';  // Sempre false per centipawn
+        ss << '\n' << NNUE::trace(pos, networks, *caches) << '\n';
 
         ss << "=== SHASHIN STATIC ANALYSIS ===\n";
         ss << "*** Static evaluation based on NNUE network ***\n";
         ss << "*** All NNUE values shown in centipawn for technical accuracy ***\n";
-        ss << "*** Win probability derived from overall evaluation ***\n\n";
+        ss << "*** Win probability and Shashin zone always from White's perspective ***\n\n";
 
         // Analisi dell'attività dei pezzi
         ss << "--- PIECE ACTIVITY ANALYSIS ---\n";
         ss << analyze_piece_activity_win_prob(pos) << "\n";
 
         ss << "================================\n";
-        ss << "Final Evaluation (Static): " << static_cast<int>(winProb) << "% win probability\n";
+        ss << "Final Evaluation (Static): " << static_cast<int>(winProbWhite)
+           << "% win probability (White side)\n";
         ss << "WDL (Win/Draw/Loss): " << static_cast<int>(wdl.win) << "%/"
            << static_cast<int>(wdl.draw) << "%/" << static_cast<int>(wdl.loss) << "%\n";
         ss << "Shashin Zone: " << shashinZone << "\n";
-        ss << "*** Note: Win probability analysis based on current piece placement ***\n";
+        ss << "*** Note: Analysis based on current piece placement ***\n";
     }
     else
     {
