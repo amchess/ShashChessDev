@@ -2936,27 +2936,32 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         // Step 6. Pruning with Shashin adjustments
         if (!is_loss(bestValue))
         {
+            // *** START: Hybrid Integration Logic ***
+
+            // 1. Determine if the position is tactically critical based on Shashin state
+            const bool isTacticallyCritical = isAggressive || staticState.kingDanger
+                                           || MoveConfig::isFortress || staticState.isSacrificial
+                                           || staticState.pawnsNearPromotion;
+
+            // *** END: Hybrid Integration Logic ***
+
             // Adjust move count threshold based on Shashin style and conditions
             int moveCountThreshold = 2;  // Default as in Stockfish
 
             if (dynamicDerived.isHighTal)
             {
-                // In high Tal style, be more conservative in pruning to preserve tactical moves
-                moveCountThreshold += PvNode ? 1 : 0;  // Allow one more move in PV nodes
+                moveCountThreshold += PvNode ? 1 : 0;
             }
             else if (isStrategical)
             {
-                // In strategical styles, we can prune more aggressively
-                moveCountThreshold = 1;  // Prune after the first move
+                moveCountThreshold = 1;
             }
 
-            // Adjust for king danger - reduce pruning when king is in danger
             if (staticState.kingDanger)
             {
-                moveCountThreshold++;  // Allow one more move
+                moveCountThreshold++;
             }
 
-            // Adjust for fortresses - reduce pruning in fortresses
             if (MoveConfig::isFortress)
             {
                 moveCountThreshold++;
@@ -2971,16 +2976,12 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
                 Value futilityValue = futilityBase + PieceValue[pos.piece_on(move.to_sq())];
 
-                // If static eval + value of piece we are going to capture is
-                // much lower than alpha, we can prune this move.
                 if (futilityValue <= alpha)
                 {
                     bestValue = std::max(bestValue, futilityValue);
                     continue;
                 }
 
-                // If static exchange evaluation is low enough
-                // we can prune this move.
                 if (!pos.see_ge(move, alpha - futilityBase))
                 {
                     bestValue = std::min(alpha, futilityBase);
@@ -2988,49 +2989,58 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                 }
             }
 
-            // Continuation history based pruning - Shashin-adapted version
+            // *** START: Hybrid Pruning for Non-Capture Moves ***
+
             if (!capture)
             {
-                int historyScore =
-                  pawnHistory[pawn_history_index(pos)][pos.moved_piece(move)][move.to_sq()];
-
-                // Base threshold from Stockfish
-                int threshold = 7300;
-
-                // Shashin style adjustments
-                if (isAggressive)
+                if (isTacticallyCritical)
                 {
-                    // In aggressive styles, require higher history value to prune
-                    // Make pruning harder by increasing threshold by ~15%
-                    threshold = 8600;
-                }
-                else if (isStrategical)
-                {
-                    // In strategical styles, prune more easily
-                    // Make pruning easier by decreasing threshold by ~15%
-                    threshold = 6000;
-                }
+                    // TACTICAL PATH: Revert to the original, nuanced Shashin logic
+                    int historyScore =
+                      pawnHistory[pawn_history_index(pos)][pos.moved_piece(move)][move.to_sq()];
 
-                if (historyScore < threshold)
-                    continue;
+                    // Base threshold from Stockfish
+                    int threshold = 7300;
+
+                    // Threshold adjustments based on Shashin style
+                    if (isAggressive)
+                    {
+                        // In aggressive styles, require higher history score for pruning
+                        threshold = 8600;
+                    }
+                    else if (isStrategical)
+                    {
+                        // In strategical styles, prune more easily
+                        threshold = 6000;
+                    }
+
+                    if (historyScore < threshold)
+                        continue;  // Prune this quiet move
+                }
+                else
+                {
+                    // STRATEGICAL/PREDEFINED PATH: Apply new Stockfish patch logic
+                    continue;  // Prune all non-captures unconditionally
+                }
             }
+
+            // *** END: Hybrid Pruning for Non-Capture Moves ***
 
             // SEE pruning - adjust SEE margin based on style
             int seeMargin = -78;
             if (isAggressive)
             {
-                // In aggressive styles, be more tolerant of negative SEE
-                seeMargin -= 20;  // Now -98, so less pruning
+                seeMargin -= 20;  // Now -98, meaning less pruning
             }
             else if (isStrategical)
             {
-                // In strategical styles, be less tolerant
-                seeMargin += 20;  // Now -58, so more pruning
+                seeMargin += 20;  // Now -58, meaning more pruning
             }
 
             if (!pos.see_ge(move, seeMargin))
                 continue;
         }
+
 
         // Step 7. Make and search the move
         do_move(pos, move, st, givesCheck, ss);
