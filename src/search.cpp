@@ -2936,17 +2936,21 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         // Step 6. Pruning with Shashin adjustments
         if (!is_loss(bestValue))
         {
-            // *** START: Hybrid Integration Logic ***
+            // *** INIZIO: Logica di Integrazione Ibrida (Versione Calibrata) ***
 
-            // 1. Determine if the position is tactically critical based on Shashin state
-            const bool isTacticallyCritical = isAggressive || staticState.kingDanger
-                                           || MoveConfig::isFortress || staticState.isSacrificial
-                                           || staticState.pawnsNearPromotion;
+            // 1. Determina se la posizione è TATTICAMENTE CRITICA con condizioni più restrittive
+            //    per bilanciare la forza tattica con le prestazioni nel match.
+            const bool isTacticallyCritical =
+              dynamicDerived.isHighTal  // Solo le posizioni più volatili
+              || staticState.isSacrificial || staticState.pawnsNearPromotion
+              || (isAggressive
+                  && staticState
+                       .kingDanger);  // Il pericolo per il re è critico solo in un contesto già aggressivo
 
-            // *** END: Hybrid Integration Logic ***
+            // *** FINE: Logica di Integrazione Ibrida ***
 
             // Adjust move count threshold based on Shashin style and conditions
-            int moveCountThreshold = 2;  // Default as in Stockfish
+            int moveCountThreshold = 2;  // Default come in Stockfish
 
             if (dynamicDerived.isHighTal)
             {
@@ -2989,52 +2993,50 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                 }
             }
 
-            // *** START: Hybrid Pruning for Non-Capture Moves ***
+            // *** INIZIO: Potatura Ibrida per Mosse non di Cattura ***
 
             if (!capture)
             {
                 if (isTacticallyCritical)
                 {
-                    // TACTICAL PATH: Revert to the original, nuanced Shashin logic
+                    // PERCORSO TATTICO: Ritorna alla logica originale e sfumata di Shashin
                     int historyScore =
                       pawnHistory[pawn_history_index(pos)][pos.moved_piece(move)][move.to_sq()];
 
-                    // Base threshold from Stockfish
+                    // Soglia di base da Stockfish
                     int threshold = 7300;
 
-                    // Threshold adjustments based on Shashin style
+                    // Aggiustamenti della soglia in base allo stile di Shashin
                     if (isAggressive)
                     {
-                        // In aggressive styles, require higher history score for pruning
                         threshold = 8600;
                     }
                     else if (isStrategical)
                     {
-                        // In strategical styles, prune more easily
                         threshold = 6000;
                     }
 
                     if (historyScore < threshold)
-                        continue;  // Prune this quiet move
+                        continue;  // Pota questa mossa tranquilla
                 }
                 else
                 {
-                    // STRATEGICAL/PREDEFINED PATH: Apply new Stockfish patch logic
-                    continue;  // Prune all non-captures unconditionally
+                    // PERCORSO STRATEGICO/PREDEFINITO: Applica la nuova logica della patch di Stockfish
+                    continue;  // Pota incondizionatamente tutte le non-catture
                 }
             }
 
-            // *** END: Hybrid Pruning for Non-Capture Moves ***
+            // *** FINE: Potatura Ibrida per Mosse non di Cattura ***
 
             // SEE pruning - adjust SEE margin based on style
             int seeMargin = -78;
             if (isAggressive)
             {
-                seeMargin -= 20;  // Now -98, meaning less pruning
+                seeMargin -= 20;  // Ora -98, quindi meno potatura
             }
             else if (isStrategical)
             {
-                seeMargin += 20;  // Now -58, meaning more pruning
+                seeMargin += 20;  // Ora -58, quindi più potatura
             }
 
             if (!pos.see_ge(move, seeMargin))

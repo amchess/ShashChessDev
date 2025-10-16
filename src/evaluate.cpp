@@ -299,8 +299,7 @@ std::string analyze_piece_activity_horizontal(const Position& pos) {
 }
 
 // Funzione per analizzare le mosse legali ordinate per attività
-std::string analyze_legal_moves(const Position&                pos,
-                                const Eval::NNUE::Networks&    networks) {
+std::string analyze_legal_moves(const Position& pos, const Eval::NNUE::Networks& networks) {
     std::vector<std::tuple<std::string, Value, uint8_t>> moves;  // (move, eval, win_prob)
 
     Color side_to_move = pos.side_to_move();
