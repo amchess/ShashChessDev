@@ -300,9 +300,7 @@ std::string analyze_piece_activity_horizontal(const Position& pos) {
 
 // Funzione per analizzare le mosse legali ordinate per attività
 std::string analyze_legal_moves(const Position&                pos,
-                                const Eval::NNUE::Networks&    networks,
-                                Eval::NNUE::AccumulatorStack&  accumulators,
-                                Eval::NNUE::AccumulatorCaches& caches) {
+                                const Eval::NNUE::Networks&    networks) {
     std::vector<std::tuple<std::string, Value, uint8_t>> moves;  // (move, eval, win_prob)
 
     Color side_to_move = pos.side_to_move();
@@ -431,7 +429,7 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Networks& networks, boo
 
         // Analisi delle mosse legali
         ss << "--- LEGAL MOVES ANALYSIS ---\n";
-        ss << analyze_legal_moves(pos, networks, accumulators, *caches) << "\n";
+        ss << analyze_legal_moves(pos, networks) << "\n";
 
         ss << "================================\n";
         ss << "Final Static Activity Evaluation: " << 0.01 * UCIEngine::to_cp(v_white, pos)
