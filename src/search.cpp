@@ -2062,7 +2062,7 @@ moves_loop:  // When in check, search starts here
                 // Adjust threshold based on Shashin style
                 if (isStrategical)
                 {
-                    // Pruning pi� aggressivo in posizioni strategiche
+                    // Pruning piu' aggressivo in posizioni strategiche
                     moveCountThreshold = std::max(8, moveCountThreshold - 4);
 
                     // Skip quiet moves earlier in strategical positions
@@ -2089,7 +2089,7 @@ moves_loop:  // When in check, search starts here
                 // Adjust LMR depth based on Shashin style
                 if (isStrategical)
                 {
-                    lmrDepth = std::max(1, lmrDepth - 1);  // Riduzione pi� aggressiva
+                    lmrDepth = std::max(1, lmrDepth - 1);  // Riduzione piu' aggressiva
                 }
                 else if (isAggressive)
                 {
@@ -2123,7 +2123,7 @@ moves_loop:  // When in check, search starts here
                     }
                     else if (isAggressive)
                     {
-                        margin = std::max(0, margin - 15);  // Margin pi� aggressivo
+                        margin = std::max(0, margin - 15);  // Margin piu' aggressivo
                     }
 
                     if ((alpha >= VALUE_DRAW || pos.non_pawn_material(us) != PieceValue[movedPiece])
@@ -2141,7 +2141,7 @@ moves_loop:  // When in check, search starts here
                     int historyThreshold = -4312 * depth;
                     if (isStrategical)
                     {
-                        historyThreshold -= 500;  // Pruning pi� aggressivo
+                        historyThreshold -= 500;  // Pruning piu' aggressivo
                     }
                     else if (isAggressive)
                     {
@@ -2162,7 +2162,7 @@ moves_loop:  // When in check, search starts here
 
                     if (isStrategical)
                     {
-                        futilityValue += 30;  // Pi� propensi al pruning
+                        futilityValue += 30;  // Piu' propensi al pruning
                     }
                     else if (isAggressive)
                     {
@@ -2185,7 +2185,7 @@ moves_loop:  // When in check, search starts here
                     int seeThreshold = -27 * lmrDepth * lmrDepth;
                     if (isStrategical)
                     {
-                        seeThreshold -= 10;  // Pi� propensi al pruning
+                        seeThreshold -= 10;  // Piu' propensi al pruning
                     }
                     else if (isAggressive)
                     {
