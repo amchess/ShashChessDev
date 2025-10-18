@@ -114,7 +114,6 @@ int correction_value(const Worker& w, const Position& pos, const Stack* const ss
     const auto  bnpcv = w.nonPawnCorrectionHistory[non_pawn_index<BLACK>(pos)][BLACK][us];
     const auto  cntcv =
       m.is_ok() ? (*(ss - 2)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()]
-                    + (*(ss - 4)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()]
                  : 8;
 
     return 9536 * pcv + 8494 * micv + 10132 * (wnpcv + bnpcv) + 7156 * cntcv;
@@ -143,31 +142,8 @@ void update_correction_history(const Position& pos,
       << bonus * nonPawnWeight / 128;
 
     if (m.is_ok())
-    {
-        const Square to = m.to_sq();
-        const Piece  pc = pos.piece_on(m.to_sq());
-
-        //by shashin begin
-        // Base: correzione standard per ply-2
-        (*(ss - 2)->continuationCorrectionHistory)[pc][to] << bonus * 137 / 128;
-
-        // MODIFICA CRITICA: Riduzione aggressiva per ply-4
-        int ply4_bonus = bonus * 24 / 128;  // Ridotto ulteriormente a ~19%
-
-        // Riduzione EXTRA per posizioni aggressive (dove la patch aggressiva è attiva)
-        if (MoveConfig::isAggressive)
-        {
-            ply4_bonus = ply4_bonus * 1 / 2;  // -50% aggiuntivo → ~9.5% totale
-        }
-        // Leggero aumento per posizioni strategiche (dove il pruning è già aggressivo)
-        else if (MoveConfig::isStrategical)
-        {
-            ply4_bonus = ply4_bonus * 3 / 2;  // +50% aggiuntivo → ~28.5% totale
-        }
-
-        (*(ss - 4)->continuationCorrectionHistory)[pc][to] << ply4_bonus;
-        //by shashin end
-    }
+        (*(ss - 2)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()]
+          << bonus * 137 / 128;
 }
 
 // Add a small random component to draw evaluations to avoid 3-fold blindness
@@ -968,8 +944,7 @@ void Search::Worker::iterative_deepening() {
                 }
                 else if (bestValue >= beta)
                 {
-                    alpha = std::max(beta - delta, alpha);
-                    beta  = std::min(bestValue + delta, VALUE_INFINITE);
+                    beta = std::min(bestValue + delta, VALUE_INFINITE);
                     ++failedHighCnt;
                 }
                 else
@@ -1208,7 +1183,10 @@ Value Search::Worker::search(
 
     // Dive into quiescence search when the depth reaches zero
     if (depth <= 0)
-        return qsearch<PvNode ? PV : NonPV>(pos, ss, alpha, beta);
+    {
+        constexpr auto nt = PvNode ? PV : NonPV;
+        return qsearch<nt>(pos, ss, alpha, beta);
+    }
 
     // Limit the depth if extensions made it too large
     depth = std::min(depth, MAX_PLY - 1);
@@ -1713,16 +1691,17 @@ Value Search::Worker::search(
         if (!ss->ttPv && depth < 14 && eval - futility_margin(depth) >= beta && eval >= beta
             && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval))
         {
-            Value returnValue;
+            Value reduction;
             if (isAggressive || staticState.kingDanger)
-                returnValue = (3 * beta + eval) / 4;  // Less reduction (N=4)
+                reduction = (eval - beta) / 4;  // Less reduction in aggressive/dangerous positions
             else if (isStrategical)
-                returnValue = (beta + eval) / 2;  // More reduction (N=2)
+                reduction = (eval - beta) / 2;  // More reduction in strategical positions
             else
-                returnValue = (2 * beta + eval) / 3;  // Default reduction (N=3)
+                reduction = (eval - beta) / 3;  // Default reduction
 
-            // Applica il clamp al valore di ritorno per mantenere la logica originale
-            return std::min(returnValue, beta + Value(150));
+            // Clamp reduction to avoid too large values
+            reduction = std::min(reduction, Value(150));
+            return beta + reduction;
         }
     }
 
@@ -1878,22 +1857,20 @@ Value Search::Worker::search(
 
             MovePicker mp(pos, ttData.move, probCutBeta - ss->staticEval, &captureHistory);
             Depth      dynamicReduction = std::max((ss->staticEval - beta) / 306, -1);
-            Depth      probCutDepth     = std::clamp(depth - 5 - dynamicReduction, 0, depth);
+            Depth      probCutDepth     = std::max(depth - 5 - dynamicReduction, 0);
 
             // Shashin-based depth adjustments
             if (isCapablanca && depth > 8)
             {
-                probCutDepth = std::clamp(depth - 7 - dynamicReduction, 0, depth);
+                probCutDepth = std::max(depth - 7 - dynamicReduction, 0);
             }
             else
             {
                 // Adjust depth based on Shashin style
                 if (isStrategical)
-                    probCutDepth =
-                      std::clamp(probCutDepth - 1, 0, depth);  // Less aggressive in strategical
+                    probCutDepth = std::max(probCutDepth - 1, 0);  // Less aggressive in strategical
                 else if (isAggressive)
-                    probCutDepth =
-                      std::clamp(probCutDepth + 1, 0, depth);  // More aggressive in tactical
+                    probCutDepth = std::max(probCutDepth + 1, 0);  // More aggressive in tactical
             }
 
             while ((move = mp.next_move()) != Move::none())
@@ -2026,6 +2003,7 @@ moves_loop:  // When in check, search starts here
           ((rootNode && moveCount > 1)
            || (!ourMove && (ss - 1)->secondaryLine && !excludedMove && moveCount == 1)
            || (ourMove && (ss - 1)->secondaryLine));
+        (ss + 1)->quietMoveStreak = capture ? 0 : (ss->quietMoveStreak + 1);
 
         // Calculate new depth for this move
         newDepth = depth - 1;
@@ -2062,7 +2040,7 @@ moves_loop:  // When in check, search starts here
                 // Adjust threshold based on Shashin style
                 if (isStrategical)
                 {
-                    // Pruning piu' aggressivo in posizioni strategiche
+                    // Pruning pi� aggressivo in posizioni strategiche
                     moveCountThreshold = std::max(8, moveCountThreshold - 4);
 
                     // Skip quiet moves earlier in strategical positions
@@ -2089,7 +2067,7 @@ moves_loop:  // When in check, search starts here
                 // Adjust LMR depth based on Shashin style
                 if (isStrategical)
                 {
-                    lmrDepth = std::max(1, lmrDepth - 1);  // Riduzione piu' aggressiva
+                    lmrDepth = std::max(1, lmrDepth - 1);  // Riduzione pi� aggressiva
                 }
                 else if (isAggressive)
                 {
@@ -2123,7 +2101,7 @@ moves_loop:  // When in check, search starts here
                     }
                     else if (isAggressive)
                     {
-                        margin = std::max(0, margin - 15);  // Margin piu' aggressivo
+                        margin = std::max(0, margin - 15);  // Margin pi� aggressivo
                     }
 
                     if ((alpha >= VALUE_DRAW || pos.non_pawn_material(us) != PieceValue[movedPiece])
@@ -2141,7 +2119,7 @@ moves_loop:  // When in check, search starts here
                     int historyThreshold = -4312 * depth;
                     if (isStrategical)
                     {
-                        historyThreshold -= 500;  // Pruning piu' aggressivo
+                        historyThreshold -= 500;  // Pruning pi� aggressivo
                     }
                     else if (isAggressive)
                     {
@@ -2153,7 +2131,6 @@ moves_loop:  // When in check, search starts here
 
                     history += 76 * mainHistory[us][move.from_to()] / 32;
 
-                    // (*Scaler): Generally, a lower divisor scales well
                     lmrDepth += history / 3220;
 
                     // Adjust futility value based on Shashin style
@@ -2162,7 +2139,7 @@ moves_loop:  // When in check, search starts here
 
                     if (isStrategical)
                     {
-                        futilityValue += 30;  // Piu' propensi al pruning
+                        futilityValue += 30;  // Pi� propensi al pruning
                     }
                     else if (isAggressive)
                     {
@@ -2185,7 +2162,7 @@ moves_loop:  // When in check, search starts here
                     int seeThreshold = -27 * lmrDepth * lmrDepth;
                     if (isStrategical)
                     {
-                        seeThreshold -= 10;  // Piu' propensi al pruning
+                        seeThreshold -= 10;  // Pi� propensi al pruning
                     }
                     else if (isAggressive)
                     {
@@ -2278,7 +2255,6 @@ moves_loop:  // When in check, search starts here
             // subtree by returning a softbound.
             else if (value >= beta && !is_decisive(value))
             {
-                ttMoveHistory << std::max(-400 - 100 * depth, -4000);
                 return value;
             }
             // Negative extensions
@@ -2330,7 +2306,7 @@ skipExtensionAndPruning:  // full threads search patch
         }
         // These reduction adjustments have no proven non-linear scaling
 
-        r += 843;  // Base reduction offset to compensate for other tweaks
+        r += 543;  // Base reduction offset to compensate for other tweaks
         r -= moveCount * 66;
         r -= std::abs(correctionValue) / 30450;
 
@@ -2345,6 +2321,8 @@ skipExtensionAndPruning:  // full threads search patch
         // Increase reduction if next ply has a lot of fail high
         if ((ss + 1)->cutoffCnt > 2)
             r += 1051 + allNode * 814;
+
+        r += (ss + 1)->quietMoveStreak * 50;
 
         // For first picked move (ttMove) reduce reduction
         if (move == ttData.move)
@@ -2467,7 +2445,7 @@ skipExtensionAndPruning:  // full threads search patch
             (ss + 1)->pv[0] = Move::none();
 
             // Extend move from transposition table if we are about to dive into qsearch.
-            if (move == ttData.move && ttData.depth > 1 && rootDepth > 8)
+            if (move == ttData.move && rootDepth > 8)
                 newDepth = std::max(newDepth, 1);
 
             value = -search<PV>(pos, ss + 1, -beta, -alpha, newDepth, false);
@@ -2696,11 +2674,9 @@ skipExtensionAndPruning:  // full threads search patch
         && ((bestValue < ss->staticEval && bestValue < beta)  // negative correction & no fail high
             || (bestValue > ss->staticEval && bestMove)))     // positive correction & no fail low
     {
-        auto bonus =
-          std::clamp(int(bestValue - ss->staticEval) * depth / (8 + (bestValue > ss->staticEval)),
-                     -CORRECTION_HISTORY_LIMIT / 4, CORRECTION_HISTORY_LIMIT / 4);
-        update_correction_history(pos, ss, *this,
-                                  (1088 - 180 * (bestValue > ss->staticEval)) * bonus / 1024);
+        auto bonus = std::clamp(int(bestValue - ss->staticEval) * depth / 8,
+                                -CORRECTION_HISTORY_LIMIT / 4, CORRECTION_HISTORY_LIMIT / 4);
+        update_correction_history(pos, ss, *this, bonus);
     }
 
     assert(bestValue > -VALUE_INFINITE && bestValue < VALUE_INFINITE);
@@ -2807,8 +2783,8 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     if (useLearning && LD.is_enabled())
     {
         const LearningMove* learningMove = nullptr;
-        int                 siblings     = LD.probeByMaxDepthAndScore(posKey, learningMove);
-        (void) siblings;  // Sopprime l'avviso di variabile inutilizzata
+        int siblings = LD.probeByMaxDepthAndScore(posKey, learningMove);
+        (void)siblings; // Sopprime l'avviso di variabile inutilizzata
         if (learningMove)
         {
             expTTHit   = true;
@@ -2936,36 +2912,27 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         // Step 6. Pruning with Shashin adjustments
         if (!is_loss(bestValue))
         {
-            // *** INIZIO: Logica di Integrazione Ibrida (Versione Calibrata) ***
-
-            // 1. Determina se la posizione è TATTICAMENTE CRITICA con condizioni più restrittive
-            //    per bilanciare la forza tattica con le prestazioni nel match.
-            const bool isTacticallyCritical =
-              dynamicDerived.isHighTal  // Solo le posizioni più volatili
-              || staticState.isSacrificial || staticState.pawnsNearPromotion
-              || (isAggressive
-                  && staticState
-                       .kingDanger);  // Il pericolo per il re è critico solo in un contesto già aggressivo
-
-            // *** FINE: Logica di Integrazione Ibrida ***
-
             // Adjust move count threshold based on Shashin style and conditions
-            int moveCountThreshold = 2;  // Default come in Stockfish
+            int moveCountThreshold = 2;  // Default as in Stockfish
 
             if (dynamicDerived.isHighTal)
             {
-                moveCountThreshold += PvNode ? 1 : 0;
+                // In high Tal style, be more conservative in pruning to preserve tactical moves
+                moveCountThreshold += PvNode ? 1 : 0;  // Allow one more move in PV nodes
             }
             else if (isStrategical)
             {
-                moveCountThreshold = 1;
+                // In strategical styles, we can prune more aggressively
+                moveCountThreshold = 1;  // Prune after the first move
             }
 
+            // Adjust for king danger - reduce pruning when king is in danger
             if (staticState.kingDanger)
             {
-                moveCountThreshold++;
+                moveCountThreshold++;  // Allow one more move
             }
 
+            // Adjust for fortresses - reduce pruning in fortresses
             if (MoveConfig::isFortress)
             {
                 moveCountThreshold++;
@@ -2980,12 +2947,16 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
                 Value futilityValue = futilityBase + PieceValue[pos.piece_on(move.to_sq())];
 
+                // If static eval + value of piece we are going to capture is
+                // much lower than alpha, we can prune this move.
                 if (futilityValue <= alpha)
                 {
                     bestValue = std::max(bestValue, futilityValue);
                     continue;
                 }
 
+                // If static exchange evaluation is low enough
+                // we can prune this move.
                 if (!pos.see_ge(move, alpha - futilityBase))
                 {
                     bestValue = std::min(alpha, futilityBase);
@@ -2993,56 +2964,41 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                 }
             }
 
-            // *** INIZIO: Potatura Ibrida per Mosse non di Cattura ***
-
-            if (!capture)
+            // Continuation history based pruning - adjust threshold based on style
+            int historyThreshold = 5475;
+            if (isAggressive)
             {
-                if (isTacticallyCritical)
-                {
-                    // PERCORSO TATTICO: Ritorna alla logica originale e sfumata di Shashin
-                    int historyScore =
-                      pawnHistory[pawn_history_index(pos)][pos.moved_piece(move)][move.to_sq()];
-
-                    // Soglia di base da Stockfish
-                    int threshold = 7300;
-
-                    // Aggiustamenti della soglia in base allo stile di Shashin
-                    if (isAggressive)
-                    {
-                        threshold = 8600;
-                    }
-                    else if (isStrategical)
-                    {
-                        threshold = 6000;
-                    }
-
-                    if (historyScore < threshold)
-                        continue;  // Pota questa mossa tranquilla
-                }
-                else
-                {
-                    // PERCORSO STRATEGICO/PREDEFINITO: Applica la nuova logica della patch di Stockfish
-                    continue;  // Pota incondizionatamente tutte le non-catture
-                }
+                // In aggressive styles, require higher history value to prune
+                historyThreshold += 1000;  // Make pruning harder
+            }
+            else if (isStrategical)
+            {
+                // In strategical styles, prune more easily
+                historyThreshold -= 1000;  // Make pruning easier
             }
 
-            // *** FINE: Potatura Ibrida per Mosse non di Cattura ***
+            if (!capture
+                && (*contHist[0])[pos.moved_piece(move)][move.to_sq()]
+                       + pawnHistory[pawn_history_index(pos)][pos.moved_piece(move)][move.to_sq()]
+                     <= historyThreshold)
+                continue;
 
             // SEE pruning - adjust SEE margin based on style
             int seeMargin = -78;
             if (isAggressive)
             {
-                seeMargin -= 20;  // Ora -98, quindi meno potatura
+                // In aggressive styles, be more tolerant of negative SEE
+                seeMargin -= 20;  // Now -98, so less pruning
             }
             else if (isStrategical)
             {
-                seeMargin += 20;  // Ora -58, quindi più potatura
+                // In strategical styles, be less tolerant
+                seeMargin += 20;  // Now -58, so more pruning
             }
 
             if (!pos.see_ge(move, seeMargin))
                 continue;
         }
-
 
         // Step 7. Make and search the move
         do_move(pos, move, st, givesCheck, ss);
@@ -3301,13 +3257,13 @@ void update_quiet_histories(
     workerThread.mainHistory[us][move.from_to()] << bonus;  // Untuned to prevent duplicate effort
 
     if (ss->ply < LOW_PLY_HISTORY_SIZE)
-        workerThread.lowPlyHistory[ss->ply][move.from_to()] << bonus * 761 / 1024;
+        workerThread.lowPlyHistory[ss->ply][move.from_to()] << (bonus * 741 / 1024) + 38;
 
     update_continuation_histories(ss, pos.moved_piece(move), move.to_sq(), bonus * 955 / 1024);
 
     int pIndex = pawn_history_index(pos);
     workerThread.pawnHistory[pIndex][pos.moved_piece(move)][move.to_sq()]
-      << (bonus * (bonus > 0 ? 800 : 500) / 1024) + 70;
+      << (bonus * (bonus > 0 ? 704 : 439) / 1024) + 70;
 }
 
 }

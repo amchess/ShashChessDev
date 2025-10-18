@@ -83,6 +83,7 @@ struct Stack {
     bool                        ttHit;
     int                         cutoffCnt;
     int                         reduction;
+    int                         quietMoveStreak;
     //from Shashin Crystal begin
     bool secondaryLine = false;
     bool mainLine      = false;

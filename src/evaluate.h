@@ -42,9 +42,7 @@ struct AccumulatorCaches;
 class AccumulatorStack;
 }
 
-std::string trace(Position&                   pos,
-                  const Eval::NNUE::Networks& networks,
-                  bool                        showWDL = false);  // more expressive trace
+std::string trace(Position& pos, const Eval::NNUE::Networks& networks);
 
 int   simple_eval(const Position& pos);
 bool  use_smallnet(const Position& pos);
