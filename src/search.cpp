@@ -1749,7 +1749,7 @@ Value Search::Worker::search(
             assert(eval - beta >= 0);
 
             // Null move dynamic reduction based on depth
-            Depth R = 6 + depth / 3;
+            Depth R = 6 + depth / 3 + improving;
 
             // Shashin-based adjustments to reduction
             if (isStrategical)
