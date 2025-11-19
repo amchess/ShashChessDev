@@ -121,13 +121,13 @@ class Engine {
     //from learning
     StateListPtr states;
 
-    OptionsMap                               options;
-    ThreadPool                               threads;
-    TranspositionTable                       tt;
-    LazyNumaReplicated<Eval::NNUE::Networks> networks;
+    OptionsMap                                         options;
+    ThreadPool                                         threads;
+    TranspositionTable                                 tt;
+    LazyNumaReplicatedSystemWide<Eval::NNUE::Networks> networks;
     BookManager                              bookMan;  //book management
-    Search::SearchManager::UpdateContext     updateContext;
-    std::function<void(std::string_view)>    onVerifyNetworks;
+    Search::SearchManager::UpdateContext  updateContext;
+    std::function<void(std::string_view)> onVerifyNetworks;
 };
 
 }  // namespace ShashChess

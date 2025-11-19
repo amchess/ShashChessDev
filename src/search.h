@@ -36,6 +36,7 @@
 #include "nnue/network.h"
 #include "nnue/nnue_accumulator.h"
 #include "numa.h"
+#include "position.h"
 #include "score.h"
 #include "syzygy/tbprobe.h"
 #include "timeman.h"
@@ -146,12 +147,12 @@ struct LimitsType {
 // This struct is used to easily forward data to the Search::Worker class.
 struct SharedState {
     //from Polyfish begin
-    SharedState(BookManager&                                    bm,
-                const OptionsMap&                               optionsMap,
-                ThreadPool&                                     threadPool,
-                TranspositionTable&                             transpositionTable,
-                const LazyNumaReplicated<Eval::NNUE::Networks>& nets,
-                const ShashChess::ShashinConfig&                shCfg) :  //Shashin
+    SharedState(BookManager&                                              bm,
+                const OptionsMap&                                         optionsMap,
+                ThreadPool&                                               threadPool,
+                TranspositionTable&                                       transpositionTable,
+                const LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& nets,
+                const ShashChess::ShashinConfig&                          shCfg) :  //Shashin
         bookMan(bm),
         options(optionsMap),
         threads(threadPool),
@@ -161,11 +162,11 @@ struct SharedState {
 
     BookManager& bookMan;
     //from Polyfish end
-    const OptionsMap&                               options;
-    ThreadPool&                                     threads;
-    TranspositionTable&                             tt;
-    const LazyNumaReplicated<Eval::NNUE::Networks>& networks;
-    const ShashChess::ShashinConfig                 shashinConfig;  //Shashin
+    const OptionsMap&                                         options;
+    ThreadPool&                                               threads;
+    TranspositionTable&                                       tt;
+    const LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& networks;
+    const ShashChess::ShashinConfig                           shashinConfig;  //Shashin
 };
 
 class Worker;
@@ -359,7 +360,7 @@ class Worker {
     const OptionsMap&                               options;
     ThreadPool&                                     threads;
     TranspositionTable&                             tt;
-    const LazyNumaReplicated<Eval::NNUE::Networks>& networks;
+    const LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& networks;
 
     // Used by NNUE
     Eval::NNUE::AccumulatorStack  accumulatorStack;

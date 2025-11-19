@@ -17,13 +17,14 @@
 */
 
 #include <iostream>
+#include <memory>
 
 #include "bitboard.h"
 #include "misc.h"
 #include "position.h"
+#include "tune.h"
 //wdl model
 #include "uci.h"
-#include "tune.h"
 #include "wdl/win_probability.h"
 #include "learn/learn.h"  //learning
 using namespace ShashChess;
@@ -37,11 +38,11 @@ int main(int argc, char* argv[]) {
     Bitboards::init();
     Position::init();
 
-    UCIEngine uci(argc, argv);
-    LD.init(uci.engine_options());  //learning
-    Tune::init(uci.engine_options());
+    auto uci = std::make_unique<UCIEngine>(argc, argv);
+    LD.init(uci->engine_options());  //learning
+    Tune::init(uci->engine_options());
 
-    uci.loop();
+    uci->loop();
 
     return 0;
 }

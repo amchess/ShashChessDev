@@ -1061,7 +1061,7 @@ void Search::Worker::iterative_deepening() {
               (1.455 + mainThread->previousTimeReduction) / (2.2375 * timeReduction);
             double bestMoveInstability = 1.04 + 1.8956 * totBestMoveChanges / threads.size();
             double highBestMoveEffort  = completedDepth >= 10 && nodesEffort >= 92425 ? 0.666 : 1.0;
-            
+
             double totalTime = mainThread->tm.optimum() * fallingEval * reduction
                              * bestMoveInstability * highBestMoveEffort;
 
@@ -2695,7 +2695,7 @@ skipExtensionAndPruning:  // full threads search patch
         auto bonus =
           std::clamp(int(bestValue - ss->staticEval) * depth / (8 + (bestValue > ss->staticEval)),
                      -CORRECTION_HISTORY_LIMIT / 4, CORRECTION_HISTORY_LIMIT / 4);
-          update_correction_history(pos, ss, *this, bonus);
+        update_correction_history(pos, ss, *this, bonus);
     }
 
     assert(bestValue > -VALUE_INFINITE && bestValue < VALUE_INFINITE);

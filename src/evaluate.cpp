@@ -387,8 +387,8 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Networks& networks, boo
     if (pos.checkers())
         return "Final evaluation: none (in check)";
 
-    Eval::NNUE::AccumulatorStack accumulators;
-    auto                         caches = std::make_unique<Eval::NNUE::AccumulatorCaches>(networks);
+    auto accumulators = std::make_unique<Eval::NNUE::AccumulatorStack>();
+    auto caches       = std::make_unique<Eval::NNUE::AccumulatorCaches>(networks);
 
     std::stringstream ss;
 
@@ -399,7 +399,7 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Networks& networks, boo
     }
 
     // Calcola la valutazione finale
-    Value v = evaluate(networks, pos, accumulators, *caches, VALUE_ZERO);
+    Value v = evaluate(networks, pos, *accumulators, *caches, VALUE_ZERO);
 
     // Converti SEMPRE al punto di vista del bianco
     Value v_white = pos.side_to_move() == WHITE ? v : -v;
@@ -445,7 +445,7 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Networks& networks, boo
         ss << '\n' << NNUE::trace(pos, networks, *caches) << '\n';
         ss << std::showpoint << std::showpos << std::fixed << std::setprecision(2) << std::setw(15);
 
-        auto [psqt, positional] = networks.big.evaluate(pos, accumulators, &caches->big);
+        auto [psqt, positional] = networks.big.evaluate(pos, *accumulators, &caches->big);
         Value v_nnue            = psqt + positional;
         v_nnue                  = pos.side_to_move() == WHITE ? v_nnue : -v_nnue;
         ss << "NNUE evaluation        " << 0.01 * UCIEngine::to_cp(v_nnue, pos)
