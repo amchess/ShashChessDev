@@ -1699,8 +1699,7 @@ Value Search::Worker::search(
             Value baseMargin         = 91 - 21 * !ss->ttHit;
             Value adjustedBaseMargin = (baseMargin * marginMultiplier) / 100;
 
-            return adjustedBaseMargin * d - 2094 * improving * adjustedBaseMargin / 1024
-                 - 1324 * opponentWorsening * adjustedBaseMargin / 4096 + (ss - 1)->statScore / 331
+            return adjustedBaseMargin * d + (ss - 1)->statScore / 331
                  + std::abs(correctionValue) / 158105 - 35 * legalMoveCount / 32;
         };
 
