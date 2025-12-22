@@ -125,9 +125,9 @@ class Engine {
     ThreadPool                                         threads;
     TranspositionTable                                 tt;
     LazyNumaReplicatedSystemWide<Eval::NNUE::Networks> networks;
-    BookManager                              bookMan;  //book management
-    Search::SearchManager::UpdateContext  updateContext;
-    std::function<void(std::string_view)> onVerifyNetworks;
+    BookManager                                        bookMan;  //book management
+    Search::SearchManager::UpdateContext               updateContext;
+    std::function<void(std::string_view)>              onVerifyNetworks;
 };
 
 }  // namespace ShashChess

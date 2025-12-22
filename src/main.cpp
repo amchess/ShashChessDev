@@ -21,6 +21,7 @@
 
 #include "bitboard.h"
 #include "misc.h"
+#include "nnue/features/full_threats.h"
 #include "position.h"
 #include "tune.h"
 //wdl model
@@ -37,6 +38,7 @@ int main(int argc, char* argv[]) {
 
     Bitboards::init();
     Position::init();
+    Eval::NNUE::Features::init_threat_offsets();
 
     auto uci = std::make_unique<UCIEngine>(argc, argv);
     LD.init(uci->engine_options());  //learning

@@ -145,20 +145,7 @@ static inline const std::uint16_t Le             = 1;
 static inline const bool          IsLittleEndian = *reinterpret_cast<const char*>(&Le) == 1;
 
 
-template<typename T, std::size_t MaxSize>
-class ValueList {
-
-   public:
-    std::size_t size() const { return size_; }
-    void        push_back(const T& value) { values_[size_++] = value; }
-    const T*    begin() const { return values_; }
-    const T*    end() const { return values_ + size_; }
-    const T&    operator[](int index) const { return values_[index]; }
-
-   private:
-    T           values_[MaxSize];
-    std::size_t size_ = 0;
-};
+//omissis ShashChess
 
 
 template<typename T, std::size_t Size, std::size_t... Sizes>
@@ -426,21 +413,7 @@ void move_to_front(std::vector<T>& vec, Predicate pred) {
 }
 }
 
-#if defined(__GNUC__) && !defined(__clang__)
-    #if __GNUC__ >= 13
-        #define sf_assume(cond) __attribute__((assume(cond)))
-    #else
-        #define sf_assume(cond) \
-            do \
-            { \
-                if (!(cond)) \
-                    __builtin_unreachable(); \
-            } while (0)
-    #endif
-#else
-    // do nothing for other compilers
-    #define sf_assume(cond)
-#endif
+//ShashChess
 
 //begin from learning
 #define EMPTY "<empty>"

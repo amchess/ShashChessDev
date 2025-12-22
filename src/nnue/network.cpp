@@ -205,7 +205,7 @@ void Network<Arch, Transformer>::verify(std::string                             
             std::string msg3 = "The UCI option EvalFile might need to specify the full path, "
                                "including the directory name, to the network file.";
             std::string msg4 = "The default net can be downloaded from: "
-                               "https://tests.ShashChesschess.org/api/nn/"
+                               "https://tests.stockfishchess.org/api/nn/"
                              + std::string(evalFile.defaultName);
             std::string msg5 = "The engine will be terminated now.";
 
@@ -222,7 +222,7 @@ void Network<Arch, Transformer>::verify(std::string                             
     {
         size_t size = sizeof(featureTransformer) + sizeof(Arch) * LayerStacks;
         f("NNUE evaluation using " + evalfilePath + " (" + std::to_string(size / (1024 * 1024))
-          + "MiB, (" + std::to_string(featureTransformer.InputDimensions) + ", "
+          + "MiB, (" + std::to_string(featureTransformer.TotalInputDimensions) + ", "
           + std::to_string(network[0].TransformedFeatureDimensions) + ", "
           + std::to_string(network[0].FC_0_OUTPUTS) + ", " + std::to_string(network[0].FC_1_OUTPUTS)
           + ", 1))");
