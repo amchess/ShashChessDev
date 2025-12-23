@@ -1116,8 +1116,8 @@ void Position::set_check_info() const {
 // The function is only used when a new position is set up
 void Position::set_state() const {
 
-    st->key = st->materialKey = 0;
-    st->minorPieceKey         = 0;
+    st->key               = 0;
+    st->minorPieceKey     = 0;
     st->nonPawnKey[WHITE] = st->nonPawnKey[BLACK] = 0;
     st->pawnKey                                   = Zobrist::noPawns;
     st->nonPawnMaterial[WHITE] = st->nonPawnMaterial[BLACK] = VALUE_ZERO;
@@ -1155,10 +1155,15 @@ void Position::set_state() const {
         st->key ^= Zobrist::side;
 
     st->key ^= Zobrist::castling[st->castlingRights];
+    st->materialKey = compute_material_key();
+}
 
+Key Position::compute_material_key() const {
+    Key k = 0;
     for (Piece pc : Pieces)
         for (int cnt = 0; cnt < pieceCount[pc]; ++cnt)
-            st->materialKey ^= Zobrist::psq[pc][8 + cnt];
+            k ^= Zobrist::psq[pc][8 + cnt];
+    return k;
 }
 
 
@@ -2227,6 +2232,9 @@ void Position::flip() {
 }
 
 
+bool Position::material_key_is_ok() const { return compute_material_key() == st->materialKey; }
+
+
 // Performs some consistency checks for the position object
 // and raise an assert if something wrong is detected.
 // This is meant to be helpful when debugging.
@@ -2275,6 +2283,8 @@ bool Position::pos_is_ok() const {
                 || (castlingRightsMask[square<KING>(c)] & cr) != cr)
                 assert(0 && "pos_is_ok: Castling");
         }
+
+    assert(material_key_is_ok() && "pos_is_ok: materialKey");
 
     return true;
 }

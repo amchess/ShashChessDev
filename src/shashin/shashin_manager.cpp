@@ -359,9 +359,9 @@ Value ShashinManager::static_value(const Eval::NNUE::Networks&   networks,
     Value bestValue = -VALUE_INFINITE;
     for (const auto& move : legalMoves)
     {
-        StateInfo      st;
-        DirtyBoardData dp = rootPos.do_move(move, st, rootPos.gives_check(move), nullptr);
-        accumulators.push(dp);
+        StateInfo st;
+        auto [dp, dts] = accumulators.push();
+        rootPos.do_move(move, st, rootPos.gives_check(move), dp, dts, nullptr);
 
         Value val = -static_value(networks, accumulators, refreshTable, rootPos, ss + 1, -optimism);
 

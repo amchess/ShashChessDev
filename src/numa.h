@@ -458,7 +458,7 @@ class NumaReplicatedAccessToken {
 //
 // We use startup affinities so as not to modify its own behaviour in time.
 //
-// Since ShashChess doesn't support exceptions all places where an exception
+// Since Stockfish doesn't support exceptions all places where an exception
 // should be thrown are replaced by std::exit.
 class NumaConfig {
    public:
@@ -588,7 +588,7 @@ class NumaConfig {
         // While Windows allows this to work now, such assignments have bad interaction
         // with the scheduler - in particular it still prefers scheduling on the thread's
         // "primary" node, even if it means scheduling SMT processors first.
-        // See https://github.com/official-stockfish/ShashChess/issues/5551
+        // See https://github.com/official-stockfish/Stockfish/issues/5551
         // See https://learn.microsoft.com/en-us/windows/win32/procthread/processor-groups
         //
         //     Each process is assigned a primary group at creation, and by default all
@@ -1346,7 +1346,7 @@ class LazyNumaReplicatedSystemWide: public NumaReplicatedBase {
     std::size_t get_discriminator(NumaIndex idx) const {
         const NumaConfig& cfg     = get_numa_config();
         const NumaConfig& cfg_sys = NumaConfig::from_system(false);
-        // as a descriminator, locate the hardware/system numadomain this cpuindex belongs to
+        // as a discriminator, locate the hardware/system numadomain this cpuindex belongs to
         CpuIndex    cpu     = *cfg.nodes[idx].begin();  // get a CpuIndex from NumaIndex
         NumaIndex   sys_idx = cfg_sys.is_cpu_assigned(cpu) ? cfg_sys.nodeByCpu.at(cpu) : 0;
         std::string s       = cfg_sys.to_string() + "$" + std::to_string(sys_idx);

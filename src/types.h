@@ -41,8 +41,8 @@
     #include <cstdint>
 
     #include <type_traits>
-    //shashchess begin
-#if defined(__GNUC__) && !defined(__clang__)
+//shashchess begin
+    #if defined(__GNUC__) && !defined(__clang__)
         #if __GNUC__ >= 13
             #define sf_assume(cond) __attribute__((assume(cond)))
         #else
@@ -59,24 +59,24 @@
         #define sf_assume(cond)
     #endif
 
-    // Definizione ValueList spostata qui
-    template<typename T, std::size_t MaxSize>
-    class ValueList {
-       public:
-        std::size_t size() const { return size_; }
-        void        push_back(const T& value) {
-            assert(size_ < MaxSize);
-            values_[size_++] = value;
-        }
-        void add(const T& value) { push_back(value); } // Alias per compatibilità
-        const T* begin() const { return values_; }
-        const T* end() const { return values_ + size_; }
-        const T& operator[](int index) const { return values_[index]; }
+// Definizione ValueList spostata qui
+template<typename T, std::size_t MaxSize>
+class ValueList {
+   public:
+    std::size_t size() const { return size_; }
+    void        push_back(const T& value) {
+        assert(size_ < MaxSize);
+        values_[size_++] = value;
+    }
+    void     add(const T& value) { push_back(value); }  // Alias per compatibilità
+    const T* begin() const { return values_; }
+    const T* end() const { return values_ + size_; }
+    const T& operator[](int index) const { return values_[index]; }
 
-       private:
-        T           values_[MaxSize];
-        std::size_t size_ = 0;
-    };
+   private:
+    T           values_[MaxSize];
+    std::size_t size_ = 0;
+};
     //shashchess end
     #if defined(_MSC_VER)
         // Disable some silly and noisy warnings from MSVC compiler
