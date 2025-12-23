@@ -409,16 +409,9 @@ void UCIEngine::benchmark(std::istream& args) {
 
             Search::LimitsType limits = parse_limits(is);
 
-            TimePoint elapsed = now();
-
             // Run with silenced network verification
             engine.go(limits);
             engine.wait_for_search_finished();
-
-            totalTime += now() - elapsed;
-
-            nodes += nodesSearched;
-            nodesSearched = 0;
         }
         else if (token == "position")
             position(is);
@@ -466,6 +459,7 @@ void UCIEngine::benchmark(std::istream& args) {
 
             Search::LimitsType limits = parse_limits(is);
 
+            nodesSearched     = 0;
             TimePoint elapsed = now();
 
             // Run with silenced network verification
@@ -477,7 +471,6 @@ void UCIEngine::benchmark(std::istream& args) {
             updateHashfullReadings();
 
             nodes += nodesSearched;
-            nodesSearched = 0;
         }
         else if (token == "position")
             position(is);
