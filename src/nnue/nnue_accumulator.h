@@ -79,8 +79,8 @@ struct AccumulatorCaches {
             void clear(const std::array<BiasType, Size>& biases) {
 
                 accumulation = biases;
-                std::memset((uint8_t*) this + offsetof(Entry, psqtAccumulation), 0,
-                            sizeof(Entry) - offsetof(Entry, psqtAccumulation));
+                std::memset(reinterpret_cast<std::byte*>(this) + offsetof(Entry, psqtAccumulation),
+                            0, sizeof(Entry) - offsetof(Entry, psqtAccumulation));
             }
         };
 

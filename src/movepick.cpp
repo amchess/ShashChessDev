@@ -189,7 +189,8 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
         }
         else if constexpr (Type == QUIETS)
         {
-            m.value = 2 * (*mainHistory)[us][m.from_to()];
+            // histories
+            m.value = 2 * (*mainHistory)[us][m.raw()];
             m.value += 2 * (*pawnHistory)[pawn_history_index(pos)][pc][to];
             m.value += (*continuationHistory[0])[pc][to];
             m.value += (*continuationHistory[1])[pc][to];
@@ -206,7 +207,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
             m.value += PieceValue[pt] * v;
 
             if (ply < LOW_PLY_HISTORY_SIZE)
-                m.value += 8 * (*lowPlyHistory)[ply][m.from_to()] / (1 + ply);
+                m.value += 8 * (*lowPlyHistory)[ply][m.raw()] / (1 + ply);
             // Bonus aggiuntivi per posizioni aggressive
             if (MoveConfig::isAggressive)
             {
@@ -222,9 +223,9 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
                 m.value = PieceValue[capturedPiece] + (1 << 28);
             else
             {
-                m.value = (*mainHistory)[us][m.from_to()] + (*continuationHistory[0])[pc][to];
+                m.value = (*mainHistory)[us][m.raw()] + (*continuationHistory[0])[pc][to];
                 if (ply < LOW_PLY_HISTORY_SIZE)
-                    m.value += (*lowPlyHistory)[ply][m.from_to()];
+                    m.value += (*lowPlyHistory)[ply][m.raw()];
             }
         }
 
