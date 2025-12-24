@@ -422,7 +422,7 @@ void Engine::resize_threads() {
     shCfg.highPetrosian   = options["High Petrosian"];
     shCfg.middlePetrosian = options["Middle Petrosian"];
     shCfg.lowPetrosian    = options["Low Petrosian"];
-    threads.set(numaContext.get_numa_config(), {bookMan, options, threads, tt, networks, shCfg},
+    threads.set(numaContext.get_numa_config(), {bookMan, options, threads, tt, sharedHists, networks, shCfg},
                 updateContext);  //book management
     //from shashin end
     // Reallocate the hash with the new threadpool size

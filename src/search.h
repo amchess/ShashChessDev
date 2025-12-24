@@ -26,6 +26,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -151,12 +152,14 @@ struct SharedState {
                 const OptionsMap&                                         optionsMap,
                 ThreadPool&                                               threadPool,
                 TranspositionTable&                                       transpositionTable,
+                std::map<NumaIndex, SharedHistories>&                     sharedHists,
                 const LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& nets,
                 const ShashChess::ShashinConfig&                          shCfg) :  //Shashin
         bookMan(bm),
         options(optionsMap),
         threads(threadPool),
         tt(transpositionTable),
+        sharedHistories(sharedHists),
         networks(nets),
         shashinConfig(shCfg) {}  //shashin
 
@@ -165,6 +168,7 @@ struct SharedState {
     const OptionsMap&                                         options;
     ThreadPool&                                               threads;
     TranspositionTable&                                       tt;
+    std::map<NumaIndex, SharedHistories>&                     sharedHistories;
     const LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& networks;
     const ShashChess::ShashinConfig                           shashinConfig;  //Shashin
 };
@@ -260,7 +264,12 @@ class NullSearchManager: public ISearchManager {
 class Worker {
    public:
     size_t threadIdx;  //mcts
-    Worker(SharedState&, std::unique_ptr<ISearchManager>, size_t, NumaReplicatedAccessToken);
+    Worker(SharedState&,
+           std::unique_ptr<ISearchManager>,
+           size_t,
+           size_t,
+           size_t,
+           NumaReplicatedAccessToken);
     ~Worker();  //shashin
     // Called at instantiation to initialize reductions tables.
     // Reset histories, usually before a new game.
@@ -282,15 +291,13 @@ class Worker {
     ButterflyHistory mainHistory;
     LowPlyHistory    lowPlyHistory;
 
-    CapturePieceToHistory captureHistory;
-    ContinuationHistory   continuationHistory[2][2];
-    PawnHistory           pawnHistory;
-
-    CorrectionHistory<Pawn>         pawnCorrectionHistory;
-    CorrectionHistory<Minor>        minorPieceCorrectionHistory;
-    CorrectionHistory<NonPawn>      nonPawnCorrectionHistory;
+    CapturePieceToHistory           captureHistory;
+    ContinuationHistory             continuationHistory[2][2];
+    PawnHistory                     pawnHistory;
     CorrectionHistory<Continuation> continuationCorrectionHistory;
+
     TTMoveHistory                   ttMoveHistory;
+    SharedHistories& sharedHistory;
     RootMoves                       rootMoves;                          //mcts
     Depth                           completedDepth;                     //mcts
     bool                            nmpGuard = false, nmpSide = false;  //from Crystal-shashin
@@ -342,7 +349,8 @@ class Worker {
     Depth rootDepth;  //mcts
     Value rootDelta;
 
-    //for mcts
+    size_t                    numaThreadIdx, numaTotal;//for mcts
+    
     bool                      fullSearch = false;  //full threads patch
     NumaReplicatedAccessToken numaAccessToken;
 

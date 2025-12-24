@@ -383,8 +383,8 @@ void UCIEngine::benchmark(std::istream& args) {
 
     Benchmark::BenchmarkSetup setup = Benchmark::setup_benchmark(args);
 
-    const int numGoCommands = count_if(setup.commands.begin(), setup.commands.end(),
-                                       [](const std::string& s) { return s.find("go ") == 0; });
+    const auto numGoCommands = count_if(setup.commands.begin(), setup.commands.end(),
+                                        [](const std::string& s) { return s.find("go ") == 0; });
 
     TimePoint totalTime = 0;
 
@@ -431,13 +431,14 @@ void UCIEngine::benchmark(std::istream& args) {
 
     int           numHashfullReadings = 0;
     constexpr int hashfullAges[]      = {0, 999};  // Only normal hashfull and touched hash.
-    int           totalHashfull[std::size(hashfullAges)] = {0};
-    int           maxHashfull[std::size(hashfullAges)]   = {0};
+    constexpr int hashfullAgeCount    = std::size(hashfullAges);
+    int           totalHashfull[hashfullAgeCount] = {0};
+    int           maxHashfull[hashfullAgeCount]   = {0};
 
     auto updateHashfullReadings = [&]() {
         numHashfullReadings += 1;
 
-        for (int i = 0; i < static_cast<int>(std::size(hashfullAges)); ++i)
+        for (int i = 0; i < hashfullAgeCount; ++i)
         {
             const int hashfull = engine.get_hashfull(hashfullAges[i]);
             maxHashfull[i]     = std::max(maxHashfull[i], hashfull);
@@ -594,7 +595,7 @@ int UCIEngine::to_cp(Value v, const Position& pos) {
 
     auto [a, b] = WDLModel::win_rate_params(pos);
 
-    return std::round(100 * int(v) / a);
+    return int(std::round(100 * int(v) / a));
 }
 
 //in wdl package for wdl model

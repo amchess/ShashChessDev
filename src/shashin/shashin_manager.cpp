@@ -361,7 +361,7 @@ Value ShashinManager::static_value(const Eval::NNUE::Networks&   networks,
     {
         StateInfo st;
         auto [dp, dts] = accumulators.push();
-        rootPos.do_move(move, st, rootPos.gives_check(move), dp, dts, nullptr);
+        rootPos.do_move(move, st, rootPos.gives_check(move), dp, dts, nullptr, nullptr);
 
         Value val = -static_value(networks, accumulators, refreshTable, rootPos, ss + 1, -optimism);
 
