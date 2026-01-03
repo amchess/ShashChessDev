@@ -296,13 +296,13 @@ class Worker {
     PawnHistory                     pawnHistory;
     CorrectionHistory<Continuation> continuationCorrectionHistory;
 
-    TTMoveHistory                   ttMoveHistory;
+    TTMoveHistory    ttMoveHistory;
     SharedHistories& sharedHistory;
-    RootMoves                       rootMoves;                          //mcts
-    Depth                           completedDepth;                     //mcts
-    bool                            nmpGuard = false, nmpSide = false;  //from Crystal-shashin
-    ShashinManager&                 getShashinManager();                //from crystal-Shashin
-    int                             lastShashinUpdatedDepth = 0;        //from shashin
+    RootMoves        rootMoves;                          //mcts
+    Depth            completedDepth;                     //mcts
+    bool             nmpGuard = false, nmpSide = false;  //from Crystal-shashin
+    ShashinManager&  getShashinManager();                //from crystal-Shashin
+    int              lastShashinUpdatedDepth = 0;        //from shashin
 
    private:
     void iterative_deepening();
@@ -349,8 +349,8 @@ class Worker {
     Depth rootDepth;  //mcts
     Value rootDelta;
 
-    size_t                    numaThreadIdx, numaTotal;//for mcts
-    
+    size_t numaThreadIdx, numaTotal;  //for mcts
+
     bool                      fullSearch = false;  //full threads patch
     NumaReplicatedAccessToken numaAccessToken;
 

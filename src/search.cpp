@@ -1737,7 +1737,8 @@ Value Search::Worker::search(
             futilityMult = (futilityMult * marginMultiplier) / 100;
 
             // Stockfish structure with your additional terms
-            return futilityMult * d - (2474 * improving + 331 * opponentWorsening) * futilityMult / 1024
+            return futilityMult * d
+                 - (2474 * improving + 331 * opponentWorsening) * futilityMult / 1024
                  + std::abs(correctionValue) / 174665 + (ss - 1)->statScore / 331  // Your term
                  - 35 * legalMoveCount / 32;  // Your mobility adjustment
         };
@@ -2431,7 +2432,7 @@ skipExtensionAndPruning:  // full threads search patch
 
             if (value > alpha)
             {
-                const bool doDeeperSearch = d < newDepth && value > (bestValue + 43 + 2 * newDepth);
+                const bool doDeeperSearch    = d < newDepth && value > (bestValue + newDepth + 44);
                 const bool doShallowerSearch = value < bestValue + 9;
                 // Calcola una volta le informazioni Shashin rilevanti
                 const bool isCrystal = localShashinManager.useStep17CrystalLogic();
@@ -3273,16 +3274,24 @@ void update_all_stats(const Position& pos,
     Piece                  movedPiece     = pos.moved_piece(bestMove);
     PieceType              capturedPiece;
 
-    int bonus = std::min(116 * depth - 81, 1515) + 347 * (bestMove == ttMove);
+    int bonus =
+      std::min(116 * depth - 81, 1515) + 347 * (bestMove == ttMove) + (ss - 1)->statScore / 32;
     int malus = std::min(848 * depth - 207, 2446) - 17 * moveCount;
 
     if (!pos.capture_stage(bestMove))
     {
         update_quiet_histories(pos, ss, workerThread, bestMove, bonus * 910 / 1024);
 
+        int i = 0;
         // Decrease stats for all non-best quiet moves
         for (Move move : quietsSearched)
-            update_quiet_histories(pos, ss, workerThread, move, -malus * 1085 / 1024);
+        {
+            i++;
+            int actualMalus = malus * 1085 / 1024;
+            if (i > 5)
+                actualMalus -= actualMalus * (i - 5) / i;
+            update_quiet_histories(pos, ss, workerThread, move, -actualMalus);
+        }
     }
     else
     {

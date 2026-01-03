@@ -222,7 +222,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
             if (pos.capture_stage(m))
                 m.value = PieceValue[capturedPiece] + (1 << 28);
             else
-               m.value = (*mainHistory)[us][m.raw()] + (*continuationHistory[0])[pc][to];
+                m.value = (*mainHistory)[us][m.raw()] + (*continuationHistory[0])[pc][to];
         }
 
         // Apply fortress logic if needed

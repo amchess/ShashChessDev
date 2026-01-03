@@ -130,8 +130,7 @@ class Engine {
     BookManager                                        bookMan;  //book management
     Search::SearchManager::UpdateContext               updateContext;
     std::function<void(std::string_view)>              onVerifyNetworks;
-    std::map<NumaIndex, SharedHistories>  sharedHists;
-
+    std::map<NumaIndex, SharedHistories>               sharedHists;
 };
 
 }  // namespace ShashChess
