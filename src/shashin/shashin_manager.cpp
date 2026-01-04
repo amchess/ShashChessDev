@@ -219,7 +219,7 @@ void ShashinManager::setDynamicBaseState(Value           score,
 
 void ShashinManager::initDynamicRootShashinState(const Eval::NNUE::Networks&   networks,
                                                  Eval::NNUE::AccumulatorStack& accumulators,
-                                                 Eval::NNUE::AccumulatorCaches refreshTable,
+                                                 Eval::NNUE::AccumulatorCaches& refreshTable, 
                                                  Position&                     rootPos,
                                                  Search::Stack*                ss,
                                                  int                           optimism,
@@ -339,7 +339,7 @@ bool ShashinManager::isFortress(const Position& pos) {
 
 Value ShashinManager::static_value(const Eval::NNUE::Networks&   networks,
                                    Eval::NNUE::AccumulatorStack& accumulators,
-                                   Eval::NNUE::AccumulatorCaches refreshTable,
+                                   Eval::NNUE::AccumulatorCaches& refreshTable,
                                    Position&                     rootPos,
                                    Search::Stack*                ss,
                                    Value                         optimism) {

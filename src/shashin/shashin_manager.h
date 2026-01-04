@@ -49,17 +49,17 @@ class ShashinManager {
     // Evaluation
     Value static_value(const Eval::NNUE::Networks&   networks,
                        Eval::NNUE::AccumulatorStack& accumulators,
-                       Eval::NNUE::AccumulatorCaches refreshTable,
+                       Eval::NNUE::AccumulatorCaches& refreshTable, // <--- CORRETTO: aggiunto &
                        Position&                     rootPos,
-                       Search::Stack*                ss,
+                       Search::Stack* ss,
                        Value                         optimism);
 
     // Initialization
     void initDynamicRootShashinState(const Eval::NNUE::Networks&   networks,
                                      Eval::NNUE::AccumulatorStack& accumulators,
-                                     Eval::NNUE::AccumulatorCaches refreshTable,
+                                     Eval::NNUE::AccumulatorCaches& refreshTable, // <--- CORRETTO: aggiunto &
                                      Position&                     rootPos,
-                                     Search::Stack*                ss,
+                                     Search::Stack* ss,
                                      Value                         optimism,
                                      const ShashinConfig&          config,
                                      Depth                         rootDepth);
