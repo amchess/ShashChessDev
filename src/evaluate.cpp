@@ -1,6 +1,6 @@
 /*
   ShashChess, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2025 The ShashChess developers (see AUTHORS file)
+  Copyright (C) 2004-2026 The ShashChess developers (see AUTHORS file)
 
   ShashChess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -42,8 +42,8 @@ namespace ShashChess {
 // an approximation of the material advantage on the board in terms of pawns.
 int Eval::simple_eval(const Position& pos) {
     Color c = pos.side_to_move();
-    return PawnValue * (pos.count<PAWN>(c) - pos.count<PAWN>(~c))
-         + (pos.non_pawn_material(c) - pos.non_pawn_material(~c));
+    return PawnValue * (pos.count<PAWN>(c) - pos.count<PAWN>(~c)) + pos.non_pawn_material(c)
+         - pos.non_pawn_material(~c);
 }
 
 bool Eval::use_smallnet(const Position& pos) { return std::abs(simple_eval(pos)) > 962; }

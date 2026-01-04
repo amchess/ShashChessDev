@@ -1,6 +1,6 @@
 /*
   ShashChess, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2025 The ShashChess developers (see AUTHORS file)
+  Copyright (C) 2004-2026 The ShashChess developers (see AUTHORS file)
 
   ShashChess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -67,11 +67,11 @@ constexpr auto make_piece_indices_type() {
 
     std::array<std::array<uint8_t, SQUARE_NB>, SQUARE_NB> out{};
 
-    for (int from = 0; from < SQUARE_NB; ++from)
+    for (Square from = SQ_A1; from <= SQ_H8; ++from)
     {
-        Bitboard attacks = PseudoAttacks[PT][Square(from)];
+        Bitboard attacks = PseudoAttacks[PT][from];
 
-        for (int to = 0; to < SQUARE_NB; ++to)
+        for (Square to = SQ_A1; to <= SQ_H8; ++to)
         {
             out[from][to] = constexpr_popcount(((1ULL << to) - 1) & attacks);
         }
@@ -88,11 +88,11 @@ constexpr auto make_piece_indices_piece() {
 
     constexpr Color C = color_of(P);
 
-    for (int from = 0; from < SQUARE_NB; ++from)
+    for (Square from = SQ_A1; from <= SQ_H8; ++from)
     {
         Bitboard attacks = PseudoAttacks[C][from];
 
-        for (int to = 0; to < SQUARE_NB; ++to)
+        for (Square to = SQ_A1; to <= SQ_H8; ++to)
         {
             out[from][to] = constexpr_popcount(((1ULL << to) - 1) & attacks);
         }
@@ -321,11 +321,11 @@ void FullThreats::append_changed_indices(Color            perspective,
                 {
                     if (first)
                     {
-                        fusedData->dp2removedOriginBoard |= square_bb(to);
+                        fusedData->dp2removedOriginBoard |= to;
                         continue;
                     }
                 }
-                else if (fusedData->dp2removedOriginBoard & square_bb(to))
+                else if (fusedData->dp2removedOriginBoard & to)
                     continue;
             }
 
@@ -335,11 +335,11 @@ void FullThreats::append_changed_indices(Color            perspective,
                 {
                     if (first)
                     {
-                        fusedData->dp2removedTargetBoard |= square_bb(from);
+                        fusedData->dp2removedTargetBoard |= from;
                         continue;
                     }
                 }
-                else if (fusedData->dp2removedTargetBoard & square_bb(from))
+                else if (fusedData->dp2removedTargetBoard & from)
                     continue;
             }
         }

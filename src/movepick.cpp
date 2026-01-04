@@ -1,6 +1,6 @@
 /*
   ShashChess, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2025 The ShashChess developers (see AUTHORS file)
+  Copyright (C) 2004-2026 The ShashChess developers (see AUTHORS file)
 
   ShashChess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -86,14 +86,14 @@ MovePicker::MovePicker(const Position&              p,
                        const LowPlyHistory*         lph,
                        const CapturePieceToHistory* cph,
                        const PieceToHistory**       ch,
-                       const PawnHistory*           ph,
+                       const SharedHistories*       sh,
                        int                          pl) :
     pos(p),
     mainHistory(mh),
     lowPlyHistory(lph),
     captureHistory(cph),
     continuationHistory(ch),
-    pawnHistory(ph),
+    sharedHistory(sh),
     ttMove(ttm),
     depth(d),
     ply(pl) {
@@ -126,6 +126,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
     static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
     Color      us       = pos.side_to_move();
+    //fortress begin
     const bool fortress = MoveConfig::isFortress;
 
     // Precompute all fortress-related values once
@@ -149,7 +150,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
                 shashinBonus = static_cast<int>(180 * plyFactor);
         }
     }
-
+	//fortress end
     [[maybe_unused]] Bitboard threatByLesser[KING + 1];
     if constexpr (Type == QUIETS)
     {
@@ -191,7 +192,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
         {
             // histories
             m.value = 2 * (*mainHistory)[us][m.raw()];
-            m.value += 2 * (*pawnHistory)[pawn_history_index(pos)][pc][to];
+            m.value += 2 * sharedHistory->pawn_entry(pos)[pc][to];
             m.value += (*continuationHistory[0])[pc][to];
             m.value += (*continuationHistory[1])[pc][to];
             m.value += (*continuationHistory[2])[pc][to];

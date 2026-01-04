@@ -1,5 +1,5 @@
 # ShashChess, a UCI chess playing engine derived from Stockfish
-# Copyright (C) 2004-2025 Andrea Manzo, F. Ferraguti, K.Kiniama and ShashChess developers
+# Copyright (C) 2004-2026 Andrea Manzo, F. Ferraguti, K.Kiniama and ShashChess developers
 #
 # ShashChess is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -24,6 +24,21 @@ ifeq ($(KERNEL),Linux)
 	OS := $(shell uname -o)
 endif
 
+### Command prefix to run the built executable (e.g. wine, sde, qemu)
+### Backward compatible alias: WINE_PATH (deprecated)
+ifneq ($(strip $(WINE_PATH)),)
+ifeq ($(strip $(RUN_PREFIX)),)
+RUN_PREFIX := $(WINE_PATH)
+endif
+ifeq ($(MAKELEVEL),0)
+ifneq ($(strip $(RUN_PREFIX)),$(strip $(WINE_PATH)))
+$(warning *** Both RUN_PREFIX and WINE_PATH are set; ignoring WINE_PATH. ***)
+else
+$(warning *** WINE_PATH is deprecated; use RUN_PREFIX instead. ***)
+endif
+endif
+endif
+
 ### Target Windows OS
 ifeq ($(OS),Windows_NT)
 	ifneq ($(COMP),ndk)
@@ -31,8 +46,8 @@ ifeq ($(OS),Windows_NT)
 	endif
 else ifeq ($(COMP),mingw)
 	target_windows = yes
-	ifeq ($(WINE_PATH),)
-		WINE_PATH := $(shell which wine)
+	ifeq ($(RUN_PREFIX),)
+		RUN_PREFIX := $(shell which wine)
 	endif
 endif
 
@@ -48,7 +63,7 @@ PREFIX = /usr/local
 BINDIR = $(PREFIX)/bin
 
 ### Built-in benchmark for pgo-builds
-PGOBENCH = $(WINE_PATH) ./$(EXE) bench
+PGOBENCH = $(RUN_PREFIX) ./$(EXE) bench
 
 ### Source and object files
 SRCS = benchmark.cpp bitboard.cpp evaluate.cpp main.cpp \
@@ -468,7 +483,7 @@ endif
 ifeq ($(COMP),gcc)
 	comp=gcc
 	CXX=g++
-	CXXFLAGS += -pedantic -Wextra -Wshadow -Wmissing-declarations -Wstack-usage=128000
+	CXXFLAGS += -pedantic -Wextra -Wshadow -Wmissing-declarations
 
 	ifeq ($(arch),$(filter $(arch),armv7 armv8 riscv64))
 		ifeq ($(OS),Android)
@@ -643,7 +658,9 @@ ifeq ($(COMP),gcc)
 	ifneq ($(gccisclang),)
 		profile_make = clang-profile-make
 		profile_use = clang-profile-use
-	endif
+	else
+		CXXFLAGS += -Wstack-usage=128000
+	endif	
 endif
 
 ### On mingw use Windows threads, otherwise POSIX
