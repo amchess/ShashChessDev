@@ -706,7 +706,8 @@ void MonteCarlo::generate_moves(mctsNodeInfo* node) {
     }
     bool       kingInDanger = Shashin::king_danger(pos, pos.side_to_move());
     MovePicker mp(pos, ttMove, depth, &thisThread->mainHistory, &thisThread->lowPlyHistory,
-                  &thisThread->captureHistory, contHist, &thisThread->sharedHistory, stack[ply].ply);
+                  &thisThread->captureHistory, contHist, &thisThread->sharedHistory,
+                  stack[ply].ply);
     Move       move;
     int        moveCount = 0;
 

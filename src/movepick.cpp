@@ -125,7 +125,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
 
     static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
-    Color      us       = pos.side_to_move();
+    Color us = pos.side_to_move();
     //fortress begin
     const bool fortress = MoveConfig::isFortress;
 
@@ -150,7 +150,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
                 shashinBonus = static_cast<int>(180 * plyFactor);
         }
     }
-	//fortress end
+    //fortress end
     [[maybe_unused]] Bitboard threatByLesser[KING + 1];
     if constexpr (Type == QUIETS)
     {

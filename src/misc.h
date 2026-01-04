@@ -145,7 +145,7 @@ static inline const std::uint16_t Le             = 1;
 static inline const bool          IsLittleEndian = *reinterpret_cast<const char*>(&Le) == 1;
 
 
-//omissis ShashChess
+//omissis ShashChess: in types.h
 
 
 template<typename T, std::size_t Size, std::size_t... Sizes>
@@ -423,7 +423,7 @@ void move_to_front(std::vector<T>& vec, Predicate pred) {
     #define sf_always_inline
 #endif
 
-//ShashChess
+//ShashChess omissis: in types.h
 
 //begin from learning
 #define EMPTY "<empty>"

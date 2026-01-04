@@ -217,14 +217,14 @@ void ShashinManager::setDynamicBaseState(Value           score,
     state.dynamicBase.rootDepth    = rootDepth;
 }
 
-void ShashinManager::initDynamicRootShashinState(const Eval::NNUE::Networks&   networks,
-                                                 Eval::NNUE::AccumulatorStack& accumulators,
-                                                 Eval::NNUE::AccumulatorCaches& refreshTable, 
-                                                 Position&                     rootPos,
-                                                 Search::Stack*                ss,
-                                                 int                           optimism,
-                                                 const ShashinConfig&          config,
-                                                 Depth                         rootDepth) {
+void ShashinManager::initDynamicRootShashinState(const Eval::NNUE::Networks&    networks,
+                                                 Eval::NNUE::AccumulatorStack&  accumulators,
+                                                 Eval::NNUE::AccumulatorCaches& refreshTable,
+                                                 Position&                      rootPos,
+                                                 Search::Stack*                 ss,
+                                                 int                            optimism,
+                                                 const ShashinConfig&           config,
+                                                 Depth                          rootDepth) {
     const auto& alignedNetworks = networks;
     initDynamicBaseState(
       static_value(alignedNetworks, accumulators, refreshTable, rootPos, ss, optimism), rootPos,
@@ -337,12 +337,12 @@ bool ShashinManager::isFortress(const Position& pos) {
 }
 
 
-Value ShashinManager::static_value(const Eval::NNUE::Networks&   networks,
-                                   Eval::NNUE::AccumulatorStack& accumulators,
+Value ShashinManager::static_value(const Eval::NNUE::Networks&    networks,
+                                   Eval::NNUE::AccumulatorStack&  accumulators,
                                    Eval::NNUE::AccumulatorCaches& refreshTable,
-                                   Position&                     rootPos,
-                                   Search::Stack*                ss,
-                                   Value                         optimism) {
+                                   Position&                      rootPos,
+                                   Search::Stack*                 ss,
+                                   Value                          optimism) {
     // 1. Gestione casi terminali e posizioni quiescenti
     if (ss->ply >= MAX_PLY || rootPos.is_draw(ss->ply))
         return VALUE_DRAW;

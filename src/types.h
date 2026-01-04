@@ -53,9 +53,8 @@
                         __builtin_unreachable(); \
                 } while (0)
         #endif
-    #elif defined(_MSC_VER)
-        #define sf_assume(cond) __assume(cond)
     #else
+        // do nothing for other compilers
         #define sf_assume(cond)
     #endif
 
