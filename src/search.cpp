@@ -1277,7 +1277,6 @@ Value Search::Worker::search(
     maxValue      = VALUE_INFINITE;
     // from Crystal-shashin begin
     gameCycle       = false;
-    bool kingDanger = !ourMove && king_danger(pos, us);
 
     ss->secondaryLine = false;
     ss->mainLine      = false;
