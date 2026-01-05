@@ -1738,23 +1738,38 @@ Value Search::Worker::search(
             return (2 * beta + eval) / 3;
         }
     }
+    
     // Step 9. Null move search with verification search
-    //crystal-shashin logic begin
+    // crystal-shashin logic begin
     if (cutNode && !disableNMAndPC && ss->staticEval >= beta - 18 * depth + 350
         && !excludedMove  //learning
         && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && !is_loss(beta))
     {
+        // --- SHASHIN NULL MOVE LOGIC (OPTIMIZED) ---
         // Check if we should skip null move based on Shashin style and depth
         bool skipNullMove = false;
 
-        if (isStrategical && depth >= 14)
+        if (isStrategical)
+        {
+            // CORREZIONE ELO: Non saltare MAI la null move in posizioni strategiche.
+            // Stockfish guadagna ~20 ELO potando aggressivamente i rami morti qui.
+            // Old logic: if (depth >= 14) skipNullMove = true; (RIMOSSA)
+            skipNullMove = false;
+        }
+        else if (isAggressive && depth >= 12)
+        {
+            // Per Tal/Aggressive, alziamo la soglia da 10 a 12.
+            // Permette pruning veloce a profondità medie, blocca solo su profondità alte
+            // dove il rischio di sviste tattiche (Zugzwang) è inaccettabile.
             skipNullMove = true;
-        else if (isAggressive && depth >= 10)
-            skipNullMove = true;
-        else if (isFortressNode && depth >= 6)
-            skipNullMove = true;
-        else if (isTactical || isSacrificial)
-            skipNullMove = true;
+        }
+        else if (isFortressNode || isSacrificial || isTactical)
+        {
+            // Manteniamo la prudenza massima per casi critici.
+            if (depth >= 6) skipNullMove = true;
+        }
+        // --- END SHASHIN NULL MOVE LOGIC ---
+
         if (!skipNullMove)
         {
             assert((ss - 1)->currentMove != Move::null());
@@ -1767,11 +1782,13 @@ Value Search::Worker::search(
             if (isStrategical)
             {
                 // More reduction in strategical positions (shallower search)
+                // Aumentiamo il pruning per guadagnare velocità
                 R = std::min(R + 1, 8);
             }
             else if (isAggressive)
             {
-                // Less reduction in strategical positions
+                // Less reduction in aggressive positions
+                // Se facciamo null move, cerchiamo un po' più a fondo per sicurezza
                 R = std::max(R - 1, 3);
             }
 
