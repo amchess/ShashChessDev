@@ -1276,7 +1276,7 @@ Value Search::Worker::search(
     bestValue     = -VALUE_INFINITE;
     maxValue      = VALUE_INFINITE;
     // from Crystal-shashin begin
-    gameCycle       = false;
+    gameCycle = false;
 
     ss->secondaryLine = false;
     ss->mainLine      = false;
@@ -1738,7 +1738,7 @@ Value Search::Worker::search(
             return (2 * beta + eval) / 3;
         }
     }
-    
+
     // Step 9. Null move search with verification search
     // crystal-shashin logic begin
     if (cutNode && !disableNMAndPC && ss->staticEval >= beta - 18 * depth + 350
@@ -1766,7 +1766,8 @@ Value Search::Worker::search(
         else if (isFortressNode || isSacrificial || isTactical)
         {
             // Manteniamo la prudenza massima per casi critici.
-            if (depth >= 6) skipNullMove = true;
+            if (depth >= 6)
+                skipNullMove = true;
         }
         // --- END SHASHIN NULL MOVE LOGIC ---
 
@@ -2202,14 +2203,19 @@ moves_loop:  // When in check, search starts here
         {
             // Adjust singularBeta based on Shashin style
             int styleMarginAdjust = 0;
+
+            // --- SHASHIN SINGULAR BETA TUNING ---
             if (isAggressive)
             {
-                styleMarginAdjust = -12;  // More aggressive for Tal-style positions
+                // Old: -12. New: -8. (Meno aggressivo sulla beta per evitare falsi positivi)
+                styleMarginAdjust = -8;
             }
             else if (isStrategical)
             {
-                styleMarginAdjust = 8;  // More cautious for Petrosian-style positions
+                // Old: 8. New: 10. (Più restrittivo)
+                styleMarginAdjust = 10;
             }
+            // --- END SHASHIN SINGULAR BETA TUNING ---
 
             Value singularBeta =
               ttData.value - (53 + 75 * (ss->ttPv && !PvNode) + styleMarginAdjust) * depth / 60;
@@ -2239,18 +2245,33 @@ moves_loop:  // When in check, search starts here
                 int tripleMargin = 73 + 302 * PvNode - 248 * !ttCapture + 90 * ss->ttPv - corrValAdj
                                  - (ss->ply * 2 > rootDepth * 3) * 50;
 
-                // Shashin-based adjustments
+                // --- SHASHIN EXTENSION TUNING (OPTIMIZED) ---
                 if (isAggressive)
                 {
-                    doubleMargin -= 35;  // Extend more in aggressive positions
-                    tripleMargin -= 50;
+                    // Raffinamento: Estendiamo aggressivamente SOLO se c'è tattica reale.
+                    // Altrimenti, usiamo un bonus più contenuto per non sprecare nodi.
+                    if (givesCheck || isTactical)
+                    {
+                        doubleMargin -= 35;  // Mantieni estensione massima per casi critici
+                        tripleMargin -= 50;
+                    }
+                    else
+                    {
+                        // Bonus dimezzato per aggressività "generica"
+                        doubleMargin -= 15;
+                        tripleMargin -= 25;
+                    }
                 }
                 else if (isStrategical)
                 {
-                    doubleMargin += 25;  // Extend less in strategical positions
-                    tripleMargin += 35;
+                    // Nelle posizioni strategiche, estendere troppo è spesso inutile.
+                    // Aumentiamo i margini (cioè rendiamo più difficile l'estensione).
+                    doubleMargin += 30;  // Old: +25 -> New: +30 (Più severo)
+                    tripleMargin += 45;  // Old: +35 -> New: +45
                 }
-                // Additional adjustments for tactical and sacrificial positions
+                // --- END SHASHIN EXTENSION TUNING ---
+
+                // Additional adjustments for tactical and sacrificial positions (Critical Moment Booster)
                 if (isTactical || isSacrificial)
                 {
                     // Only extend if the position is critical (e.g., near alpha/beta or with checks)
@@ -2261,10 +2282,12 @@ moves_loop:  // When in check, search starts here
                         tripleMargin -= 30;
                     }
                 }
+
                 extension =
                   1 + (value < singularBeta - doubleMargin) + (value < singularBeta - tripleMargin);
                 depth++;
             }
+
             // Multi-cut pruning
             // Our ttMove is assumed to fail high based on the bound of the TT entry,
             // and if after excluding the ttMove with a reduced search we fail high
@@ -2276,6 +2299,7 @@ moves_loop:  // When in check, search starts here
                 ttMoveHistory << std::max(-400 - 100 * depth, -4000);
                 return value;
             }
+
             // Negative extensions
             // If other moves failed high over (ttValue - margin) without the
             // ttMove on a reduced search, but we cannot do multi-cut because
