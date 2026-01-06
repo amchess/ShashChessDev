@@ -180,12 +180,14 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
                     + 7 * int(PieceValue[capturedPiece]);
 
             // Bonus aggiuntivi per posizioni aggressive
+            // RIDOTTI DRASTICAMENTE per non rompere l'ordinamento basato sulla History
             if (MoveConfig::isAggressive)
             {
                 if (pos.gives_check(m))
-                    m.value += 5000;   // Bonus per scacco
-                if (pos.see_ge(m, 0))  // Bonus per SEE positivo
-                    m.value += 1000;
+                    m.value += 500;  // Old: 5000. New: 500.
+
+                if (pos.see_ge(m, 0))
+                    m.value += 100;  // Old: 1000. New: 100.
             }
         }
         else if constexpr (Type == QUIETS)
@@ -209,13 +211,16 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
 
             if (ply < LOW_PLY_HISTORY_SIZE)
                 m.value += 8 * (*lowPlyHistory)[ply][m.raw()] / (1 + ply);
+
             // Bonus aggiuntivi per posizioni aggressive
+            // RIDOTTI DRASTICAMENTE per non rompere l'ordinamento basato sulla History
             if (MoveConfig::isAggressive)
             {
                 if (pos.gives_check(m))
-                    m.value += 5000;   // Bonus per scacco
-                if (pos.see_ge(m, 0))  // Bonus per SEE positivo
-                    m.value += 1000;
+                    m.value += 500;  // Old: 5000. New: 500.
+
+                if (pos.see_ge(m, 0))
+                    m.value += 100;  // Old: 1000. New: 100.
             }
         }
         else

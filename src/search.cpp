@@ -1276,7 +1276,7 @@ Value Search::Worker::search(
     bestValue     = -VALUE_INFINITE;
     maxValue      = VALUE_INFINITE;
     // from Crystal-shashin begin
-    gameCycle       = false;
+    gameCycle = false;
 
     ss->secondaryLine = false;
     ss->mainLine      = false;
@@ -1738,7 +1738,7 @@ Value Search::Worker::search(
             return (2 * beta + eval) / 3;
         }
     }
-    
+
     // Step 9. Null move search with verification search
     // crystal-shashin logic begin
     if (cutNode && !disableNMAndPC && ss->staticEval >= beta - 18 * depth + 350
@@ -1766,7 +1766,8 @@ Value Search::Worker::search(
         else if (isFortressNode || isSacrificial || isTactical)
         {
             // Manteniamo la prudenza massima per casi critici.
-            if (depth >= 6) skipNullMove = true;
+            if (depth >= 6)
+                skipNullMove = true;
         }
         // --- END SHASHIN NULL MOVE LOGIC ---
 
@@ -2779,34 +2780,40 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     ttData.value = ttHit ? value_from_tt(ttData.value, ss->ply, pos.rule50_count()) : VALUE_NONE;
     pvHit        = ttHit && ttData.is_pv;
 
-    // Crystal-Shashin QSearch optimization begin
+    // Crystal-Shashin QSearch optimization begin (Early Exit logic)
     const auto& staticState    = rootShashinState.staticState;
     const auto& dynamicDerived = rootShashinState.dynamicDerived;
-    const bool  canUseTTValue  = !PvNode && is_valid(ttData.value)
-                            && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER));
-    const bool isStrategical       = dynamicDerived.isStrategical;
-    const bool isAggressive        = dynamicDerived.isAggressive;
-    const bool stmKingExposed      = staticState.stmKingExposed;
-    const bool opponentKingExposed = opponentKingExposed;
-    if (canUseTTValue)
+
+    // Accesso ottimizzato alle variabili di stato
+    const bool isStrategical = dynamicDerived.isStrategical;
+    const bool isAggressive  = dynamicDerived.isAggressive;
+
+    if (!PvNode && is_valid(ttData.value)
+        && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER)))
     {
         if (ttData.depth >= DEPTH_QS)
             return ttData.value;
+
+        // Logic for Quiet Kings early cutoff
         if (staticState.legalMoveCount < 35 && std::abs(ttData.value) > 60)
         {
-            const bool areQuietKings = !stmKingExposed && !opponentKingExposed;
+            const bool areQuietKings =
+              !staticState.stmKingExposed && !staticState.opponentKingExposed;
             if (!isStrategical && areQuietKings)
             {
                 const bool depthCondition =
                   ttData.depth >= ADJUSTED_QS_DEPTH && ttData.depth > MIN_DEPTH_FOR_QS_CUTOFF;
                 const bool kingSafety =
-                  (!stmKingExposed && !opponentKingExposed) || ttData.depth > DEPTH_QS + 4;
+                  (!staticState.stmKingExposed && !staticState.opponentKingExposed)
+                  || ttData.depth > DEPTH_QS + 4;
+
                 if (depthCondition && kingSafety)
                     return ttData.value;
             }
         }
     }
     // Crystal-Shashin QSearch optimization end
+
     // Step 3 bis learning begin
     expTTHit        = false;
     updatedLearning = false;
@@ -2815,14 +2822,13 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     {
         const LearningMove* learningMove = nullptr;
         int                 siblings     = LD.probeByMaxDepthAndScore(posKey, learningMove);
-        (void) siblings;  // Sopprime l'avviso di variabile inutilizzata
+        (void) siblings;
         if (learningMove)
         {
             expTTHit   = true;
             expTTMove  = learningMove->move;
             expTTValue = learningMove->score;
 
-            // Usa la mossa di learning per l'ordinamento se non abbiamo TT move
             if (!ttHit)
             {
                 ttData.move = expTTMove;
@@ -2835,15 +2841,20 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                     updatedLearning = true;
                     return expTTValue;
                 }
+                // (Logica Learning per Quiet Kings omessa per brevità,
+                // mantenuta identica al blocco TT se necessario, o saltare allo step successivo)
+                // Qui mantengo il flusso originale per coerenza col tuo file
                 if (staticState.legalMoveCount < 35 && std::abs(expTTValue) > 60)
                 {
-                    const bool areQuietKings = !stmKingExposed && !opponentKingExposed;
+                    const bool areQuietKings =
+                      !staticState.stmKingExposed && !staticState.opponentKingExposed;
                     if (!isStrategical && areQuietKings)
                     {
                         const bool depthCondition = learningMove->depth >= ADJUSTED_QS_DEPTH
                                                  && learningMove->depth > MIN_DEPTH_FOR_QS_CUTOFF;
-                        const bool kingSafety = (!stmKingExposed && !opponentKingExposed)
-                                             || learningMove->depth > DEPTH_QS + 4;
+                        const bool kingSafety =
+                          (!staticState.stmKingExposed && !staticState.opponentKingExposed)
+                          || learningMove->depth > DEPTH_QS + 4;
                         if (depthCondition && kingSafety)
                         {
                             updatedLearning = true;
@@ -2855,6 +2866,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         }
     }
     // Step 3 bis learning end
+
     // Step 4. Static evaluation of the position
     Value unadjustedStaticEval = VALUE_NONE;
     if (ss->inCheck)
@@ -2865,21 +2877,18 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
         if (ss->ttHit)
         {
-            // Never assume anything about values stored in TT
             unadjustedStaticEval = ttData.eval;
             if (!is_valid(unadjustedStaticEval))
                 unadjustedStaticEval = evaluate(pos);
             ss->staticEval = bestValue =
               to_corrected_static_eval(unadjustedStaticEval, correctionValue);
 
-            // ttValue can be used as a better position evaluation
             if (is_valid(ttData.value) && !is_decisive(ttData.value)
                 && (ttData.bound & (ttData.value > bestValue ? BOUND_LOWER : BOUND_UPPER)))
                 bestValue = ttData.value;
         }
         else
         {
-            //priority to the learning - only if we are not in check
             if (expTTHit && updatedLearning && is_valid(expTTValue))
             {
                 ss->staticEval = bestValue = expTTValue;
@@ -2908,25 +2917,46 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             alpha = bestValue;
 
         futilityBase = ss->staticEval + 351;
-        // Shashin begin: Increase futility margin for aggressive positions to avoid cutting tactical moves
-        // Utilizza rootShashinState per determinare se siamo in una posizione aggressiva
-        if (isAggressive)
-            futilityBase += 3;  // Increase margin by 20 points
-        //Shashin end
+
+        // --- SHASHIN OPTIMIZATION 1: FUTILITY BASE (Outside Loop) ---
+        // Correggiamo il valore ridicolo (+3) con qualcosa di sensato.
+        if (dynamicDerived.isHighTal)
+            futilityBase += 30;
+        else if (isStrategical)
+            futilityBase -= 20;
+        // ------------------------------------------------------------
     }
 
     const PieceToHistory* contHist[] = {(ss - 1)->continuationHistory};
-
     Square prevSq = ((ss - 1)->currentMove).is_ok() ? ((ss - 1)->currentMove).to_sq() : SQ_NONE;
 
-    // Initialize a MovePicker object for the current position, and prepare to search
-    // the moves. We presently use two stages of move generator in quiescence search:
-    // captures, or evasions only when in check.
     MovePicker mp(pos, ttData.move, DEPTH_QS, &mainHistory, &lowPlyHistory, &captureHistory,
                   contHist, &sharedHistory, ss->ply);
 
-    // Step 5. Loop through all pseudo-legal moves until no moves remain or a beta
-    // cutoff occurs.
+    // --- SHASHIN OPTIMIZATION 2: PRE-CALCULATE CONSTANTS (Outside Loop) ---
+    // A) Move Count Threshold
+    int moveCountThreshold = 2;  // Default Stockfish
+    if (dynamicDerived.isHighTal)
+        moveCountThreshold += PvNode ? 1 : 0;
+    else if (isStrategical)
+        moveCountThreshold = 1;
+    if (staticState.kingDanger)
+        moveCountThreshold++;
+    if (MoveConfig::isFortress)
+        moveCountThreshold++;
+
+    // B) SEE Margin
+    int seeMargin = -80;  // Standard Stockfish
+    if (isAggressive)
+        seeMargin -= 18;  // Tal: -98
+    else if (isStrategical)
+        seeMargin += 18;  // Petrosian: -62
+
+    // C) Volatility Check (Flag)
+    const bool extremelyVolatile = dynamicDerived.isHighTal && staticState.kingDanger;
+    // ----------------------------------------------------------------------
+
+    // Step 5. Loop through all pseudo-legal moves
     while ((move = mp.next_move()) != Move::none())
     {
         assert(move.is_ok());
@@ -2939,28 +2969,14 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
         moveCount++;
 
-        // Step 6. Pruning
+        // Step 6. Pruning (Optimized)
         if (!is_loss(bestValue))
         {
-            // --- Move Count Threshold (Simplified) ---
-            int moveCountThreshold = 2;  // Default Stockfish
-
-            // Adjust threshold
-            if (dynamicDerived.isHighTal)
-                moveCountThreshold += PvNode ? 1 : 0;
-            else if (isStrategical)
-                moveCountThreshold = 1;
-
-            if (staticState.kingDanger)
-                moveCountThreshold++;
-
-            if (MoveConfig::isFortress)
-                moveCountThreshold++;
-
             // Futility pruning and moveCount pruning
             if (!givesCheck && move.to_sq() != prevSq && !is_loss(futilityBase)
                 && move.type_of() != PROMOTION)
             {
+                // Use pre-calculated threshold
                 if (moveCount > moveCountThreshold)
                     continue;
 
@@ -2981,16 +2997,9 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             // --- PHASE 4: HYBRID PRUNING OPTIMIZATION ---
             if (!capture)
             {
-                // Calcoliamo la condizione SOLO se serve (dentro il ramo !capture)
-                // Usiamo una condizione molto restrittiva per non rallentare la ricerca globale.
-                // HighTal (caos) + KingDanger (pericolo reale) = Volatilità Estrema.
-                // Nota: dynamicDerived e staticState sono già definiti all'inizio di qsearch.
-                const bool extremelyVolatile = dynamicDerived.isHighTal && staticState.kingDanger;
-
-                if (extremelyVolatile)
+                if (extremelyVolatile)  // Use pre-calculated flag
                 {
-                    // Anche nel caos, consideriamo solo mosse con una storia eccellente.
-                    // L'accesso alla sharedHistory è costoso, lo facciamo solo se strettamente necessario.
+                    // Accesso costoso alla sharedHistory solo qui, nel caso critico
                     int historyScore =
                       sharedHistory.pawn_entry(pos)[pos.moved_piece(move)][move.to_sq()];
 
@@ -3007,13 +3016,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             }
             // --- END PHASE 4 ---
 
-            // SEE pruning (Standard with minor adjustment)
-            int seeMargin = -80;
-            if (isAggressive)
-                seeMargin -= 18;  // Old: -20 -> New: -18
-            else if (isStrategical)
-                seeMargin += 18;  // Old: +20 -> New: +18
-
+            // SEE pruning (Use pre-calculated margin)
             if (!pos.see_ge(move, seeMargin))
                 continue;
         }
@@ -3046,7 +3049,8 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             }
         }
     }
-    // new variety begin
+
+    // variety begin
     if (std::abs(bestValue) == VALUE_INFINITE)
     {
         variety = 0;
@@ -3068,10 +3072,9 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             bestValue += increment;
         }
     }
-    // end new variety
+    // end variety
+
     // Step 9. Check for mate
-    // All legal moves have been searched. A special case: if we are
-    // in check and no legal moves were found, it is checkmate.
     if (ss->inCheck && bestValue == -VALUE_INFINITE)
     {
         assert(!MoveList<LEGAL>(pos).size());
@@ -3097,8 +3100,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         }
     }
 
-    // Save gathered info in transposition table. The static evaluation
-    // is saved as it was before adjustment by correction history.
+    // Save gathered info in transposition table.
     ttWriter.write(posKey, value_to_tt(bestValue, ss->ply), pvHit,
                    bestValue >= beta ? BOUND_LOWER : BOUND_UPPER, DEPTH_QS, bestMove,
                    unadjustedStaticEval, tt.generation());
