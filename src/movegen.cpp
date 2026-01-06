@@ -247,24 +247,13 @@ Move* generate_all(const Position& pos, Move* moveList) {
     }
 
     Bitboard b = attacks_bb<KING>(ksq) & (Type == EVASIONS ? ~pos.pieces(Us) : target);
-    //Shashin-Crystal begin
-    if (MoveConfig::useMoveShashinLogic && (Type != EVASIONS || !pos.checkers()))
-    {
-        constexpr int KingMoveThreshold = 3;
-        if (popcount(b) > KingMoveThreshold)
-        {
-            const Color them     = ~Us;
-            Bitboard    filtered = 0;
-            while (b)
-            {
-                Square to = pop_lsb(b);
-                if (pos.pieces(them) & to || !(pos.attackers_to(to, them)))
-                    filtered |= to;
-            }
-            b = filtered;
-        }
-    }
-    //Shashin-Crystal end
+
+    // --- SHASHIN PATCH: REMOVED KING FILTER ---
+    // Abbiamo rimosso il filtro Shashin-Crystal che limitava le mosse del Re.
+    // Con la nuova Search ottimizzata, il motore deve poter valutare tutte le fughe possibili.
+    // Questo è fondamentale per i finali e le difese difficili (King Walks).
+    // ------------------------------------------
+
     moveList = splat_moves(moveList, ksq, b);
 
     if ((Type == QUIETS || Type == NON_EVASIONS) && pos.can_castle(Us & ANY_CASTLING))
