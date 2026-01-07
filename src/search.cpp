@@ -2174,9 +2174,9 @@ moves_loop:  // When in check, search starts here
             Depth singularDepth = newDepth / 2;
 
             // 2. UNICA MODIFICA SHASHIN: Estensione mirata per Tal
-            // Solo se siamo aggressivi (Tal), in profondità (>12) e c'è pericolo per il Re.
+            // Solo se siamo aggressivi (Tal), in profondità (>9) e c'è pericolo per il Re.
             // Aumentiamo la profondità di ricerca singolare di 1 ply per trovare tattiche profonde.
-            if (isAggressive && depth > 12 && rootShashinState.staticState.kingDanger)
+            if (isAggressive && depth >= 8 && rootShashinState.staticState.kingDanger)
             {
                 singularDepth += 1;
             }
