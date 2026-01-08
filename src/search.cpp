@@ -2083,17 +2083,24 @@ moves_loop:  // When in check, search starts here
             // Calcolo soglia base Stockfish
             int moveCountThreshold = (3 + depth * depth) / (2 - improving);
 
-            // --- UNICA MODIFICA SHASHIN PERMESSA ---
-            // Solo per depth > 8, e solo ±1 nella soglia quiet moves.
-            // Rimuoviamo TUTTI gli altri bias (marginBias, futilityBias, seeBias) che causavano -90 ELO.
-            if (depth > 8)
+            // --- MODIFICA SHASHIN "DECISA" ---
+            // Profondità alta: modifiche più aggressive
+            if (depth > 10)
             {
                 if (isStrategical)
-                    moveCountThreshold -= 1;  // Pruning leggermente più stretto
+                    moveCountThreshold -= 2;  // Pruning severo: guadagna ELO risparmiando tempo
                 else if (isAggressive)
-                    moveCountThreshold += 1;  // Pruning leggermente più largo
+                    moveCountThreshold += 2;  // Estensione: guadagna posizioni tattiche profonde
             }
-            // --- END SHASHIN ADJUSTMENT ---
+            // Profondità media: modifiche moderate
+            else if (depth > 8)
+            {
+                if (isStrategical)
+                    moveCountThreshold -= 1;  // Pruning moderato
+                else if (isAggressive)
+                    moveCountThreshold += 1;  // Estensione moderata
+            }
+            // --- FINE MODIFICA SHASHIN ---
 
             // Skip quiet moves if movecount exceeds our threshold
             if (moveCount >= moveCountThreshold)
