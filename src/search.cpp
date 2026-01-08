@@ -2083,24 +2083,17 @@ moves_loop:  // When in check, search starts here
             // Calcolo soglia base Stockfish
             int moveCountThreshold = (3 + depth * depth) / (2 - improving);
 
-            // --- MODIFICA SHASHIN "DECISA" ---
-            // Profondità alta: modifiche più aggressive
-            if (depth > 10)
+            // --- UNICA MODIFICA SHASHIN PERMESSA ---
+            // Solo per depth > 8, e solo ±1 nella soglia quiet moves.
+            // Rimuoviamo TUTTI gli altri bias (marginBias, futilityBias, seeBias) che causavano -90 ELO.
+            if (depth > 8)
             {
                 if (isStrategical)
-                    moveCountThreshold -= 2;  // Pruning severo: guadagna ELO risparmiando tempo
+                    moveCountThreshold -= 1;  // Pruning leggermente più stretto
                 else if (isAggressive)
-                    moveCountThreshold += 2;  // Estensione: guadagna posizioni tattiche profonde
+                    moveCountThreshold += 1;  // Pruning leggermente più largo
             }
-            // Profondità media: modifiche moderate
-            else if (depth > 8)
-            {
-                if (isStrategical)
-                    moveCountThreshold -= 1;  // Pruning moderato
-                else if (isAggressive)
-                    moveCountThreshold += 1;  // Estensione moderata
-            }
-            // --- FINE MODIFICA SHASHIN ---
+            // --- END SHASHIN ADJUSTMENT ---
 
             // Skip quiet moves if movecount exceeds our threshold
             if (moveCount >= moveCountThreshold)
@@ -2352,15 +2345,13 @@ skipExtensionAndPruning:  // full threads search patch
                 // --- MODIFICA A: BONUS HISTORY AUMENTATI ---
                 // Aumentiamo leggermente i bonus per orientare l'apprendimento della history
                 // senza stravolgere l'ordinamento immediato.
-                int bonus = 1365;  // Base Stockfish value
-
+                int bonus = 1365;
                 if (isAggressive)
-                    bonus += 40;   // Was +30 -> Now +40 (+33%)
+                    bonus += 25;   // Da +40 a +25 (-37%)
                 else if (isStrategical)
-                    bonus += 20;   // Was +15 -> Now +20 (+33%)
-
+                    bonus += 12;   // Da +20 a +12 (-40%)
                 if (isFortressNode)
-                    bonus += 60;   // Was +50 -> Now +60 (+20%)
+                    bonus += 30;   // Da +60 a +30 (-50%)
                 
                 // ------------------------------------------
 
