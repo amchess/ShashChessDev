@@ -2174,9 +2174,9 @@ moves_loop:  // When in check, search starts here
             Depth singularDepth = newDepth / 2;
 
             // 2. UNICA MODIFICA SHASHIN: Estensione mirata per Tal
-            // Solo se siamo aggressivi (Tal), in profondità (>9) e c'è pericolo per il Re.
+            // Solo se siamo aggressivi (Tal), in profondità (>12) e c'è pericolo per il Re.
             // Aumentiamo la profondità di ricerca singolare di 1 ply per trovare tattiche profonde.
-            if (isAggressive && depth >= 8 && rootShashinState.staticState.kingDanger)
+            if (isAggressive && depth > 12 && rootShashinState.staticState.kingDanger)
             {
                 singularDepth += 1;
             }
@@ -2295,7 +2295,7 @@ skipExtensionAndPruning:  // full threads search patch
             Depth d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
 
             // --- MODIFICA SHASHIN ULTRA-CONSERVATIVA ---
-            // Obiettivo: Minimizzare l'impatto sull'ELO mantenendo una leggera "personalità".
+            // Obiettivo: Minimizzare l'impatto sull'ELO.
             // Condizione di sicurezza: depth > 5 e ss->ply > 1 per non toccare la radice o i primi rami.
 
             if (depth > 5 && ss->ply > 1)
@@ -2304,7 +2304,7 @@ skipExtensionAndPruning:  // full threads search patch
                 // Riduciamo la penalità in modo impercettibile per favorire la tattica
                 if (isAggressive && (givesCheck || capture))
                 {
-                    r -= 80;  // ~0.08 ply (Micro-adjustement)
+                    r -= 80;  // ~0.08 ply
                 }
                 // Caso 2: Posizioni Strategiche
                 // Aumentiamo la penalità solo se siamo molto profondi e la mossa è tranquilla
@@ -2323,7 +2323,7 @@ skipExtensionAndPruning:  // full threads search patch
             // Fortezze: Riduzione minima
             if (isFortressNode)
             {
-                d = std::max(1, d - 1);  // Solo -1 ply invece di -2
+                d = std::max(1, d - 1);  // Solo -1 ply
             }
             // --- FINE MODIFICA SHASHIN ---
 
@@ -2337,28 +2337,25 @@ skipExtensionAndPruning:  // full threads search patch
                 const bool doDeeperSearch    = d < newDepth && value > bestValue + 50;
                 const bool doShallowerSearch = value < bestValue + 9;
 
-                // --- CRYSTAL LOGIC DISABLED ---
-                // La logica di re-search aggressiva (Crystal) costa troppo ELO.
-                /* bool useCrystalResearch = false;
-                if (localShashinManager.useStep17CrystalLogic() && isAggressive && doDeeperSearch) { ... }
-                */
-                // ------------------------------
-
-                // Standard Stockfish re-search logic
+                // Standard Stockfish re-search logic (Crystal Logic rimossa per stabilità)
                 newDepth += doDeeperSearch - doShallowerSearch;
                 if (newDepth > d)
                     value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, newDepth, !cutNode);
 
-                // Bonus history: ESTREMAMENTE conservativi
+                // --- MODIFICA A: BONUS HISTORY AUMENTATI ---
+                // Aumentiamo leggermente i bonus per orientare l'apprendimento della history
+                // senza stravolgere l'ordinamento immediato.
                 int bonus = 1365;  // Base Stockfish value
 
                 if (isAggressive)
-                    bonus += 30;  // Micro-bonus
+                    bonus += 40;   // Was +30 -> Now +40 (+33%)
                 else if (isStrategical)
-                    bonus += 15;  // Micro-bonus
+                    bonus += 20;   // Was +15 -> Now +20 (+33%)
 
                 if (isFortressNode)
-                    bonus += 50;  // Bonus moderato
+                    bonus += 60;   // Was +50 -> Now +60 (+20%)
+                
+                // ------------------------------------------
 
                 update_continuation_histories(ss, movedPiece, move.to_sq(), bonus);
             }
