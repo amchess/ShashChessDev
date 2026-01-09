@@ -1740,64 +1740,31 @@ Value Search::Worker::search(
     }
 
     // Step 9. Null move search with verification search
-    // crystal-shashin logic begin
     if (cutNode && !disableNMAndPC && ss->staticEval >= beta - 18 * depth + 350
         && !excludedMove  //learning
         && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && !is_loss(beta))
     {
-        // --- SHASHIN NULL MOVE LOGIC (FINE TUNED) ---
+        // --- MODIFICA SHASHIN ULTRA-CONSERVATIVA (Fix Tattico) ---
+        // Logica semplificata al massimo per stabilità ELO.
+        // Vietiamo la Null Move SOLO se siamo aggressivi, c'è pericolo per il Re
+        // e la profondità è molto bassa (< 8). Questo evita blunder immediati.
         bool skipNullMove = false;
 
-        // 1. Posizioni Strategiche: Null Move sempre attiva per massima efficienza
-        if (isStrategical)
+        if (isAggressive && rootShashinState.staticState.kingDanger && depth < 8)
         {
-            skipNullMove = false;
+            skipNullMove = true;
         }
-        // 2. Posizioni Aggressive (Tal): Logica adattiva
-        else if (isAggressive)
-        {
-            // Se c'è pericolo per il Re (KingDanger), siamo molto prudenti (skip se depth >= 10).
-            // Se il Re è sicuro, possiamo osare di più (skip se depth >= 14).
-            // Questo recupera velocità nelle fasi di attacco dove non rischiamo il contropiede.
-            int threshold = rootShashinState.staticState.kingDanger ? 10 : 14;
-
-            if (depth >= threshold)
-                skipNullMove = true;
-        }
-        // 3. Casi Critici: Fortezze, Sacrifici, Tattica Pura
-        else if (isFortressNode || isSacrificial || isTactical)
-        {
-            // Prudenza massima standard
-            if (depth >= 6)
-                skipNullMove = true;
-        }
-        // --- END SHASHIN NULL MOVE LOGIC ---
+        // --- FINE MODIFICA ---
 
         if (!skipNullMove)
         {
             assert((ss - 1)->currentMove != Move::null());
             assert(eval - beta >= 0);
 
-            // Null move dynamic reduction based on depth (Stockfish Base)
+            // *** RIMOSSE TUTTE LE MODIFICHE A "R" ***
+            // Torniamo al calcolo puro di Stockfish per evitare bleeding di ELO.
+            // Qualsiasi modifica qui altera l'equilibrio delicato del pruning.
             Depth R = 7 + depth / 3;
-
-            // Shashin-based adjustments to reduction
-            if (isStrategical)
-            {
-                // Aumentiamo il pruning in posizioni noiose
-                R = std::min(R + 1, 8);
-            }
-            else if (isAggressive)
-            {
-                // Riduciamo il pruning in posizioni d'attacco per non perdere colpi
-                R = std::max(R - 1, 3);
-            }
-
-            // Fortress adjustment
-            if (isFortressNode)
-            {
-                R = std::min(R + 2, 10);
-            }
 
             ss->currentMove                   = Move::null();
             ss->continuationHistory           = &continuationHistory[0][0][NO_PIECE][0];
@@ -1824,7 +1791,6 @@ Value Search::Worker::search(
                     return nullValue;
             }
         }
-        //only from shashin crystal end
     }
 
     improving |= ss->staticEval >= beta;
@@ -2347,12 +2313,12 @@ skipExtensionAndPruning:  // full threads search patch
                 // senza stravolgere l'ordinamento immediato.
                 int bonus = 1365;
                 if (isAggressive)
-                    bonus += 25;   // Da +40 a +25 (-37%)
+                    bonus += 25;  // Da +40 a +25 (-37%)
                 else if (isStrategical)
-                    bonus += 12;   // Da +20 a +12 (-40%)
+                    bonus += 12;  // Da +20 a +12 (-40%)
                 if (isFortressNode)
-                    bonus += 30;   // Da +60 a +30 (-50%)
-                
+                    bonus += 30;  // Da +60 a +30 (-50%)
+
                 // ------------------------------------------
 
                 update_continuation_histories(ss, movedPiece, move.to_sq(), bonus);
