@@ -1744,26 +1744,22 @@ Value Search::Worker::search(
         && !excludedMove  //learning
         && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && !is_loss(beta))
     {
-        // --- MODIFICA SHASHIN ULTRA-CONSERVATIVA (Fix Tattico) ---
-        // Logica semplificata al massimo per stabilità ELO.
-        // Vietiamo la Null Move SOLO se siamo aggressivi, c'è pericolo per il Re
-        // e la profondità è molto bassa (< 8). Questo evita blunder immediati.
+        // --- MODIFICA SHASHIN: SAFETY CHECK (Versione Veloce) ---
+        // Manteniamo solo la protezione contro i blunder immediati.
+        // ABBIAMO RIMOSSO LA MODIFICA A "R" PER RECUPERARE VELOCITÀ.
         bool skipNullMove = false;
-
         if (isAggressive && rootShashinState.staticState.kingDanger && depth < 8)
         {
             skipNullMove = true;
         }
-        // --- FINE MODIFICA ---
+        // --------------------------------------------------------
 
         if (!skipNullMove)
         {
             assert((ss - 1)->currentMove != Move::null());
             assert(eval - beta >= 0);
 
-            // *** RIMOSSE TUTTE LE MODIFICHE A "R" ***
-            // Torniamo al calcolo puro di Stockfish per evitare bleeding di ELO.
-            // Qualsiasi modifica qui altera l'equilibrio delicato del pruning.
+            // Calcolo Base Stockfish (PULITO)
             Depth R = 7 + depth / 3;
 
             ss->currentMove                   = Move::null();
@@ -2133,20 +2129,19 @@ moves_loop:  // When in check, search starts here
             && is_valid(ttData.value) && !is_decisive(ttData.value) && (ttData.bound & BOUND_LOWER)
             && ttData.depth >= depth - 3 && !is_shuffling(move, ss, pos))
         {
-            // --- VERSIONE ULTRA-CONSERVATIVA (STOCKFISH BASE + 1 TWEAK) ---
-
-            // 1. Calcolo standard di singularBeta e singularDepth (Stockfish)
             Value singularBeta  = ttData.value - (53 + 75 * (ss->ttPv && !PvNode)) * depth / 60;
             Depth singularDepth = newDepth / 2;
 
-            // 2. UNICA MODIFICA SHASHIN: Estensione mirata per Tal
-            // Solo se siamo aggressivi (Tal), in profondità (>12) e c'è pericolo per il Re.
-            // Aumentiamo la profondità di ricerca singolare di 1 ply per trovare tattiche profonde.
-            if (isAggressive && depth > 12 && rootShashinState.staticState.kingDanger)
+            // --- MODIFICA SHASHIN: SNIPER EXTENSION ---
+            // Estendiamo la ricerca SOLO sui nodi singolari (tattici) in modalità aggressiva.
+            // Questo permette di vedere combinazioni profonde senza rallentare il resto.
+            if (isAggressive && rootShashinState.staticState.kingDanger && depth > 10)
             {
-                singularDepth += 1;
+                // Aumentiamo la profondità del 20% circa.
+                // Su depth 20, guadagni +4 ply su quella singola linea forzata.
+                singularDepth += std::max(1, singularDepth / 5);
             }
-            // --- FINE MODIFICA SHASHIN ---
+            // ------------------------------------------
 
             ss->excludedMove = move;
             value = search<NonPV>(pos, ss, singularBeta - 1, singularBeta, singularDepth, cutNode);
@@ -2159,10 +2154,6 @@ moves_loop:  // When in check, search starts here
                                  - 897 * ttMoveHistory / 127649 - (ss->ply > rootDepth) * 42;
                 int tripleMargin = 73 + 302 * PvNode - 248 * !ttCapture + 90 * ss->ttPv - corrValAdj
                                  - (ss->ply * 2 > rootDepth * 3) * 50;
-
-                // *** NESSUNA MODIFICA AI MARGINI ***
-                // Rimosso tutto il blocco 'SHASHIN EXTENSION TUNING' che modificava i margini.
-                // Torniamo ai valori puri di Stockfish per stabilità ELO.
 
                 extension =
                   1 + (value < singularBeta - doubleMargin) + (value < singularBeta - tripleMargin);
