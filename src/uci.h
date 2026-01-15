@@ -34,7 +34,7 @@ namespace ShashChess {
 class Position;
 class Move;
 class Score;
-enum Square : int8_t;
+enum Square : uint8_t;
 using Value = int;
 
 class UCIEngine {

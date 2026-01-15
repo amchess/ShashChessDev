@@ -65,12 +65,15 @@ std::ostream& operator<<(std::ostream& os, const Position& pos) {
 
     os << "\n +---+---+---+---+---+---+---+---+\n";
 
-    for (Rank r = RANK_8; r >= RANK_1; --r)
+    for (Rank r = RANK_8;; --r)
     {
         for (File f = FILE_A; f <= FILE_H; ++f)
             os << " | " << PieceToChar[pos.piece_on(make_square(f, r))];
 
         os << " | " << (1 + r) << "\n +---+---+---+---+---+---+---+---+\n";
+
+        if (r == RANK_1)
+            break;
     }
 
     os << "   a   b   c   d   e   f   g   h\n"
@@ -1196,7 +1199,7 @@ string Position::fen() const {
     int                emptyCnt;
     std::ostringstream ss;
 
-    for (Rank r = RANK_8; r >= RANK_1; --r)
+    for (Rank r = RANK_8;; --r)
     {
         for (File f = FILE_A; f <= FILE_H; ++f)
         {
@@ -1210,8 +1213,9 @@ string Position::fen() const {
                 ss << PieceToChar[piece_on(make_square(f, r))];
         }
 
-        if (r > RANK_1)
-            ss << '/';
+        if (r == RANK_1)
+            break;
+        ss << '/';
     }
 
     ss << (sideToMove == WHITE ? " w " : " b ");
@@ -2256,10 +2260,13 @@ void Position::flip() {
     string            f, token;
     std::stringstream ss(fen());
 
-    for (Rank r = RANK_8; r >= RANK_1; --r)  // Piece placement
+    for (Rank r = RANK_8;; --r)  // Piece placement
     {
         std::getline(ss, token, r > RANK_1 ? '/' : ' ');
         f.insert(0, token + (f.empty() ? " " : "/"));
+
+        if (r == RANK_1)
+            break;
     }
 
     ss >> token;                        // Active color

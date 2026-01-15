@@ -26,6 +26,7 @@
 namespace ShashChess {
 
 class OptionsMap;
+enum Color : uint8_t;
 
 namespace Search {
 struct LimitsType;

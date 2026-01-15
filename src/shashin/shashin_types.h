@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include "../types.h"
 
 namespace ShashChess {
@@ -45,6 +46,7 @@ constexpr int   HIGH_TAL_MAX              = 100;
 constexpr Value PawnConversionFactor      = 356;
 constexpr Value VALUE_TB_WIN              = 51 * PawnConversionFactor;
 constexpr Value VALUE_MAX_EVAL            = VALUE_TB_WIN - 8 * PawnConversionFactor;
+
 // Packed config to save space
 struct ShashinConfig {
     uint8_t highTal: 1;
@@ -118,18 +120,29 @@ struct StaticState {
 
 // Ensure proper alignment for performance
 struct alignas(64) RootShashinState {
-    DynamicBaseState    dynamicBase;     // 8 bytes
-    DynamicDerivedState dynamicDerived;  // 4 bytes
-    StaticState         staticState;     // 12 bytes
-    uint8_t             padding[40];     // Padding calcolato
+    DynamicBaseState    dynamicBase;
+    DynamicDerivedState dynamicDerived;
+    StaticState         staticState;
+    
+    // FIX DEFINITIVO:
+    // Abbiamo rimosso l'array di padding esplicito.
+    // L'attributo 'alignas(64)' (riga sopra) garantisce AUTOMATICAMENTE
+    // che il compilatore estenda la dimensione totale a 64 byte.
+    // I dati occupano circa 32 byte, il resto sarà "tail padding" implicito.
 
     RootShashinState() :
         dynamicBase(),
         dynamicDerived(),
         staticState() {
-        std::memset(padding, 0, sizeof(padding));
+        // Non serve memset del padding qui perché i costruttori sopra
+        // inizializzano già tutti i membri a zero/false.
     }
 };
+
+// SAFETY CHECK: Ora questo passerà perché alignas(64) forza la dimensione a 64 esatti
+// (dato che il contenuto è < 64).
+static_assert(sizeof(RootShashinState) == 64, "RootShashinState must be exactly 64 bytes");
+
 }  // namespace ShashChess
 
 #endif  // SHASHIN_TYPES_H
