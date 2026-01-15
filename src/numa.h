@@ -950,10 +950,10 @@ class NumaConfig {
         return NumaReplicatedAccessToken(n);
     }
 
-    void execute_on_numa_node(NumaIndex n, std::function<void()> f) const {  //ShashChess fix
-        std::thread th([this, n, f]() {                                      //ShashChess fix
+    void execute_on_numa_node(NumaIndex n, std::function<void()> f) const {
+        std::thread th([this, n, f]() {
             bind_current_thread_to_numa_node(n);
-            f();  //ShashChess fix
+            f();
         });
 
         th.join();
@@ -1228,7 +1228,6 @@ class NumaConfig {
             info = reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(
               reinterpret_cast<char*>(info) + info->Size);
         }
-
 #endif
 
         if (!l3Domains.empty())
@@ -1397,7 +1396,7 @@ class LazyNumaReplicated: public NumaReplicatedBase {
     using ReplicatorFuncType = std::function<T(const T&)>;
 
     LazyNumaReplicated(NumaReplicationContext& ctx) :
-        LazyNumaReplicated(NumaReplicatedBase(ctx)) {  //ShashChess fix
+        LazyNumaReplicated(NumaReplicatedBase(ctx)) {
         prepare_replicate_from(T{});
     }
 

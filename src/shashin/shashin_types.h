@@ -3,7 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
+#include <cstring> // Necessario per std::memset
 #include "../types.h"
 
 namespace ShashChess {
@@ -124,23 +124,26 @@ struct alignas(64) RootShashinState {
     DynamicDerivedState dynamicDerived;
     StaticState         staticState;
     
-    // FIX DEFINITIVO:
-    // Abbiamo rimosso l'array di padding esplicito.
-    // L'attributo 'alignas(64)' (riga sopra) garantisce AUTOMATICAMENTE
-    // che il compilatore estenda la dimensione totale a 64 byte.
-    // I dati occupano circa 32 byte, il resto sarà "tail padding" implicito.
+    // NESSUN ARRAY DI PADDING ESPLICITO QUI.
+    // L'attributo 'alignas(64)' gestisce automaticamente lo spazio necessario.
 
-    RootShashinState() :
-        dynamicBase(),
-        dynamicDerived(),
-        staticState() {
-        // Non serve memset del padding qui perché i costruttori sopra
-        // inizializzano già tutti i membri a zero/false.
+    RootShashinState() {
+        // FIX CRITICO PER "SOLVED POSITIONS":
+        // Usiamo memset per azzerare l'intera memoria della struct,
+        // compresi i byte di padding "invisibili" inseriti dal compilatore per l'allineamento.
+        // Senza questo, i confronti di memoria (memcmp) tra stati logicamente identici
+        // possono fallire se il padding contiene "spazzatura" della RAM.
+        std::memset(static_cast<void*>(this), 0, sizeof(RootShashinState));
+
+        // Dopo il memset (che imposta tutto a 0), dobbiamo reimpostare esplicitamente
+        // i valori di default che NON devono essere zero.
+        // (Gli altri campi come bool e int sono corretti a 0/false dal memset)
+        dynamicBase.currentRange = ShashinPosition::CAPABLANCA;
     }
 };
 
-// SAFETY CHECK: Ora questo passerà perché alignas(64) forza la dimensione a 64 esatti
-// (dato che il contenuto è < 64).
+// SAFETY CHECK: Blocca la compilazione se la dimensione non è corretta.
+// Questo previene degrado delle performance se i tipi cambiano in futuro.
 static_assert(sizeof(RootShashinState) == 64, "RootShashinState must be exactly 64 bytes");
 
 }  // namespace ShashChess
