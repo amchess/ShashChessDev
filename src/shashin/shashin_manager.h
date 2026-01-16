@@ -4,7 +4,8 @@
 #include "shashin_position.h"
 #include "shashin_params.h"
 #include "../types.h"
-#include "../movegen.h"
+// Rimosso movegen/movepick/evaluate per pulizia header, ma li teniamo se servono al compilatore
+#include "../movegen.h" 
 #include "../movepick.h"
 #include "../evaluate.h"
 #include <array>
@@ -17,6 +18,7 @@ namespace Eval {
 namespace NNUE {
 struct Networks;
 struct AccumulatorCaches;
+struct AccumulatorStack; // Forward dec necessaria
 }
 }
 
@@ -46,10 +48,10 @@ class ShashinManager {
     bool isSacrificialPosition(const Position& rootPos);
     bool isPawnNearPromotion(const Position& rootPos);
 
-    // Evaluation
+    // Evaluation - Definita in search.cpp
     Value static_value(const Eval::NNUE::Networks&   networks,
                        Eval::NNUE::AccumulatorStack& accumulators,
-                       Eval::NNUE::AccumulatorCaches& refreshTable, // <--- CORRETTO: aggiunto &
+                       Eval::NNUE::AccumulatorCaches& refreshTable,
                        Position&                     rootPos,
                        Search::Stack* ss,
                        Value                         optimism);
@@ -57,12 +59,13 @@ class ShashinManager {
     // Initialization
     void initDynamicRootShashinState(const Eval::NNUE::Networks&   networks,
                                      Eval::NNUE::AccumulatorStack& accumulators,
-                                     Eval::NNUE::AccumulatorCaches& refreshTable, // <--- CORRETTO: aggiunto &
+                                     Eval::NNUE::AccumulatorCaches& refreshTable,
                                      Position&                     rootPos,
                                      Search::Stack* ss,
                                      Value                         optimism,
                                      const ShashinConfig&          config,
                                      Depth                         rootDepth);
+    
     void setDynamicBaseState(Value score, const Position& rootPos, int depth, int rootDepth);
     void setDynamicDerivedState();
     void initDynamicBaseState(Value                currentValue,
@@ -101,6 +104,12 @@ class ShashinManager {
     bool isOpponentKingExposed() const { return state.staticState.opponentKingSafetyScore < -30; }
 
     // Inline methods for performance
+    
+    // REFACTORING: Aggiunto metodo non-template richiesto
+    inline __attribute__((always_inline)) bool isInRange(ShashinPosition position) const {
+        return state.dynamicBase.currentRange == position;
+    }
+
     template<ShashinPosition P>
     inline __attribute__((always_inline)) bool inRange() const {
         return state.dynamicBase.currentRange == P;
@@ -111,7 +120,8 @@ class ShashinManager {
     }
 
     inline __attribute__((always_inline)) bool isPassive() const {
-        return anyOf(state.dynamicBase.currentRange, ShashinPosition::MIDDLE_HIGH_PETROSIAN,
+        return anyOf(state.dynamicBase.currentRange, 
+                     ShashinPosition::MIDDLE_HIGH_PETROSIAN,
                      ShashinPosition::HIGH_PETROSIAN);
     }
 
@@ -120,7 +130,8 @@ class ShashinManager {
     }
 
     inline __attribute__((always_inline)) bool isPetrosian() const {
-        return isShashinStyle({ShashinPosition::LOW_PETROSIAN, ShashinPosition::MIDDLE_PETROSIAN,
+        return isShashinStyle({ShashinPosition::LOW_PETROSIAN, 
+                               ShashinPosition::MIDDLE_PETROSIAN,
                                ShashinPosition::HIGH_PETROSIAN});
     }
 
@@ -129,29 +140,21 @@ class ShashinManager {
     }
 
     inline __attribute__((always_inline)) bool isAggressive() const {
-        return anyOf(state.dynamicBase.currentRange, ShashinPosition::MIDDLE_LOW_TAL,
+        return anyOf(state.dynamicBase.currentRange, 
+                     ShashinPosition::MIDDLE_LOW_TAL,
                      ShashinPosition::MIDDLE_TAL);
     }
 
-    inline __attribute__((always_inline)) bool isInRange(ShashinPosition position) const {
-        return state.dynamicBase.currentRange == position;
-    }
-    // Helper functions for styles intensity (inline for performance
+    // Helper functions for styles intensity
     static inline __attribute__((always_inline)) double getTalIntensity(ShashinPosition style) {
         switch (style)
         {
-        case ShashinPosition::HIGH_TAL :
-            return 1.00;  // 100% reduction
-        case ShashinPosition::MIDDLE_HIGH_TAL :
-            return 0.85;  // 85%
-        case ShashinPosition::MIDDLE_TAL :
-            return 0.73;  // 73% (40/55 ≈ 0.727, 55/75 ≈ 0.733)
-        case ShashinPosition::MIDDLE_LOW_TAL :
-            return 0.60;  // 60%
-        case ShashinPosition::LOW_TAL :
-            return 0.45;  // 45%
-        default :
-            return 0.0;
+        case ShashinPosition::HIGH_TAL : return 1.00;
+        case ShashinPosition::MIDDLE_HIGH_TAL : return 0.85;
+        case ShashinPosition::MIDDLE_TAL : return 0.73;
+        case ShashinPosition::MIDDLE_LOW_TAL : return 0.60;
+        case ShashinPosition::LOW_TAL : return 0.45;
+        default : return 0.0;
         }
     }
 
@@ -159,18 +162,12 @@ class ShashinManager {
     getPetrosianIntensity(ShashinPosition style) {
         switch (style)
         {
-        case ShashinPosition::HIGH_PETROSIAN :
-            return 0.55;  // 55% (25/55 ≈ 0.45, 35/75 ≈ 0.47 → media 0.46 → 1-0.46=0.54)
-        case ShashinPosition::MIDDLE_HIGH_PETROSIAN :
-            return 0.50;  // 50%
-        case ShashinPosition::MIDDLE_PETROSIAN :
-            return 0.40;  // 40%
-        case ShashinPosition::MIDDLE_LOW_PETROSIAN :
-            return 0.30;  // 30%
-        case ShashinPosition::LOW_PETROSIAN :
-            return 0.20;  // 20%
-        default :
-            return 0.0;
+        case ShashinPosition::HIGH_PETROSIAN : return 0.55;
+        case ShashinPosition::MIDDLE_HIGH_PETROSIAN : return 0.50;
+        case ShashinPosition::MIDDLE_PETROSIAN : return 0.40;
+        case ShashinPosition::MIDDLE_LOW_PETROSIAN : return 0.30;
+        case ShashinPosition::LOW_PETROSIAN : return 0.20;
+        default : return 0.0;
         }
     }
 
@@ -184,13 +181,11 @@ class ShashinManager {
     };
     RootShashinState state;
     PositionCache    positionCache;
-    // Helper to calculate the position hash
-    uint64_t computePositionHash(const Position& pos) {
-        return Shashin::shashin_position_hash(pos);
-    }
-    // Helper to invalidate caches when position changes
+    
+    uint64_t computePositionHash(const Position& pos);
+    
     void invalidateCaches() {
-        positionCache.posHash = 0;  // It invalidates all at the position change
+        positionCache.posHash = 0;
     }
 };
 

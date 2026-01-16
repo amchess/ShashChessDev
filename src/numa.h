@@ -950,10 +950,11 @@ class NumaConfig {
         return NumaReplicatedAccessToken(n);
     }
 
-    void execute_on_numa_node(NumaIndex n, std::function<void()> f) const {
-        std::thread th([this, n, f]() {
+    template<typename FuncT>
+    void execute_on_numa_node(NumaIndex n, FuncT&& f) const {
+        std::thread th([this, &f, n]() {
             bind_current_thread_to_numa_node(n);
-            f();
+            std::forward<FuncT>(f)();
         });
 
         th.join();
@@ -1396,7 +1397,7 @@ class LazyNumaReplicated: public NumaReplicatedBase {
     using ReplicatorFuncType = std::function<T(const T&)>;
 
     LazyNumaReplicated(NumaReplicationContext& ctx) :
-        LazyNumaReplicated(NumaReplicatedBase(ctx)) {
+        NumaReplicatedBase(ctx) {
         prepare_replicate_from(T{});
     }
 
