@@ -2,7 +2,7 @@
 #include "shashin_position.h"
 #include "moveconfig.h"
 // NOTA: search.h rimosso per evitare crash LTO
-#include "../evaluate.h" 
+#include "../evaluate.h"
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -19,10 +19,9 @@ ShashinManager::ShashinManager(const ShashinParams& params_) :
 __attribute__((hot)) bool ShashinManager::useMoveGenCrystalLogic() const {
     const auto& s = state.staticState;
     // Uso l'helper per chiarezza e sicurezza
-    return ShashChess::isInRange(state.dynamicBase.currentRange, 
-                                 ShashinPosition::MIDDLE_LOW_TAL, 
-                                 ShashinPosition::MIDDLE_TAL) 
-           && s.kingDanger;
+    return ShashChess::isInRange(state.dynamicBase.currentRange, ShashinPosition::MIDDLE_LOW_TAL,
+                                 ShashinPosition::MIDDLE_TAL)
+        && s.kingDanger;
 }
 
 __attribute__((hot)) bool ShashinManager::useStep17CrystalLogic() const {
@@ -231,7 +230,7 @@ void ShashinManager::initDynamicRootShashinState(const Eval::NNUE::Networks&    
                                                  Eval::NNUE::AccumulatorStack&  accumulators,
                                                  Eval::NNUE::AccumulatorCaches& refreshTable,
                                                  Position&                      rootPos,
-                                                 Search::Stack* ss,
+                                                 Search::Stack*                 ss,
                                                  int                            optimism,
                                                  const ShashinConfig&           config,
                                                  Depth                          rootDepth) {

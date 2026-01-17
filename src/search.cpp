@@ -2219,9 +2219,31 @@ skipExtensionAndPruning:  // full threads search patch
             r += 1119;
 
         // Increase reduction if next ply has a lot of fail high
+        //by shashin begin
         if ((ss + 1)->cutoffCnt > 1)
-            r += 256 + 1024 * ((ss + 1)->cutoffCnt > 2) + 1024 * allNode;
-
+        {
+            // Logica tattica: usa formula ShashChess originale (meno aggressiva)
+            if (dynamicDerived.isHighTal || dynamicDerived.isTacticalReactive
+                || staticState.isSacrificial)
+            {
+                // Formula ShashChess: conservativa per preservare profondità tattica
+                r += 120 + 1024 * ((ss + 1)->cutoffCnt > 2) + 100 * ((ss + 1)->cutoffCnt > 3)
+                   + 1024 * allNode;
+            }
+            // Logica strategica: usa formula Stockfish patch (più aggressiva)
+            else if (isStrategical)
+            {
+                // Formula Stockfish patch: più aggressiva per efficienza
+                r += 256 + 1024 * ((ss + 1)->cutoffCnt > 2) + 1024 * allNode;
+            }
+            // Default: compromesso bilanciato
+            else
+            {
+                r += 180 + 1024 * ((ss + 1)->cutoffCnt > 2) + 75 * ((ss + 1)->cutoffCnt > 3)
+                   + 1024 * allNode;
+            }
+        }
+        //by shashin end
         // For first picked move (ttMove) reduce reduction
         if (move == ttData.move)
             r -= 2151;
@@ -2848,9 +2870,31 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                     continue;
                 }
 
+                // === PATCH SHASHIN INTELLIGENTE (LOGICA INVERTITA) ===
                 if (!pos.see_ge(move, alpha - futilityBase))
                 {
-                    bestValue = std::max(bestValue, std::min(alpha, futilityBase));
+                    // Logica tattica (vecchio comportamento) per:
+                    // 1. Stili Tal aggressivi
+                    // 2. Posizioni tattiche reattive
+                    // 3. Pericolo del re (tranne in posizioni strategiche)
+                    const bool useTacticalLogic = dynamicDerived.isHighTal
+                                               || dynamicDerived.isTacticalReactive
+                                               || (staticState.kingDanger && !isStrategical);
+
+                    if (useTacticalLogic)
+                    {
+                        // COMPORTAMENTO TATTICO (ShashChess originale)
+                        // Permette alla valutazione di scendere per esplorare mosse apparentemente negative
+                        // ma potenzialmente vincenti (sacrifici, combinazioni nascoste)
+                        bestValue = std::min(alpha, futilityBase);
+                    }
+                    else
+                    {
+                        // COMPORTAMENTO STRATEGICO (patch Stockfish)
+                        // Mantiene la valutazione stabile, evitando crolli ingiustificati
+                        // Ottimo per posizioni strategiche e partite lunghe
+                        bestValue = std::max(bestValue, std::min(alpha, futilityBase));
+                    }
                     continue;
                 }
             }
