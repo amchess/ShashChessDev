@@ -1759,8 +1759,14 @@ Value Search::Worker::search(
             assert((ss - 1)->currentMove != Move::null());
             assert(eval - beta >= 0);
 
-            // Calcolo Base Stockfish (PULITO)
+            // --- SHASHIN SMART NMP ---
             Depth R = 7 + depth / 3;
+
+            if (isAggressive && rootShashinState.staticState.kingDanger)
+                R = std::max(1, R - 2);  // Cerca più a fondo la minaccia (meno riduzione)
+            else if (isStrategical)
+                R += 1;  // Fidati di più della null move (più riduzione/velocità)
+                         // -------------------------
 
             ss->currentMove                   = Move::null();
             ss->continuationHistory           = &continuationHistory[0][0][NO_PIECE][0];
@@ -2601,8 +2607,8 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     static_assert(nodeType != Root);
     //by shashin definitions begin
     const RootShashinState& rootShashinState = shashinManager->getState();
-    const bool isFortressNode = shashinManager->isFortress(pos);
-	//by shashin definitions end
+    const bool              isFortressNode   = shashinManager->isFortress(pos);
+    //by shashin definitions end
     constexpr bool PvNode = nodeType == PV;
 
     assert(alpha >= -VALUE_INFINITE && alpha < beta && beta <= VALUE_INFINITE);
