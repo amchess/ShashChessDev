@@ -2266,44 +2266,38 @@ skipExtensionAndPruning:  // full threads search patch
         // Step 17. Late moves reduction / extension (LMR)
         if (depth >= 2 && moveCount > std::max(sibs, 1) && doLMRStep)
         {
-            // Salviamo r originale per verificare se cambiarlo
-            int original_r = r;
-
-            // Calcolo base della profondità ridotta (Standard Stockfish)
+            // Calcolo base riduzione (usa la funzione corretta al punto 1)
             Depth d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
 
-            // --- MODIFICA SHASHIN ULTRA-CONSERVATIVA ---
-            // Obiettivo: Minimizzare l'impatto sull'ELO.
-            // Condizione di sicurezza: depth > 5 e ss->ply > 1 per non toccare la radice o i primi rami.
+            // --- SHASHIN DYNAMIC LMR TUNING ---
 
-            if (depth > 5 && ss->ply > 1)
+            // 1. TAL / AGGRESSIVE: Incoraggiamo mosse d'attacco con buona history
+            if (isAggressive)
             {
-                // Caso 1: Posizioni Tal/Aggressive
-                // Riduciamo la penalità in modo impercettibile per favorire la tattica
-                if (isAggressive && (givesCheck || capture))
+                // Se la mossa ha dimostrato di essere buona storicamente o è tattica,
+                // riduciamo la penalità (aumentiamo la profondità d)
+                if ((capture || givesCheck || ss->statScore > 0) && depth > 5)
                 {
-                    r -= 80;  // ~0.08 ply
-                }
-                // Caso 2: Posizioni Strategiche
-                // Aumentiamo la penalità solo se siamo molto profondi e la mossa è tranquilla
-                else if (isStrategical && !capture && !givesCheck && depth > 8)
-                {
-                    r += 80;  // ~0.08 ply
-                }
-
-                // Ricalcoliamo d solo se r è stato modificato
-                if (r != original_r)
-                {
-                    d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
+                    d = std::max(d, std::min(newDepth, d + 1));
                 }
             }
 
-            // Fortezze: Riduzione minima
+            // 2. PETROSIAN / STRATEGICAL: Potatura aggressiva su mosse tranquille
+            else if (isStrategical && !capture && !givesCheck && depth > 6)
+            {
+                // Se la history è cattiva, riduciamo ulteriormente la ricerca
+                if (ss->statScore < 0)
+                {
+                    d = std::max(1, d - 1);
+                }
+            }
+
+            // 3. FORTRESS: Massima efficienza, non sprechiamo tempo
             if (isFortressNode)
             {
-                d = std::max(1, d - 1);  // Solo -1 ply
+                d = std::max(1, d - 1);
             }
-            // --- FINE MODIFICA SHASHIN ---
+            // ----------------------------------
 
             ss->reduction = newDepth - d;
             value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
@@ -2315,23 +2309,18 @@ skipExtensionAndPruning:  // full threads search patch
                 const bool doDeeperSearch    = d < newDepth && value > bestValue + 50;
                 const bool doShallowerSearch = value < bestValue + 9;
 
-                // Standard Stockfish re-search logic (Crystal Logic rimossa per stabilità)
                 newDepth += doDeeperSearch - doShallowerSearch;
                 if (newDepth > d)
                     value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, newDepth, !cutNode);
 
-                // --- MODIFICA A: BONUS HISTORY AUMENTATI ---
-                // Aumentiamo leggermente i bonus per orientare l'apprendimento della history
-                // senza stravolgere l'ordinamento immediato.
+                // Bonus history - MANTENIAMO LA TUA VERSIONE ATTUALE
                 int bonus = 1365;
                 if (isAggressive)
-                    bonus += 25;  // Da +40 a +25 (-37%)
+                    bonus += 25;
                 else if (isStrategical)
-                    bonus += 12;  // Da +20 a +12 (-40%)
+                    bonus += 12;
                 if (isFortressNode)
-                    bonus += 30;  // Da +60 a +30 (-50%)
-
-                // ------------------------------------------
+                    bonus += 30;
 
                 update_continuation_histories(ss, movedPiece, move.to_sq(), bonus);
             }
