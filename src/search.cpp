@@ -2138,10 +2138,9 @@ moves_loop:  // When in check, search starts here
             Value singularBeta  = ttData.value - (53 + 75 * (ss->ttPv && !PvNode)) * depth / 60;
             Depth singularDepth = newDepth / 2;
 
-            // --- MODIFICA SHASHIN: SNIPER EXTENSION ---
-            // Estendiamo la ricerca SOLO sui nodi singolari (tattici) in modalità aggressiva.
-            // Questo permette di vedere combinazioni profonde senza rallentare il resto.
-            if (isAggressive && rootShashinState.staticState.kingDanger && depth > 10)
+            // --- SHASHIN: SNIPER EXTENSION ---
+            // Estendi solo se è aggressivo, c'è pericolo E la mossa è nella linea principale (ttPv)
+            if (isAggressive && rootShashinState.staticState.kingDanger && depth > 8 && ss->ttPv)
             {
                 // Aumentiamo la profondità del 20% circa.
                 // Su depth 20, guadagni +4 ply su quella singola linea forzata.
