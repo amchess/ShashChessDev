@@ -127,10 +127,6 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
 
     Color us = pos.side_to_move();
 
-    // *** RIMOSSA LOGICA FORTEZZA DA MOVEPICK ***
-    // La gestione delle fortezze avviene nella Search (valutazione/pruning),
-    // non forzando l'ordinamento qui.
-
     [[maybe_unused]] Bitboard threatByLesser[KING + 1];
     if constexpr (Type == QUIETS)
     {
@@ -164,7 +160,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
         }
         else if constexpr (Type == QUIETS)
         {
-            // histories (STOCKFISH STANDARD)
+            // histories
             m.value = 2 * (*mainHistory)[us][m.raw()];
             m.value += 2 * sharedHistory->pawn_entry(pos)[pc][to];
             m.value += (*continuationHistory[0])[pc][to];
@@ -183,9 +179,6 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
 
             if (ply < LOW_PLY_HISTORY_SIZE)
                 m.value += 8 * (*lowPlyHistory)[ply][m.raw()] / (1 + ply);
-
-            // *** RIMOSSO BONUS AGGRESSIVO ***
-            // Rimosso bonus scacco/SEE.
 
             // *** UNICA MICRO-MODIFICA SHASHIN ***
             // Solo per posizioni strategiche (Capablanca) e profondità > 6.
@@ -206,8 +199,6 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
             else
                 m.value = (*mainHistory)[us][m.raw()] + (*continuationHistory[0])[pc][to];
         }
-
-        // *** RIMOSSA LOGICA FORTEZZA ***
     }
     return it;
 }
