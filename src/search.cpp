@@ -3018,14 +3018,19 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 Depth Search::Worker::reduction(
   bool i, Depth d, int mn, int delta, bool isStrategical, bool isAggressive) const {
     int reductionScale = reductions[d] * reductions[mn];
-    // Adjust based on Shashin style - slightly more reduction for strategical positions
-    if (isStrategical)
-        reductionScale = reductionScale * 0.95;
-    else if (isAggressive)
-        reductionScale = reductionScale * 1.05;
+
+    // --- SHASHIN FIX & OPTIMIZATION ---
+    // Tal/Aggressive: Riduciamo la riduzione LMR per cercare più a fondo le tattiche (-5%)
+    if (isAggressive)
+        reductionScale = (reductionScale * 95) / 100;
+
+    // Petrosian/Strategic: Aumentiamo la riduzione per potare velocemente posizioni tranquille (+10%)
+    // Nota: Possiamo essere aggressivi qui per guadagnare tempo per le fasi tattiche
+    else if (isStrategical)
+        reductionScale = (reductionScale * 110) / 100;
+    // ----------------------------------
 
     //mcts begin
-
     if (rootDelta != 0)
         return reductionScale - delta * 608 / rootDelta + !i * reductionScale * 238 / 512 + 1182;
     else  // avoid divide by zero error
