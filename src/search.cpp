@@ -2610,9 +2610,22 @@ template<NodeType nodeType>
 Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta) {
 
     static_assert(nodeType != Root);
-    const RootShashinState& rootShashinState = shashinManager->getState();
-    constexpr bool          PvNode           = nodeType == PV;
 
+    // --- SHASHIN DEFINITIONS ---
+    const RootShashinState& rootShashinState = shashinManager->getState();
+    // Calcoliamo isFortressNode qui perché serve per i margini
+    const bool isFortressNode = MoveConfig::isFortress;  // Usa cache esistente
+    // ---------------------------
+
+    constexpr bool PvNode = nodeType == PV;
+    // Crystal-Shashin QSearch optimization begin (Early Exit logic)
+    // Accesso ottimizzato alle variabili di stato
+    const auto& staticState    = rootShashinState.staticState;
+    const auto& dynamicDerived = rootShashinState.dynamicDerived;
+    const bool  isStrategical  = dynamicDerived.isStrategical;
+    const bool  isAggressive   = dynamicDerived.isAggressive;  // Solo Middle Tal
+    const bool  isHighTal      = dynamicDerived.isHighTal;     // Solo HIGH_TAL
+    // ---------------------------
     assert(alpha >= -VALUE_INFINITE && alpha < beta && beta <= VALUE_INFINITE);
     assert(PvNode || (alpha == beta - 1));
 
@@ -2663,14 +2676,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     ttData.value = ttHit ? value_from_tt(ttData.value, ss->ply, pos.rule50_count()) : VALUE_NONE;
     pvHit        = ttHit && ttData.is_pv;
 
-    // Crystal-Shashin QSearch optimization begin (Early Exit logic)
-    const auto& staticState    = rootShashinState.staticState;
-    const auto& dynamicDerived = rootShashinState.dynamicDerived;
-
-    // Accesso ottimizzato alle variabili di stato
-    const bool isStrategical = dynamicDerived.isStrategical;
-    const bool isAggressive  = dynamicDerived.isAggressive;
-
+    // At non-PV nodes we check for an early TT cutoff
     if (!PvNode && is_valid(ttData.value)
         && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER)))
     {
@@ -2801,13 +2807,13 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
         futilityBase = ss->staticEval + 351;
 
-        // --- SHASHIN OPTIMIZATION 1: FUTILITY BASE (Outside Loop) ---
-        // Correggiamo il valore ridicolo (+3) con qualcosa di sensato.
+        // --- SHASHIN OPTIMIZATION 1: FUTILITY BASE (Safe Mode) ---
+        // Tal è ottimista (+30), Petrosian è pessimista/cauto (-15)
         if (dynamicDerived.isHighTal)
             futilityBase += 30;
         else if (isStrategical)
-            futilityBase -= 20;
-        // ------------------------------------------------------------
+            futilityBase -= 15;
+        // ---------------------------------------------------------
     }
 
     const PieceToHistory* contHist[] = {(ss - 1)->continuationHistory};
@@ -2816,33 +2822,49 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     MovePicker mp(pos, ttData.move, DEPTH_QS, &mainHistory, &lowPlyHistory, &captureHistory,
                   contHist, &sharedHistory, ss->ply);
 
-    // --- SHASHIN OPTIMIZATION 2: PRE-CALCULATE CONSTANTS (Outside Loop) ---
-    // A) Move Count Threshold
+    // --- SHASHIN OPTIMIZATION 2: PRE-CALCULATE CONSTANTS ---
+
+    // A) Move Count Threshold (Standard)
     int moveCountThreshold = 2;  // Default Stockfish
-    if (dynamicDerived.isHighTal)
+    if (isHighTal)
         moveCountThreshold += PvNode ? 1 : 0;
     else if (isStrategical)
-        moveCountThreshold = 1;
+        moveCountThreshold = std::max(1, moveCountThreshold - 1);  // Più aggressivo
     if (staticState.kingDanger)
         moveCountThreshold++;
-    if (MoveConfig::isFortress)
-        moveCountThreshold++;
+    if (isFortressNode)
+        moveCountThreshold++;  // Più pruning in fortezze
 
-    // B) SEE Margin
-    int seeMargin = -80;  // Standard Stockfish
-    if (isAggressive)
-        seeMargin -= 18;  // Tal: -98
+    // B) SEE Margin (CONSERVATIVE YET TARGETED)
+    // Qui applichiamo la logica di specializzazione senza rompere la solidità
+    int seeMargin = -80;  // Default Stockfish
+    if (isAggressive || isHighTal)
+    {
+        // Stili Tal: più tolleranti, ma non eccessivamente
+        seeMargin = staticState.kingDanger ? -120 : -90;
+    }
     else if (isStrategical)
-        seeMargin += 18;  // Petrosian: -62
+    {
+        // Petrosian/Capablanca: più conservativi
+        seeMargin = -60;  // -60 invece di -50 (più sicuro)
+    }
+    else if (isFortressNode)
+    {
+        // Fortezze: quasi nessun rischio
+        seeMargin = -20;  // -20 invece di -10 (più sicuro)
+    }
 
-    // C) Volatility Check (Flag)
-    const bool extremelyVolatile = dynamicDerived.isHighTal && staticState.kingDanger;
-    // ----------------------------------------------------------------------
+    // C) Volatility Check - solo per High Tal con pericolo estremo
+    const bool extremelyVolatile = isHighTal && staticState.kingDanger;
+    // -------------------------------------------------------
 
     // Step 5. Loop through all pseudo-legal moves
     while ((move = mp.next_move()) != Move::none())
     {
         assert(move.is_ok());
+
+        // Definiamo movedPiece qui per usarlo nei controlli tattici
+        Piece movedPiece = pos.moved_piece(move);
 
         if (!pos.legal(move))
             continue;
@@ -2870,33 +2892,30 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                     continue;
                 }
 
-                // === PATCH SHASHIN INTELLIGENTE (LOGICA INVERTITA) ===
+                // === PATCH SHASHIN REFINED (Safe Logic) ===
                 if (!pos.see_ge(move, alpha - futilityBase))
                 {
-                    // Logica tattica (vecchio comportamento) per:
-                    // 1. Stili Tal aggressivi
-                    // 2. Posizioni tattiche reattive
-                    // 3. Pericolo del re (tranne in posizioni strategiche)
-                    const bool useTacticalLogic = dynamicDerived.isHighTal
-                                               || dynamicDerived.isTacticalReactive
-                                               || (staticState.kingDanger && !isStrategical);
+                    // Solo se siamo in High Tal o King Danger rischiamo.
+                    const bool riskyTactical =
+                      dynamicDerived.isHighTal || (staticState.kingDanger && !isStrategical);
 
-                    if (useTacticalLogic)
+                    if (riskyTactical)
                     {
-                        // COMPORTAMENTO TATTICO (ShashChess originale)
-                        // Permette alla valutazione di scendere per esplorare mosse apparentemente negative
-                        // ma potenzialmente vincenti (sacrifici, combinazioni nascoste)
-                        bestValue = std::min(alpha, futilityBase);
+                        // Tal: Cerca comunque se non è un disastro totale (-200)
+                        if (!pos.see_ge(move, -200))
+                        {
+                            bestValue = std::max(bestValue, std::min(alpha, futilityBase));
+                            continue;
+                        }
                     }
                     else
                     {
-                        // COMPORTAMENTO STRATEGICO (patch Stockfish)
-                        // Mantiene la valutazione stabile, evitando crolli ingiustificati
-                        // Ottimo per posizioni strategiche e partite lunghe
+                        // Standard pruning per gli altri casi
                         bestValue = std::max(bestValue, std::min(alpha, futilityBase));
+                        continue;
                     }
-                    continue;
                 }
+                // ==============================
             }
 
             // --- PHASE 4: HYBRID PRUNING OPTIMIZATION ---
@@ -2905,8 +2924,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                 if (extremelyVolatile)  // Use pre-calculated flag
                 {
                     // Accesso costoso alla sharedHistory solo qui, nel caso critico
-                    int historyScore =
-                      sharedHistory.pawn_entry(pos)[pos.moved_piece(move)][move.to_sq()];
+                    int historyScore = sharedHistory.pawn_entry(pos)[movedPiece][move.to_sq()];
 
                     // Soglia fissa a 4000 (valore di sicurezza per mosse buone)
                     if (historyScore < 4000)
@@ -2914,16 +2932,32 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                 }
                 else
                 {
-                    // COMPORTAMENTO STANDARD STOCKFISH:
-                    // Se non è una cattura e non siamo in 'extreme volatility', potiamo tutto.
+                    // COMPORTAMENTO STANDARD STOCKFISH
                     continue;
                 }
             }
             // --- END PHASE 4 ---
 
-            // SEE pruning (Use pre-calculated margin)
-            if (!pos.see_ge(move, seeMargin))
+            // --- SHASHIN TACTICAL EXCEPTION (REFINED) ---
+            bool forceCheckSearch = false;
+            // Solo per Tal (Middle o High) e solo se la mossa dà scacco
+            if (givesCheck && (isAggressive || isHighTal))
+            {
+                Piece capturedPiece = pos.piece_on(move.to_sq());
+                // Permetti SEE negativo solo se:
+                // 1. Non è una donna sacrificata per un pedone
+                // 2. Non è un sacrificio di donna per nulla (capturedPiece == NO_PIECE)
+                if (type_of(movedPiece) != QUEEN
+                    || (capturedPiece != NO_PIECE && type_of(capturedPiece) != PAWN))
+                {
+                    forceCheckSearch = true;
+                }
+            }
+
+            // SEE pruning con eccezione per scacchi tattici
+            if (!forceCheckSearch && !pos.see_ge(move, seeMargin))
                 continue;
+            // ----------------------------------
         }
 
 
