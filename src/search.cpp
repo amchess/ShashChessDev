@@ -2275,17 +2275,15 @@ skipExtensionAndPruning:  // full threads search patch
 
             if (depth > 5 && ss->ply > 1)
             {
-                // Caso 1: Posizioni Tal/Aggressive
-                // Se stiamo attaccando (scacco/cattura), riduciamo MENO la profondità.
+                // Caso 1: Tal/Aggressive
                 if (isAggressive && (givesCheck || capture))
                 {
-                    r -= 90;  // Riduzione diminuita (~0.09 ply)
+                    r -= 60;
                 }
-                // Caso 2: Posizioni Strategiche
-                // Aumentiamo la penalità solo se siamo molto profondi e la mossa è tranquilla
+                // Caso 2: Petrosian/Strategical
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
                 {
-                    r += 90;  // ~0.09 ply
+                    r += 120;
                 }
 
                 // Ricalcoliamo 'd' (profondità ridotta) solo se 'r' è cambiato
@@ -2835,10 +2833,8 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     }
     else if (isStrategical)
     {
-        // PETROSIAN: Efficienza Massima
-        // -50 taglia via tutto ciò che è dubbio posizionalmente.
-        // Questo è il "bancomat" che paga i nodi spesi da Tal.
-        seeMargin = -50;
+        // PETROSIAN: Taglio netto per sfruttare l'NPS alto.
+        seeMargin = -40;
     }
     else if (MoveConfig::isFortress)
     {
@@ -2853,7 +2849,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     {
         assert(move.is_ok());
         Piece movedPiece = pos.moved_piece(move);
-        
+
         if (!pos.legal(move))
             continue;
 
@@ -2930,26 +2926,26 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                 }
             }
             // --- END PHASE 4 ---
-            // --- SHASHIN TACTICAL EXCEPTION (SMART AGGRESSIVE) ---
+            // --- SHASHIN TACTICAL EXCEPTION (BALANCED) ---
             bool forceCheckSearch = false;
 
-            // 1. FILTRO CONTESTO (Ottimizzazione Tua):
-            // Attiviamo solo se è HighTal (sempre aggressivo)
-            // OPPURE se c'è KingDanger effettivo (in modalità Aggressive).
-            // Questo evita di sprecare nodi su scacchi inutili in posizioni tranquille.
+            // 1. CONTESTO: Attiviamo su TUTTI gli Aggressive (non solo HighTal)
+            // se c'è KingDanger, altrimenti sprechiamo tempo.
             if (givesCheck
                 && (dynamicDerived.isHighTal || (isAggressive && staticState.kingDanger)))
             {
-                // 2. NESSUN LIMITE MATERIALE:
-                // Tal deve poter cercare il miracolo (perpetuo/matto) anche se sta perdendo.
-
-                // 3. FILTRO SUICIDIO (Standard):
-                // Evitiamo solo il sacrificio stupido di Donna su pedone protetto.
-                if (type_of(movedPiece) != QUEEN || type_of(pos.piece_on(move.to_sq())) != PAWN)
-                    forceCheckSearch = true;
+                // 2. SICUREZZA MATERIALE:
+                // Accettiamo sacrifici fino a -200 (pezzo leggero), non oltre.
+                // Questo evita di esplorare "buchi neri" tattici irrecuperabili.
+                if (pos.see_ge(move, -200))
+                {
+                    // 3. FILTRO SUICIDIO (Standard):
+                    if (type_of(movedPiece) != QUEEN || type_of(pos.piece_on(move.to_sq())) != PAWN)
+                        forceCheckSearch = true;
+                }
             }
 
-            // SEE pruning (Modified)
+            // SEE pruning
             if (!forceCheckSearch && !pos.see_ge(move, seeMargin))
                 continue;
         }
