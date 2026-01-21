@@ -2132,7 +2132,7 @@ moves_loop:  // When in check, search starts here
             // --- MODIFICA SHASHIN: SNIPER EXTENSION ---
             // Estendiamo la ricerca SOLO sui nodi singolari (tattici) in modalità aggressiva.
             // Questo permette di vedere combinazioni profonde senza rallentare il resto.
-            if (isAggressive && rootShashinState.staticState.kingDanger && depth > 14)
+            if (isAggressive && rootShashinState.staticState.kingDanger && depth > 12)
             {
                 // Aumentiamo la profondità del 20% circa.
                 // Su depth 20, guadagni +4 ply su quella singola linea forzata.
@@ -2283,7 +2283,7 @@ skipExtensionAndPruning:  // full threads search patch
                 // Caso 2: Petrosian/Strategical
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
                 {
-                    r += 120;
+                    r += 100;
                 }
 
                 // Ricalcoliamo 'd' (profondità ridotta) solo se 'r' è cambiato
@@ -2834,7 +2834,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     else if (isStrategical)
     {
         // PETROSIAN: Taglio netto per sfruttare l'NPS alto.
-        seeMargin = -40;
+        seeMargin = -45;
     }
     else if (MoveConfig::isFortress)
     {
