@@ -1656,6 +1656,11 @@ Value Search::Worker::search(
             // Tal: Meno pruning (-50) per non perdere combinazioni d'attacco.
             razorThreshold -= 50;
         }
+        else if (isStrategical)
+        {
+            // Petrosian deve tagliare le linee tattiche inutili per guadagnare ELO.
+            razorThreshold += 40; 
+        }        
         // Fortezze: Sicurezza extra, non rischiare nulla.
         if (isFortressNode)
         {
@@ -1686,7 +1691,7 @@ Value Search::Worker::search(
         }
         else if (isStrategical)
         {
-            marginMultiplier = 100;
+            marginMultiplier = 110;
         }
 
         // King Danger: fattore critico
@@ -2130,7 +2135,7 @@ moves_loop:  // When in check, search starts here
             // --- MODIFICA SHASHIN: SNIPER EXTENSION ---
             // Estendiamo la ricerca SOLO sui nodi singolari (tattici) in modalità aggressiva.
             // Questo permette di vedere combinazioni profonde senza rallentare il resto.
-            if (isAggressive && rootShashinState.staticState.kingDanger && depth > 14)
+            if (isAggressive && rootShashinState.staticState.kingDanger && depth > 10)
             {
                 // Aumentiamo la profondità del 20% circa.
                 // Su depth 20, guadagni +4 ply su quella singola linea forzata.
@@ -2276,12 +2281,12 @@ skipExtensionAndPruning:  // full threads search patch
                 // Caso 1: Tal/Aggressive
                 if (isAggressive && (givesCheck || capture))
                 {
-                    r -= 60;
+                    r -= 80;
                 }
                 // Caso 2: Petrosian/Strategical
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
                 {
-                    r += 40;
+                    r += 80;
                 }
 
                 // Ricalcoliamo 'd' (profondità ridotta) solo se 'r' è cambiato
