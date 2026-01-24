@@ -2284,9 +2284,9 @@ skipExtensionAndPruning:  // full threads search patch
                     r -= 80;
                 }
                 // Caso 2: Petrosian/Strategical
-                else if (isStrategical && !capture && !givesCheck && depth > 8)
+                else if (isStrategical && !capture && !givesCheck && depth > 10)
                 {
-                    r += 60;
+                    r += 80;
                 }
 
                 // Ricalcoliamo 'd' (profondità ridotta) solo se 'r' è cambiato
