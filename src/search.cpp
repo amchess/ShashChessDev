@@ -1659,8 +1659,8 @@ Value Search::Worker::search(
         else if (isStrategical)
         {
             // Petrosian deve tagliare le linee tattiche inutili per guadagnare ELO.
-            razorThreshold += 40; 
-        }        
+            razorThreshold += 40;
+        }
         // Fortezze: Sicurezza extra, non rischiare nulla.
         if (isFortressNode)
         {
@@ -2284,7 +2284,7 @@ skipExtensionAndPruning:  // full threads search patch
                     r -= 80;
                 }
                 // Caso 2: Petrosian/Strategical
-                else if (isStrategical && !capture && !givesCheck && depth > 10)
+                else if (isStrategical && !capture && !givesCheck && depth > 8)
                 {
                     r += 80;
                 }
@@ -2879,33 +2879,27 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                     continue;
                 }
 
-                // === PATCH SHASHIN INTELLIGENTE (LOGICA INVERTITA) ===
-                if (!pos.see_ge(move, alpha - futilityBase))
-                {
-                    // Logica tattica (vecchio comportamento) per:
-                    // 1. Stili Tal aggressivi
-                    // 2. Posizioni tattiche reattive
-                    // 3. Pericolo del re (tranne in posizioni strategiche)
-                    const bool useTacticalLogic = dynamicDerived.isHighTal
-                                               || dynamicDerived.isTacticalReactive
-                                               || (staticState.kingDanger && !isStrategical);
+                // === FIX SHASHIN: SAFETY & TACTICS ===
 
-                    if (useTacticalLogic)
-                    {
-                        // COMPORTAMENTO TATTICO (ShashChess originale)
-                        // Permette alla valutazione di scendere per esplorare mosse apparentemente negative
-                        // ma potenzialmente vincenti (sacrifici, combinazioni nascoste)
-                        bestValue = std::min(alpha, futilityBase);
-                    }
-                    else
-                    {
-                        // COMPORTAMENTO STRATEGICO (patch Stockfish)
-                        // Mantiene la valutazione stabile, evitando crolli ingiustificati
-                        // Ottimo per posizioni strategiche e partite lunghe
-                        bestValue = std::max(bestValue, std::min(alpha, futilityBase));
-                    }
+                // Definiamo se siamo in modalità tattica (Tal/Reactive/Danger)
+                const bool useTacticalLogic = dynamicDerived.isHighTal
+                                           || dynamicDerived.isTacticalReactive
+                                           || (staticState.kingDanger && !isStrategical);
+
+                // LOGICA:
+                // 1. Se useTacticalLogic è VERO: Saltiamo questo blocco if.
+                //    Non facciamo pruning. Vediamo la mossa anche se il SEE è negativo.
+                // 2. Se useTacticalLogic è FALSO: Entriamo nel blocco.
+                //    Applichiamo il pruning usando la fix di sicurezza di Stockfish.
+
+                if (!useTacticalLogic && !pos.see_ge(move, alpha - futilityBase))
+                {
+                    // Stockfish Upstream Fix: bestValue non deve mai scendere (max).
+                    // Questo previene bug di valutazione nei finali strategici.
+                    bestValue = std::max(bestValue, std::min(alpha, futilityBase));
                     continue;
                 }
+                // =====================================
             }
 
             // --- PHASE 4: HYBRID PRUNING OPTIMIZATION ---
@@ -3673,6 +3667,10 @@ Value ShashinManager::static_value(const Eval::NNUE::Networks&    networks,
         StateInfo st;
         auto [dp, dts] = accumulators.push();
         rootPos.do_move(move, st, rootPos.gives_check(move), dp, dts, nullptr, nullptr);
+
+        // --- FIX PLY UPDATE ---
+        (ss + 1)->ply = ss->ply + 1;  // <--- AGGIUNGERE QUESTA RIGA
+        // ----------------------
 
         Value val = -static_value(networks, accumulators, refreshTable, rootPos, ss + 1, -optimism);
 

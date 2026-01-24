@@ -12,7 +12,9 @@ namespace ShashChess {
 using namespace ShashChess::Shashin;
 
 ShashinManager::ShashinManager(const ShashinParams& params_) :
-    params(params_) {}
+    params(params_) {
+    invalidateCaches();  // Inizializza la cache pulita
+}
 
 // ... Logic Functions ...
 
@@ -278,14 +280,32 @@ void ShashinManager::setDynamicDerivedState() {
     derived.useMoveGenCrystalLogic = useMoveGenCrystalLogic();
 }
 
+// --- FIX 1 (Parte 3/3): Implementazione Cache per Fortezze ---
 bool ShashinManager::isFortress(const Position& pos) {
+    // 1. Calcola Hash
     const uint64_t newHash = computePositionHash(pos);
-    if (positionCache.posHash == newHash)
-        return positionCache.fortress;
 
+    // 2. Sync Cache: Se l'hash è diverso, resettiamo tutto per questa nuova posizione
+    if (positionCache.posHash != newHash)
+    {
+        positionCache.posHash       = newHash;
+        positionCache.computedMask  = 0;
+        positionCache.fortress      = false;
+        positionCache.pawnNearPromo = false;
+        positionCache.sacrificial   = false;
+    }
+
+    // 3. Check Bitmask: Se abbiamo già calcolato fortress per questo hash, ritornalo
+    if (positionCache.computedMask & CACHE_FORTRESS)
+    {
+        return positionCache.fortress;
+    }
+
+    // --- LOGICA DI CALCOLO REALE (Invariata dalla tua versione) ---
+    // Helper lambda per cacheare il risultato negativo e uscire
     auto cacheFalse = [&]() {
-        positionCache.posHash  = newHash;
         positionCache.fortress = false;
+        positionCache.computedMask |= CACHE_FORTRESS;  // Marcatura: "calcolato"
         return false;
     };
 
@@ -331,19 +351,25 @@ bool ShashinManager::isFortress(const Position& pos) {
     if (count_safe_waiting_moves(pos) < 3)
         return cacheFalse();
 
-    positionCache.posHash  = newHash;
+    // 4. Salva risultato positivo e aggiorna maschera
     positionCache.fortress = true;
+    positionCache.computedMask |= CACHE_FORTRESS;
     return true;
 }
 
+// --- FIX 2: Ordine di esecuzione corretto ---
 void ShashinManager::setStaticState(const Position& rootPos) {
     StaticState& staticState = state.staticState;
     invalidateCaches();
 
-    staticState.legalMoveCount      = MoveList<LEGAL>(rootPos).size();
-    staticState.isSacrificial       = isSacrificialPosition(rootPos);
-    staticState.stmKingExposed      = isStmKingExposed();
-    staticState.opponentKingExposed = isOpponentKingExposed();
+    staticState.legalMoveCount = MoveList<LEGAL>(rootPos).size();
+
+    // Ora usiamo la cache corretta
+    staticState.isSacrificial = isSacrificialPosition(rootPos);
+
+    // Questi due dipendono dai safety score, quindi li calcoliamo DOPO (vedi sotto)
+    // staticState.stmKingExposed      = isStmKingExposed();  <-- SPOSTATO
+    // staticState.opponentKingExposed = isOpponentKingExposed(); <-- SPOSTATO
 
     int nonPawnMaterial      = rootPos.non_pawn_material(WHITE) + rootPos.non_pawn_material(BLACK);
     staticState.highMaterial = (nonPawnMaterial > 2400);
@@ -352,20 +378,41 @@ void ShashinManager::setStaticState(const Position& rootPos) {
     staticState.stmKingDanger      = king_danger(rootPos, rootPos.side_to_move());
     staticState.pawnsNearPromotion = isPawnNearPromotion(rootPos);
     staticState.allPiecesCount     = rootPos.count<ALL_PIECES>();
-    staticState.stmKingSafetyScore = king_safety_score(rootPos, rootPos.side_to_move());
+
+    // --- FIX ORDINE ---
+    // 1. Calcola i punteggi
+    staticState.stmKingSafetyScore      = king_safety_score(rootPos, rootPos.side_to_move());
     staticState.opponentKingSafetyScore = king_safety_score(rootPos, ~rootPos.side_to_move());
+
+    // 2. Aggiorna i booleani basati sui punteggi appena calcolati
+    staticState.stmKingExposed      = isStmKingExposed();
+    staticState.opponentKingExposed = isOpponentKingExposed();
+    // -------------------
 
     MoveConfig::isFortress = isFortress(rootPos);
 }
 
+// --- FIX 1 (Parte 1/3): Implementazione Cache per Sacrifici ---
 bool ShashinManager::isSacrificialPosition(const Position& rootPos) {
     const uint64_t newHash = computePositionHash(rootPos);
-    if (positionCache.posHash == newHash)
+
+    // Sync Cache
+    if (positionCache.posHash != newHash)
+    {
+        positionCache.posHash       = newHash;
+        positionCache.computedMask  = 0;
+        positionCache.fortress      = false;
+        positionCache.pawnNearPromo = false;
+        positionCache.sacrificial   = false;
+    }
+
+    // Check Bitmask
+    if (positionCache.computedMask & CACHE_SACRIFICIAL)
     {
         return positionCache.sacrificial;
     }
 
-    positionCache.posHash     = newHash;
+    // Calcolo
     positionCache.sacrificial = false;
     MoveList<LEGAL> legalMoves(rootPos);
 
@@ -378,21 +425,38 @@ bool ShashinManager::isSacrificialPosition(const Position& rootPos) {
         }
     }
 
+    // Update Bitmask
+    positionCache.computedMask |= CACHE_SACRIFICIAL;
     return positionCache.sacrificial;
 }
 
+// --- FIX 1 (Parte 2/3): Implementazione Cache per Pedoni ---
 bool ShashinManager::isPawnNearPromotion(const Position& rootPos) {
     const uint64_t newHash = computePositionHash(rootPos);
-    if (positionCache.posHash == newHash)
+
+    // Sync Cache
+    if (positionCache.posHash != newHash)
+    {
+        positionCache.posHash       = newHash;
+        positionCache.computedMask  = 0;
+        positionCache.fortress      = false;
+        positionCache.pawnNearPromo = false;
+        positionCache.sacrificial   = false;
+    }
+
+    // Check Bitmask
+    if (positionCache.computedMask & CACHE_PAWN_PROMO)
     {
         return positionCache.pawnNearPromo;
     }
 
-    positionCache.posHash = newHash;
+    // Calcolo
     positionCache.pawnNearPromo =
       ((rootPos.pieces(WHITE, PAWN) & (Rank5BB | Rank6BB | Rank7BB))
        || (rootPos.pieces(BLACK, PAWN) & (Rank2BB | Rank3BB | Rank4BB)));
 
+    // Update Bitmask
+    positionCache.computedMask |= CACHE_PAWN_PROMO;
     return positionCache.pawnNearPromo;
 }
 

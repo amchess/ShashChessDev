@@ -27,6 +27,14 @@ class Worker;
 struct Stack;
 }
 
+// --- FIX 1: DEFINIZIONE MASCHERE PER LA CACHE ---
+// Serve per tracciare singolarmente cosa è stato calcolato
+enum CacheMask : uint8_t {
+    CACHE_SACRIFICIAL = 1,
+    CACHE_PAWN_PROMO  = 2,
+    CACHE_FORTRESS    = 4
+};
+
 class ShashinManager {
    public:
     explicit ShashinManager(const ShashinParams& params_ = {});
@@ -68,10 +76,10 @@ class ShashinManager {
     
     void setDynamicBaseState(Value score, const Position& rootPos, int depth, int rootDepth);
     void setDynamicDerivedState();
-    void initDynamicBaseState(Value                currentValue,
-                              Position&            rootPos,
+    void initDynamicBaseState(Value                        currentValue,
+                              Position&                    rootPos,
                               const ShashinConfig& config,
-                              int                  rootDepth);
+                              int                          rootDepth);
 
     // Feature flags
     bool useMoveGenCrystalLogic() const;
@@ -173,19 +181,28 @@ class ShashinManager {
 
    private:
     ShashinParams params;
+    
+    // --- FIX 1 (Parte Struct): Struttura aggiornata ---
     struct PositionCache {
         uint64_t posHash       = 0;
+        uint8_t  computedMask  = 0; // Maschera per tracciare i singoli calcoli
         bool     fortress      = false;
         bool     pawnNearPromo = false;
         bool     sacrificial   = false;
     };
+    
     RootShashinState state;
     PositionCache    positionCache;
     
     uint64_t computePositionHash(const Position& pos);
     
+    // --- FIX 2: Reset completo ---
     void invalidateCaches() {
         positionCache.posHash = 0;
+        positionCache.computedMask = 0;
+        positionCache.fortress = false;
+        positionCache.pawnNearPromo = false;
+        positionCache.sacrificial = false;
     }
 };
 
