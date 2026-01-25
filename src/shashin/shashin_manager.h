@@ -101,7 +101,6 @@ class ShashinManager {
     bool isSimpleIntermediate() const;
     bool isMCTSApplicableByValue() const;
     bool isMCTSExplorationApplicable() const;
-    bool isTal() const;
     bool isCapablanca() const;
     bool isHighPieceDensityCapablancaPosition() const;
     bool isTacticalReduction() const;
@@ -124,7 +123,10 @@ class ShashinManager {
     }
 
     inline __attribute__((always_inline)) bool isStrategical() const {
-        return inRange<ShashinPosition::CAPABLANCA>() && !state.staticState.kingDanger;
+        // È strategico solo se è Capablanca E non ci sono pericoli immediati.
+        return inRange<ShashinPosition::CAPABLANCA>() 
+            && !state.staticState.kingDanger 
+            && !state.staticState.pawnsNearPromotion;
     }
 
     inline __attribute__((always_inline)) bool isPassive() const {
@@ -138,11 +140,15 @@ class ShashinManager {
     }
 
     inline __attribute__((always_inline)) bool isPetrosian() const {
-        return isShashinStyle({ShashinPosition::LOW_PETROSIAN, 
-                               ShashinPosition::MIDDLE_PETROSIAN,
-                               ShashinPosition::HIGH_PETROSIAN});
+        return ShashChess::isInRange(state.dynamicBase.currentRange, 
+                                     ShashinPosition::LOW_PETROSIAN, 
+                                     ShashinPosition::HIGH_PETROSIAN);
     }
-
+    inline __attribute__((always_inline)) bool isTal() const {
+        return ShashChess::isInRange(state.dynamicBase.currentRange, 
+                                     ShashinPosition::LOW_TAL, 
+                                     ShashinPosition::HIGH_TAL);
+    }
     inline __attribute__((always_inline)) bool isHighPieceDensity() const {
         return state.staticState.allPiecesCount > 14;
     }

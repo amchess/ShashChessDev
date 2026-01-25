@@ -200,11 +200,6 @@ bool ShashinManager::isTacticalInitiative() const {
     return anyOf(state.dynamicBase.currentRange, ShashinPosition::LOW_TAL);
 }
 
-bool ShashinManager::isTal() const {
-    return isShashinStyle(
-      {ShashinPosition::LOW_TAL, ShashinPosition::MIDDLE_TAL, ShashinPosition::HIGH_TAL});
-}
-
 bool ShashinManager::isCapablanca() const { return inRange<ShashinPosition::CAPABLANCA>(); }
 
 void ShashinManager::initDynamicBaseState(Value                currentValue,
