@@ -71,7 +71,10 @@ bool ShashinManager::allowStockfishProbCut() const {
 }
 
 bool ShashinManager::isTacticalReactive() const {
-    return anyOf(state.dynamicBase.currentRange, ShashinPosition::LOW_PETROSIAN);
+    // Ora copre una fascia più ampia di difesa attiva
+    return anyOf(state.dynamicBase.currentRange, 
+                 ShashinPosition::CAPABLANCA_PETROSIAN,
+                 ShashinPosition::LOW_PETROSIAN);
 }
 
 bool ShashinManager::isTacticalDefensive() const {
