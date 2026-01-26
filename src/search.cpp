@@ -1171,7 +1171,7 @@ Value Search::Worker::search(
     // From Shashin fortress begin
 
     bool isFortressNode = localShashinManager.isFortress(rootPos);
-    if (depth > 32 && !PvNode && isFortressNode)
+    if (depth > 27 && !PvNode && isFortressNode)
     {
         depth = std::max(depth - 1, Depth(10));
 
@@ -1648,7 +1648,7 @@ Value Search::Worker::search(
         // Fortezze: Sicurezza extra, non rischiare nulla.
         if (isFortressNode)
         {
-            razorThreshold -= 30;
+            razorThreshold -= 45;
         }
         // Bonus mobilità (Solo se non siamo in modalità difensiva/strategica)
         // Aiuta a trovare risorse in posizioni dinamiche.
