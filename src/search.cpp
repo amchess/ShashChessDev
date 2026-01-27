@@ -183,7 +183,35 @@ bool is_shuffling(Move move, Stack* const ss, const Position& pos) {
     return move.from_sq() == (ss - 2)->currentMove.to_sq()
         && (ss - 2)->currentMove.from_sq() == (ss - 4)->currentMove.to_sq();
 }
+// --- ShashChess: cheap per-node "hot tactics" signals -----------------------
+static inline bool king_shield_missing(const Position& pos, Color c) {
+    const Square ks = pos.square<KING>(c);
+    const Rank   r  = rank_of(ks);
 
+    // Solo i re sulla traversa di casa sono rilevanti per lo "scudo".
+    if ((c == WHITE && r != RANK_1) || (c == BLACK && r != RANK_8))
+        return false;
+
+    // Ha senso solo se l'avversario ha pezzi pesanti.
+    if (!(pos.pieces(QUEEN, ~c) || pos.pieces(ROOK, ~c)))
+        return false;
+
+    const Rank shieldRank = (c == WHITE ? RANK_2 : RANK_7);
+    const File f          = file_of(ks);
+
+    Bitboard shield = 0;
+    if (f != FILE_H)
+        shield |= square_bb(make_square(File(f + 1), shieldRank));
+    shield |= square_bb(make_square(f, shieldRank));
+    if (f != FILE_A)
+        shield |= square_bb(make_square(File(f - 1), shieldRank));
+
+    const int cnt = popcount(pos.pieces(PAWN, c) & shield);
+
+    // <= 1 pedone nello scudo è "aperto abbastanza" da essere tatticamente caldo.
+    return cnt <= 1;
+}
+// ----------------------------------------------------------------------------
 }  // namespace
 
 
@@ -1222,6 +1250,14 @@ Value Search::Worker::search(
     ss->moveCount = 0;
     bestValue     = -VALUE_INFINITE;
     maxValue      = VALUE_INFINITE;
+    // --- FUSION V4: Local Tactical Sensing ---
+    Color      them                   = ~us;
+    const bool nodePawnsNearPromotion = bool((pos.pieces(PAWN, WHITE) & rank_bb(RANK_7))
+                                             | (pos.pieces(PAWN, BLACK) & rank_bb(RANK_2)));
+
+    const bool nodeHot = ss->inCheck || nodePawnsNearPromotion || king_shield_missing(pos, us)
+                      || king_shield_missing(pos, them);
+    // -----------------------------------------
     // from Crystal-shashin begin
     gameCycle = false;
 
@@ -1728,13 +1764,21 @@ Value Search::Worker::search(
         && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && !is_loss(beta))
     {
         // --- SHASHIN: Null-move gating (style-aware & safe) ---
-        const bool allowNMPByStyle = localShashinManager.useNullMoveByShashinForStockfish();
+        // --- FUSION: Safety First ---
+        bool skipNullMove = false;
 
-        bool skipNullMove = !allowNMPByStyle || staticState.kingDanger
-                         || staticState.pawnsNearPromotion || isSacrificial || stmKingExposed
-                         || opponentKingExposed
-                         || dynamicDerived.isHighTal;  // Solo High Tal, non tutto Tal
-        // ------------------------------------------------------
+        // 1. Se lo stile Shashin dice NO (es. High Tal).
+        if (!localShashinManager.useNullMoveByShashinForStockfish())
+            skipNullMove = true;
+
+        // 2. Se il nodo locale è "Caldo" (v4), niente Null Move. Risolve la cecità locale.
+        if (nodeHot)
+            skipNullMove = true;
+
+        // 3. Condizione originale (KingDanger radice + Aggressive)
+        if (isAggressive && rootShashinState.staticState.kingDanger && depth < 8)
+            skipNullMove = true;
+        // -----------------------------
 
         if (!skipNullMove)
         {
@@ -1783,21 +1827,29 @@ Value Search::Worker::search(
     improving |= ss->staticEval >= beta;
 
     // Step 10. Internal iterative reductions
-    // At sufficient depth, reduce depth for PV/Cut nodes without a TTMove.
-    // (*Scaler) Making IIR more aggressive scales poorly.
     if (!allNode && depth >= 6 && !ttData.move && priorReduction <= 3)
     {
-        depth--;  // Riduzione standard Stockfish
+        depth--;  // Stockfish standard
 
-        // --- SHASHIN IIR ---
-        // Extra riduzione SOLO per posizioni posizionali pure (Capablanca) o Fortezze.
-        // Petrosian e Tal (Tattici) necessitano della depth piena per vedere i trucchi.
-        if (quietKingSafe && !localShashinManager.avoidStep10())
+        // --- FUSION IIR: Safety (v4) + Tuning (v3) ---
+
+        // 1. Applichiamo extra-reduction SOLO se il nodo è "Freddo" (!nodeHot).
+        if (!nodeHot && quietKingSafe && !localShashinManager.avoidStep10())
         {
-            if (isStrategical || isFortressNode)
+            // 2a. Fortezze: sempre ok ridurre (come v3)
+            if (isFortressNode)
+            {
                 depth = std::max(depth - 1, Depth(1));
+            }
+            // 2b. Capablanca: Riduciamo SOLO se siamo vicini alla radice e stabili (Tuning v3)
+            //     Questo evita che Capablanca "tagli troppo" nelle profondità.
+            else if (isStrategical && ss->ply <= 2 && depth >= 9 && staticState.legalMoveCount <= 14
+                     && std::abs(ss->staticEval) <= 160)
+            {
+                depth = std::max(depth - 1, Depth(1));
+            }
         }
-        // -------------------
+        // ---------------------------------------------
     }
     // Step 11. ProbCut
     // If we have a good enough capture (or queen promotion) and a reduced search
@@ -1805,17 +1857,29 @@ Value Search::Worker::search(
     {
         probCutBeta = beta + 235 - 63 * improving;
 
-        // Chaos Detection
+        // --- FUSION V3 + V4: LOGICA PROBCUT ---
+
+        // 1. CHAOS DETECTION (Logica v3)
+        // Definiamo il "Caos" (stili ibridi).
+        // Disabilitiamo ProbCut nel caos SOLO se la profondità è rilevante (>= 8).
+        // Se è caos superficiale, lasciamo che ProbCut lavori per efficienza nel match.
         const bool isChaos = localShashinManager.isShashinStyle(
           {ShashinPosition::CAPABLANCA_PETROSIAN, ShashinPosition::CAPABLANCA_TAL,
            ShashinPosition::TAL_CAPABLANCA_PETROSIAN});
 
-        // "Hot Tactics" ora include il Chaos. Niente ProbCut se la posizione è confusa.
-        const bool hotTactics = staticState.kingDanger || staticState.pawnsNearPromotion
-                             || isSacrificial || stmKingExposed || opponentKingExposed
-                             || dynamicDerived.isHighTal || isChaos;
+        const bool chaosSensitive = isChaos && depth >= 8;
 
-        const bool allowProbCut = !disableNMAndPC && !ss->inCheck && !hotTactics;  //learning
+        // 2. ROOT HOTNESS (Shashin Globale)
+        // La posizione generale è pericolosa? Aggiungiamo 'chaosSensitive' qui.
+        const bool shashinHot = staticState.kingDanger || staticState.pawnsNearPromotion
+                             || isSacrificial || stmKingExposed || opponentKingExposed
+                             || dynamicDerived.isHighTal || chaosSensitive;
+
+        // 3. THE GATEKEEPER (Fusion Finale)
+        // ProbCut è permesso SOLO se:
+        // A. Non è vietato globalmente dallo stile radice (!shashinHot)
+        // B. Non è vietato localmente dalla geometria del nodo (!nodeHot) <- V4 SAFETY
+        const bool allowProbCut = !disableNMAndPC && !ss->inCheck && !(shashinHot || nodeHot);
 
         if (depth >= 3 && allowProbCut
             && !is_decisive(beta)
@@ -1823,8 +1887,7 @@ Value Search::Worker::search(
             // probCut there
             && !(is_valid(ttData.value) && ttData.value < probCutBeta))
         {
-            // Shashin adjustment: skip ProbCut SOLO nelle fortezze
-
+            // Skip ProbCut nelle fortezze (sicurezza extra, ridondante ma veloce)
             if (!isFortressNode)
             {
                 assert(probCutBeta < VALUE_INFINITE && probCutBeta > beta);
@@ -1833,20 +1896,21 @@ Value Search::Worker::search(
                 Depth      dynamicReduction = std::max((ss->staticEval - beta) / 315, -1);
                 Depth      probCutDepth     = std::clamp(depth - 5 - dynamicReduction, 0, depth);
 
-                // --- SHASHIN PROBCUT TUNING (FIXED) ---
-                if (isStrategical || isFortressNode)
+                // --- TUNING PROFONDITÀ (Logica v3) ---
+                // Se Capablanca è "sicuro" (ply basso, vantaggio netto), taglia di più.
+                // Questo recupera velocità nelle partite posizionali.
+                if (isStrategical && ss->ply <= 2 && ss->staticEval >= beta + 120)
                 {
-                    // Capablanca/Fortezza: Fidiamoci del taglio, siamo aggressivi col pruning.
-                    // (-1 significa ricerca di verifica più corta = probcut entra più facilmente)
+                    // Aggressivo: verifica più corta (-1) -> taglio più facile
                     probCutDepth = std::max(Depth(0), Depth(probCutDepth - 1));
                 }
                 else
                 {
-                    // Tal/Petrosian/Caos: Prudenza. Aumentiamo la depth di verifica.
-                    // (+1 significa ricerca di verifica più lunga = più difficile tagliare)
+                    // Altrimenti (Tal/Petrosian/Caos/Nodi profondi) prudenza.
+                    // Conservativo: verifica più lunga (+1) -> taglio più difficile
                     probCutDepth = std::min(depth, Depth(probCutDepth + 1));
                 }
-                // --------------------------------------
+                // ------------------------------------
 
                 while ((move = mp.next_move()) != Move::none())
                 {
@@ -3208,7 +3272,6 @@ void update_quiet_histories(
     workerThread.sharedHistory.pawn_entry(pos)[pos.moved_piece(move)][move.to_sq()]
       << bonus * (bonus > 0 ? 905 : 505) / 1024;
 }
-
 }
 // no skill
 
