@@ -183,35 +183,6 @@ bool is_shuffling(Move move, Stack* const ss, const Position& pos) {
     return move.from_sq() == (ss - 2)->currentMove.to_sq()
         && (ss - 2)->currentMove.from_sq() == (ss - 4)->currentMove.to_sq();
 }
-// --- ShashChess: cheap per-node "hot tactics" signals -----------------------
-static inline bool king_shield_missing(const Position& pos, Color c) {
-    const Square ks = pos.square<KING>(c);
-    const Rank   r  = rank_of(ks);
-
-    // Solo i re sulla traversa di casa sono rilevanti per lo "scudo".
-    if ((c == WHITE && r != RANK_1) || (c == BLACK && r != RANK_8))
-        return false;
-
-    // Ha senso solo se l'avversario ha pezzi pesanti.
-    if (!(pos.pieces(QUEEN, ~c) || pos.pieces(ROOK, ~c)))
-        return false;
-
-    const Rank shieldRank = (c == WHITE ? RANK_2 : RANK_7);
-    const File f          = file_of(ks);
-
-    Bitboard shield = 0;
-    if (f != FILE_H)
-        shield |= square_bb(make_square(File(f + 1), shieldRank));
-    shield |= square_bb(make_square(f, shieldRank));
-    if (f != FILE_A)
-        shield |= square_bb(make_square(File(f - 1), shieldRank));
-
-    const int cnt = popcount(pos.pieces(PAWN, c) & shield);
-
-    // <= 1 pedone nello scudo è "aperto abbastanza" da essere tatticamente caldo.
-    return cnt <= 1;
-}
-// ----------------------------------------------------------------------------
 }  // namespace
 
 
@@ -1250,14 +1221,11 @@ Value Search::Worker::search(
     ss->moveCount = 0;
     bestValue     = -VALUE_INFINITE;
     maxValue      = VALUE_INFINITE;
-    // --- FUSION V4: Local Tactical Sensing ---
-    Color      them                   = ~us;
+    // Local Tactical Sensing ---
     const bool nodePawnsNearPromotion = bool((pos.pieces(PAWN, WHITE) & rank_bb(RANK_7))
                                              | (pos.pieces(PAWN, BLACK) & rank_bb(RANK_2)));
+    const bool nodeHot                = ss->inCheck || nodePawnsNearPromotion;  //from shashin
 
-    const bool nodeHot = ss->inCheck || nodePawnsNearPromotion || king_shield_missing(pos, us)
-                      || king_shield_missing(pos, them);
-    // -----------------------------------------
     // from Crystal-shashin begin
     gameCycle = false;
 
@@ -1857,29 +1825,26 @@ Value Search::Worker::search(
     {
         probCutBeta = beta + 235 - 63 * improving;
 
-        // --- FUSION V3 + V4: LOGICA PROBCUT ---
+        // ---  LOGICA PROBCUT ---
 
-        // 1. CHAOS DETECTION (Logica v3)
-        // Definiamo il "Caos" (stili ibridi).
+        // 1. CHAOS DETECTION
         // Disabilitiamo ProbCut nel caos SOLO se la profondità è rilevante (>= 8).
-        // Se è caos superficiale, lasciamo che ProbCut lavori per efficienza nel match.
+        // Questo salva efficienza nelle ricerche superficiali del match.
         const bool isChaos = localShashinManager.isShashinStyle(
           {ShashinPosition::CAPABLANCA_PETROSIAN, ShashinPosition::CAPABLANCA_TAL,
            ShashinPosition::TAL_CAPABLANCA_PETROSIAN});
 
         const bool chaosSensitive = isChaos && depth >= 8;
 
-        // 2. ROOT HOTNESS (Shashin Globale)
-        // La posizione generale è pericolosa? Aggiungiamo 'chaosSensitive' qui.
-        const bool shashinHot = staticState.kingDanger || staticState.pawnsNearPromotion
+        // 2. Hot Tactics Definition:
+        // Include il nuovo nodeHot "leggero" (solo check/promo) e il chaos profondo.
+        const bool hotTactics = staticState.kingDanger || staticState.pawnsNearPromotion
                              || isSacrificial || stmKingExposed || opponentKingExposed
                              || dynamicDerived.isHighTal || chaosSensitive;
 
-        // 3. THE GATEKEEPER (Fusion Finale)
-        // ProbCut è permesso SOLO se:
-        // A. Non è vietato globalmente dallo stile radice (!shashinHot)
-        // B. Non è vietato localmente dalla geometria del nodo (!nodeHot) <- V4 SAFETY
-        const bool allowProbCut = !disableNMAndPC && !ss->inCheck && !(shashinHot || nodeHot);
+        // 3. Gatekeeper:
+        // ProbCut corre libero tranne nelle vere emergenze.
+        const bool allowProbCut = !disableNMAndPC && !ss->inCheck && !hotTactics;
 
         if (depth >= 3 && allowProbCut
             && !is_decisive(beta)
