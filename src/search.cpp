@@ -1840,7 +1840,7 @@ Value Search::Worker::search(
         // Include il nuovo nodeHot "leggero" (solo check/promo) e il chaos profondo.
         const bool hotTactics = staticState.kingDanger || staticState.pawnsNearPromotion
                              || isSacrificial || stmKingExposed || opponentKingExposed
-                             || dynamicDerived.isHighTal || chaosSensitive;
+                             || dynamicDerived.isHighTal || chaosSensitive || nodeHot;
 
         // 3. Gatekeeper:
         // ProbCut corre libero tranne nelle vere emergenze.
@@ -1927,7 +1927,7 @@ moves_loop:  // When in check, search starts here
 
     const bool hotTacticsStep12 = staticState.kingDanger || staticState.pawnsNearPromotion
                                || isSacrificial || stmKingExposed || opponentKingExposed
-                               || dynamicDerived.isHighTal;
+                               || dynamicDerived.isHighTal || nodeHot;
 
     const bool commonProbcut = (ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 4
                             && ttData.value >= probCutBeta && !is_decisive(beta)
