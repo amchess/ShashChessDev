@@ -1731,19 +1731,24 @@ Value Search::Worker::search(
         && !excludedMove  //learning
         && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && !is_loss(beta))
     {
-        // --- SHASHIN: Null-move gating (style-aware & safe) ---
-        // --- FUSION: Safety First ---
+        // --- SHASHIN: Null-move gating (match-friendly, node-aware) ----
         bool skipNullMove = false;
 
-        // 1. Se lo stile Shashin dice NO (es. High Tal).
-        if (!localShashinManager.useNullMoveByShashinForStockfish())
-            skipNullMove = true;
-
-        // 2. Se il nodo locale è "Caldo" (v4), niente Null Move. Risolve la cecità locale.
+        // 1) Nodo locale "caldo": niente Null Move (sicurezza tattica locale)
         if (nodeHot)
             skipNullMove = true;
 
-        // 3. Condizione originale (KingDanger radice + Aggressive)
+        // 2) Se lo stile Shashin vorrebbe evitare NMP (es. High Tal o Aggressive+high material),
+        //    concediamo un'eccezione SOLO su cutnode freddi, profondi e con margine ampio:
+        //    così recuperiamo efficienza nel match senza rovinare i Solved.
+        if (!skipNullMove && !localShashinManager.useNullMoveByShashinForStockfish())
+        {
+            const bool allowException = !PvNode && depth >= 10 && ss->staticEval >= beta + 120;
+            if (!allowException)
+                skipNullMove = true;
+        }
+
+        // 3) Protezione storica: radice aggressiva + kingDanger a bassa depth
         if (isAggressive && rootShashinState.staticState.kingDanger && depth < 8)
             skipNullMove = true;
         // -----------------------------
@@ -1840,7 +1845,8 @@ Value Search::Worker::search(
         // Include il nuovo nodeHot "leggero" (solo check/promo) e il chaos profondo.
         const bool hotTactics = staticState.kingDanger || staticState.pawnsNearPromotion
                              || isSacrificial || stmKingExposed || opponentKingExposed
-                             || dynamicDerived.isHighTal || chaosSensitive || nodeHot;
+                             || dynamicDerived.isHighTal || isAggressive || isPetrosian
+                             || chaosSensitive || nodeHot;
 
         // 3. Gatekeeper:
         // ProbCut corre libero tranne nelle vere emergenze.
@@ -1914,20 +1920,15 @@ Value Search::Worker::search(
             }
         }
     }
-    // Shashin: Reduce depth in fortress positions when appropriate
-    if (isFortressNode && depth > 12 && !ss->inCheck)
-    {
-        depth = std::max(depth - 2, 9);
-    }
 
 moves_loop:  // When in check, search starts here
 
     // Step 12. A small Probcut idea
     probCutBeta = beta + 418;
 
-    const bool hotTacticsStep12 = staticState.kingDanger || staticState.pawnsNearPromotion
-                               || isSacrificial || stmKingExposed || opponentKingExposed
-                               || dynamicDerived.isHighTal || nodeHot;
+    const bool hotTacticsStep12 =
+      staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial || stmKingExposed
+      || opponentKingExposed || dynamicDerived.isHighTal || isAggressive || isPetrosian || nodeHot;
 
     const bool commonProbcut = (ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 4
                             && ttData.value >= probCutBeta && !is_decisive(beta)
@@ -2021,27 +2022,7 @@ moves_loop:  // When in check, search starts here
             // Calcolo soglia base Stockfish
             int moveCountThreshold = (3 + depth * depth) / (2 - improving);
 
-            // --- UNICA MODIFICA SHASHIN PERMESSA ---
-            // Solo per depth > 8, e solo ±1 nella soglia quiet moves.
-            // --- MODIFICA STEP 14: HYBRID TUNING ---
-            if (depth > 8)
-            {
-                if (isStrategical)
-                {
-                    // CAPABLANCA:
-                    // Pruning forte (-2) solo se profondo e SENZA pedoni passati pericolosi.
-                    int extraReduction = (depth > 12 && !staticState.pawnsNearPromotion) ? 2 : 1;
-                    moveCountThreshold -= extraReduction;
-                }
-                else if (isAggressive || isPetrosian)  // Tal o Petrosian
-                {
-                    // TATTICI (Attacco o Difesa):
-                    // Se c'è odore di promozione, allarghiamo (+2) per vedere tattiche/difese.
-                    // Altrimenti standard (+1).
-                    moveCountThreshold += (staticState.pawnsNearPromotion ? 2 : 1);
-                }
-            }
-            // ---------------------------------------
+            // Shashin move-ordering bias disabled: keep Stockfish default moveCountThreshold.
 
             // Skip quiet moves if movecount exceeds our threshold
             if (moveCount >= moveCountThreshold)
@@ -2118,16 +2099,7 @@ moves_loop:  // When in check, search starts here
             Value singularBeta  = ttData.value - (53 + 75 * (ss->ttPv && !PvNode)) * depth / 60;
             Depth singularDepth = newDepth / 2;
 
-            // --- MODIFICA SHASHIN: SNIPER EXTENSION ---
-            // Estendiamo la ricerca SOLO sui nodi singolari (tattici) in modalità aggressiva.
-            // Questo permette di vedere combinazioni profonde senza rallentare il resto.
-            if (isAggressive && rootShashinState.staticState.kingDanger && depth > 10)
-            {
-                // Aumentiamo la profondità del 20% circa.
-                // Su depth 20, guadagni +4 ply su quella singola linea forzata.
-                singularDepth += std::max(1, singularDepth / 5);
-            }
-            // ------------------------------------------
+            // Shashin move-ordering bias disabled: no style-based sniper singular extension.
 
             ss->excludedMove = move;
             value = search<NonPV>(pos, ss, singularBeta - 1, singularBeta, singularDepth, cutNode);
@@ -2205,29 +2177,11 @@ skipExtensionAndPruning:  // full threads search patch
             r += 1119;
 
         // Increase reduction if next ply has a lot of fail high
-        //by shashin begin
+        // Shashin move-ordering bias disabled: no style-based cutoffCnt reduction tweaks.
         if ((ss + 1)->cutoffCnt > 1)
         {
-            // Logica tattica: usa formula ShashChess originale (meno aggressiva)
-            if (dynamicDerived.isHighTal || dynamicDerived.isTacticalReactive
-                || staticState.isSacrificial)
-            {
-                // Formula ShashChess: conservativa per preservare profondità tattica
-                r += 120 + 1024 * ((ss + 1)->cutoffCnt > 2) + 100 * ((ss + 1)->cutoffCnt > 3)
-                   + 1024 * allNode;
-            }
-            // Logica strategica: usa formula Stockfish patch (più aggressiva)
-            else if (isStrategical)
-            {
-                // Formula Stockfish patch: più aggressiva per efficienza
-                r += 256 + 1024 * ((ss + 1)->cutoffCnt > 2) + 1024 * allNode;
-            }
-            // Default: compromesso bilanciato
-            else
-            {
-                r += 180 + 1024 * ((ss + 1)->cutoffCnt > 2) + 75 * ((ss + 1)->cutoffCnt > 3)
-                   + 1024 * allNode;
-            }
+            r += 180 + 1024 * ((ss + 1)->cutoffCnt > 2) + 75 * ((ss + 1)->cutoffCnt > 3)
+               + 1024 * allNode;
         }
         //by shashin end
         // For first picked move (ttMove) reduce reduction
@@ -2258,46 +2212,7 @@ skipExtensionAndPruning:  // full threads search patch
             // Calcolo base della profondità ridotta (Standard Stockfish)
             Depth d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
 
-            // --- MODIFICA SHASHIN ULTRA-CONSERVATIVA ---
-            // Obiettivo: Minimizzare l'impatto sull'ELO.
-            // Condizione di sicurezza: depth > 5 e ss->ply > 1 per non toccare la radice o i primi rami.
-
-            // --- MODIFICHE SHASHIN LMR ---
-            if (depth > 5 && ss->ply > 1)
-            {
-                // Tal/Aggressive: riduci LMR su check/catture (più profondità)
-                if (isAggressive && (givesCheck || capture))
-                {
-                    r -= 128;
-                }
-                // Petrosian: PIÙ LMR su quiet moves sicure (stretto e solido)
-                // Questo è il fix chiave per l'efficienza di Petrosian!
-                else if (isPetrosian && !capture && !givesCheck && depth > 8
-                         && !staticState.kingDanger && !isSacrificial && !stmKingExposed
-                         && !staticState.pawnsNearPromotion)  // <--- CRITICO!
-                {
-                    r += 256;
-                }
-                // Strategical (Capablanca): base LMR increase
-                else if (isStrategical && !capture && !givesCheck && depth > 8)
-                {
-                    r += 256;
-                }
-
-                // Ricalcoliamo 'd' (profondità ridotta) solo se 'r' è cambiato
-                if (r != original_r)
-                {
-                    d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
-                }
-            }
-
-            // Fix Fortezze: evita over-reduction
-            if (isFortressNode)
-            {
-                d = std::min(newDepth, Depth(d + 1));
-            }
-            // -----------------------------
-
+            // Shashin move-ordering bias disabled: keep Stockfish default LMR behavior.
             ss->reduction = newDepth - d;
             value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
             ss->reduction = 0;
@@ -2323,18 +2238,7 @@ skipExtensionAndPruning:  // full threads search patch
                 if (newDepth > d)
                     value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, newDepth, !cutNode);
 
-                // --- MODIFICA A: BONUS HISTORY AUMENTATI ---
-                // Aumentiamo leggermente i bonus per orientare l'apprendimento della history
-                // senza stravolgere l'ordinamento immediato.
                 int bonus = 1365;
-                if (isAggressive)
-                    bonus += 25;  // Da +40 a +25 (-37%)
-                else if (isStrategical)
-                    bonus += 12;  // Da +20 a +12 (-40%)
-                if (isFortressNode)
-                    bonus += 30;  // Da +60 a +30 (-50%)
-
-                // ------------------------------------------
 
                 update_continuation_histories(ss, movedPiece, move.to_sq(), bonus);
             }
