@@ -1743,7 +1743,14 @@ Value Search::Worker::search(
         //    così recuperiamo efficienza nel match senza rovinare i Solved.
         if (!skipNullMove && !localShashinManager.useNullMoveByShashinForStockfish())
         {
-            const bool allowException = !PvNode && depth >= 10 && ss->staticEval >= beta + 120;
+            // - Attiviamo l'eccezione più spesso: beta+80 (era beta+120)
+            // - NON scavalchiamo il divieto in HIGH_TAL (troppo rischioso per la suite)
+            // - Richiediamo nodo/root "freddo" (niente pericolo re / sacrifici / re esposti)
+            const bool allowException = !PvNode && depth >= 10 && !dynamicDerived.isHighTal
+                                     && ss->staticEval >= beta + 80 && !staticState.kingDanger
+                                     && !staticState.pawnsNearPromotion && !isSacrificial
+                                     && !stmKingExposed && !opponentKingExposed && !nodeHot;
+
             if (!allowException)
                 skipNullMove = true;
         }
@@ -2206,9 +2213,6 @@ skipExtensionAndPruning:  // full threads search patch
         // Step 17. Late moves reduction / extension (LMR)
         if (depth >= 2 && moveCount > std::max(sibs, 1) && doLMRStep)
         {
-            // Salviamo r originale per verificare se cambiarlo
-            int original_r = r;
-
             // Calcolo base della profondità ridotta (Standard Stockfish)
             Depth d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
 
