@@ -1743,14 +1743,7 @@ Value Search::Worker::search(
         //    così recuperiamo efficienza nel match senza rovinare i Solved.
         if (!skipNullMove && !localShashinManager.useNullMoveByShashinForStockfish())
         {
-            // - Attiviamo l'eccezione più spesso: beta+80 (era beta+120)
-            // - NON scavalchiamo il divieto in HIGH_TAL (troppo rischioso per la suite)
-            // - Richiediamo nodo/root "freddo" (niente pericolo re / sacrifici / re esposti)
-            const bool allowException = !PvNode && depth >= 10 && !dynamicDerived.isHighTal
-                                     && ss->staticEval >= beta + 80 && !staticState.kingDanger
-                                     && !staticState.pawnsNearPromotion && !isSacrificial
-                                     && !stmKingExposed && !opponentKingExposed && !nodeHot;
-
+            const bool allowException = !PvNode && depth >= 9 && ss->staticEval >= beta + 120;
             if (!allowException)
                 skipNullMove = true;
         }
@@ -1852,8 +1845,7 @@ Value Search::Worker::search(
         // Include il nuovo nodeHot "leggero" (solo check/promo) e il chaos profondo.
         const bool hotTactics = staticState.kingDanger || staticState.pawnsNearPromotion
                              || isSacrificial || stmKingExposed || opponentKingExposed
-                             || dynamicDerived.isHighTal || isAggressive || isPetrosian
-                             || chaosSensitive || nodeHot;
+                             || dynamicDerived.isHighTal || chaosSensitive || nodeHot;
 
         // 3. Gatekeeper:
         // ProbCut corre libero tranne nelle vere emergenze.
@@ -2028,8 +2020,6 @@ moves_loop:  // When in check, search starts here
         {
             // Calcolo soglia base Stockfish
             int moveCountThreshold = (3 + depth * depth) / (2 - improving);
-
-            // Shashin move-ordering bias disabled: keep Stockfish default moveCountThreshold.
 
             // Skip quiet moves if movecount exceeds our threshold
             if (moveCount >= moveCountThreshold)
@@ -2213,6 +2203,9 @@ skipExtensionAndPruning:  // full threads search patch
         // Step 17. Late moves reduction / extension (LMR)
         if (depth >= 2 && moveCount > std::max(sibs, 1) && doLMRStep)
         {
+            // Salviamo r originale per verificare se cambiarlo
+            int original_r = r;
+
             // Calcolo base della profondità ridotta (Standard Stockfish)
             Depth d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
 
