@@ -183,6 +183,7 @@ bool is_shuffling(Move move, Stack* const ss, const Position& pos) {
     return move.from_sq() == (ss - 2)->currentMove.to_sq()
         && (ss - 2)->currentMove.from_sq() == (ss - 4)->currentMove.to_sq();
 }
+
 }  // namespace
 
 
@@ -877,25 +878,35 @@ void Search::Worker::iterative_deepening() {
             selDepth = 0;
 
             // Reset aspiration window starting size
-            // --- FIX ASPIRATION WINDOW (Piano Definitivo) ---
-            // 1. Partiamo SEMPRE dalla formula base di Stockfish (che include meanSquaredScore per stabilità)
-            delta = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 9000;
-
-            // 2. Moduliamo in base allo stile Shashin
             if (isStrategical)
             {
-                // Posizioni stabili: stringiamo la finestra per efficienza (90%)
-                delta = std::max(6, (delta * 9) / 10);
-                // Fortezze: ancora più stretto
+                delta = 8 + threadIdx % 6;
+                if (rootDepth > 10)
+                    delta += (rootDepth - 10) / 3;
                 if (MoveConfig::isFortress)
-                    delta = std::max(5, delta - 2);
+                {
+                    delta = 5 + threadIdx % 4;
+                    if (rootDepth > 10)
+                        delta += (rootDepth - 10) / 3;
+                }
             }
-            else if (isAggressive || isHighTal)  // Tal
+            else if (isAggressive)
             {
-                // Posizioni caotiche: allarghiamo per ridurre i fail-low/high (125%)
-                delta = (delta * 5) / 4;
+                delta = 15 + threadIdx % 10;
+                if (isHighTal)
+                    delta = 18 + threadIdx % 12;
             }
-            // -----------------------------------------------
+            else
+            {
+                delta = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 9000;
+            }
+            if (rootDepth < 10)
+                delta = std::min(delta, 15);
+            else
+            {
+                // Default: original Stockfish calculation
+                delta = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 9000;
+            }
 
             // Additional adjustment based on depth
             if (rootDepth < 10)
@@ -1167,6 +1178,45 @@ Value Search::Worker::search(
 
     auto&                   localShashinManager = *this->shashinManager;
     const RootShashinState& rootShashinState    = localShashinManager.getState();  //for ShashChess
+    // From Shashin fortress begin
+
+    bool isFortressNode = localShashinManager.isFortress(rootPos);
+    if (depth > 24 && !PvNode && isFortressNode)
+    {
+        depth = std::max(depth - 1, Depth(10));
+
+        int progress = pos.rule50_count();
+        if (progress < 29)
+        {
+            return ss->staticEval;
+        }
+        if (pos.count<ALL_PIECES>() > 12)
+        {
+            return ss->staticEval;
+        }
+        int window = std::min(15, 50 - progress - 10);
+        if (progress >= (50 - window))
+        {
+            double weight = (progress - (50 - window)) / double(window);
+            weight        = std::clamp(weight, 0.0, 1.0);
+
+            bool  useNNUE  = (nodeType != NonPV) && (depth > 25);
+            Value baseEval = useNNUE ? evaluate(pos) : ss->staticEval;
+
+            Value drawInf = static_cast<Value>((1.0 - weight) * baseEval + weight * VALUE_DRAW);
+            constexpr Value DrawBoundary = VALUE_DRAW - 384;
+            if (drawInf >= DrawBoundary)
+                return std::clamp(drawInf, DrawBoundary, VALUE_DRAW);
+        }
+
+        if (depth < 15)
+        {
+            static constexpr int Bonus[16] = {330, 308, 286, 264, 242, 220, 198, 176,
+                                              154, 132, 110, 88,  66,  44,  22,  0};
+            ss->staticEval += Bonus[depth];
+        }
+    }
+    // From Shashin fortress end
 
     // Dive into quiescence search when the depth reaches zero
     if (depth <= 0)
@@ -1221,11 +1271,6 @@ Value Search::Worker::search(
     ss->moveCount = 0;
     bestValue     = -VALUE_INFINITE;
     maxValue      = VALUE_INFINITE;
-    // Local Tactical Sensing ---
-    const bool nodePawnsNearPromotion = bool((pos.pieces(PAWN, WHITE) & rank_bb(RANK_7))
-                                             | (pos.pieces(PAWN, BLACK) & rank_bb(RANK_2)));
-    const bool nodeHot                = ss->inCheck || nodePawnsNearPromotion;  //from shashin
-
     // from Crystal-shashin begin
     gameCycle = false;
 
@@ -1247,17 +1292,18 @@ Value Search::Worker::search(
     const auto& dynamicDerived      = rootShashinState.dynamicDerived;
     const auto& staticState         = rootShashinState.staticState;
     bool        isStrategical       = localShashinManager.isStrategical();
+    bool        isTacticalReactive  = dynamicDerived.isTacticalReactive;
     bool        stmKingExposed      = staticState.stmKingExposed;
     bool        opponentKingExposed = staticState.opponentKingExposed;
     bool        isSacrificial       = staticState.isSacrificial;
     bool        quietKingSafe       = !isSacrificial && (!stmKingExposed);
     bool        isTal               = localShashinManager.isTal();
     bool        isPetrosian         = localShashinManager.isPetrosian();
+    bool        isCapablanca        = localShashinManager.isCapablanca();
     bool        isAggressive        = localShashinManager.isAggressive();
     bool        isTactical          = localShashinManager.isTactical();
     bool        isComplex           = localShashinManager.isComplexPosition();
     uint8_t     legalMoveCount      = staticState.legalMoveCount;
-    bool        isFortressNode      = MoveConfig::isFortress;
     //from crystal shashin end
     if (!rootNode)
     {
@@ -1425,43 +1471,6 @@ Value Search::Worker::search(
         }
     }
     // from learning begin
-    // From Shashin fortress begin
-    if (depth > 32 && !PvNode && isFortressNode)
-    {
-        depth = std::max(depth - 1, Depth(10));
-
-        int progress = pos.rule50_count();
-        if (progress < 29)
-        {
-            return ss->staticEval;
-        }
-        if (pos.count<ALL_PIECES>() > 12)
-        {
-            return ss->staticEval;
-        }
-        int window = std::min(15, 50 - progress - 10);
-        if (progress >= (50 - window))
-        {
-            double weight = (progress - (50 - window)) / double(window);
-            weight        = std::clamp(weight, 0.0, 1.0);
-
-            bool  useNNUE  = (nodeType != NonPV) && (depth > 25);
-            Value baseEval = useNNUE ? evaluate(pos) : ss->staticEval;
-
-            Value drawInf = static_cast<Value>((1.0 - weight) * baseEval + weight * VALUE_DRAW);
-            constexpr Value DrawBoundary = VALUE_DRAW - 384;
-            if (drawInf >= DrawBoundary)
-                return std::clamp(drawInf, DrawBoundary, VALUE_DRAW);
-        }
-
-        if (depth < 15)
-        {
-            static constexpr int Bonus[16] = {330, 308, 286, 264, 242, 220, 198, 176,
-                                              154, 132, 110, 88,  66,  44,  22,  0};
-            ss->staticEval += Bonus[depth];
-        }
-    }
-    // From Shashin fortress end
     // Step 4Bis. Global Learning Table lookup
     expTTHit        = false;
     updatedLearning = false;
@@ -1643,15 +1652,10 @@ Value Search::Worker::search(
             // Tal: Meno pruning (-50) per non perdere combinazioni d'attacco.
             razorThreshold -= 50;
         }
-        else if (isStrategical)
-        {
-            // Petrosian deve tagliare le linee tattiche inutili per guadagnare ELO.
-            razorThreshold += 40;
-        }
         // Fortezze: Sicurezza extra, non rischiare nulla.
         if (isFortressNode)
         {
-            razorThreshold -= 30;
+            razorThreshold -= 60;
         }
         // Bonus mobilità (Solo se non siamo in modalità difensiva/strategica)
         // Aiuta a trovare risorse in posizioni dinamiche.
@@ -1678,7 +1682,7 @@ Value Search::Worker::search(
         }
         else if (isStrategical)
         {
-            marginMultiplier = 110;
+            marginMultiplier = 100;
         }
 
         // King Danger: fattore critico
@@ -1693,7 +1697,7 @@ Value Search::Worker::search(
         // Le fortezze richiedono precisione assoluta, manteniamo 60.
         if (isFortressNode)
         {
-            marginMultiplier = 80;
+            marginMultiplier = 60;
         }
 
         // Adjustment per mobilità (semplificato e sicuro)
@@ -1731,44 +1735,20 @@ Value Search::Worker::search(
         && !excludedMove  //learning
         && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && !is_loss(beta))
     {
-        // --- SHASHIN: Null-move gating (match-friendly, node-aware) ----
+        // --- MODIFICA SHASHIN: SAFETY CHECK (Versione Veloce) ---
+        bool nodeHot = staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial;
         bool skipNullMove = false;
-
-        // 1) Nodo locale "caldo": niente Null Move (sicurezza tattica locale)
-        if (nodeHot)
+        if (nodeHot || (isAggressive && staticState.kingDanger && depth < 10))
             skipNullMove = true;
-
-        // 2) Se lo stile Shashin vorrebbe evitare NMP (es. High Tal o Aggressive+high material),
-        //    concediamo un'eccezione SOLO su cutnode freddi, profondi e con margine ampio:
-        //    così recuperiamo efficienza nel match senza rovinare i Solved.
-        if (!skipNullMove && !localShashinManager.useNullMoveByShashinForStockfish())
-        {
-            const bool allowException = !PvNode && depth >= 9 && ss->staticEval >= beta + 120;
-            if (!allowException)
-                skipNullMove = true;
-        }
-
-        // 3) Protezione storica: radice aggressiva + kingDanger a bassa depth
-        if (isAggressive && rootShashinState.staticState.kingDanger && depth < 8)
-            skipNullMove = true;
-        // -----------------------------
+        // --------------------------------------------------------
 
         if (!skipNullMove)
         {
             assert((ss - 1)->currentMove != Move::null());
             assert(eval - beta >= 0);
 
-            // Calcolo R Adattivo
+            // Calcolo Base Stockfish (PULITO)
             Depth R = 7 + depth / 3;
-
-            // Capablanca (strategico): pruning leggermente più aggressivo
-            if (isStrategical && !staticState.kingDanger && !dynamicDerived.isHighTal)
-                R += 1;
-
-            // Tal Alto / Pericolo: pruning ridotto per sicurezza
-            if (dynamicDerived.isHighTal || isSacrificial || staticState.kingDanger
-                || staticState.pawnsNearPromotion)
-                R = std::max(Depth(5), Depth(R - 1));
 
             ss->currentMove                   = Move::null();
             ss->continuationHistory           = &continuationHistory[0][0][NO_PIECE][0];
@@ -1800,147 +1780,159 @@ Value Search::Worker::search(
     improving |= ss->staticEval >= beta;
 
     // Step 10. Internal iterative reductions
+    // At sufficient depth, reduce depth for PV/Cut nodes without a TTMove.
+    // (*Scaler) Making IIR more aggressive scales poorly.
     if (!allNode && depth >= 6 && !ttData.move && priorReduction <= 3)
     {
-        depth--;  // Stockfish standard
+        Depth originalDepth = depth;
 
-        // --- FUSION IIR: Safety (v4) + Tuning (v3) ---
+        // Apply base Stockfish reduction
+        depth--;
 
-        // 1. Applichiamo extra-reduction SOLO se il nodo è "Freddo" (!nodeHot).
-        if (!nodeHot && quietKingSafe && !localShashinManager.avoidStep10())
+        // Shashin adaptive reduction: apply additional reductions based on position style
+        const bool avoidStep10 = localShashinManager.avoidStep10();
+        if (quietKingSafe && !avoidStep10
+            && originalDepth >= 6)  // Use originalDepth for consistent conditions
         {
-            // 2a. Fortezze: sempre ok ridurre (come v3)
-            if (isFortressNode)
+            const bool ttReduction = cutNode && ttData.move && ttData.bound == BOUND_UPPER;
+            if (ttReduction)
             {
-                depth = std::max(depth - 1, Depth(1));
-            }
-            // 2b. Capablanca: Riduciamo SOLO se siamo vicini alla radice e stabili (Tuning v3)
-            //     Questo evita che Capablanca "tagli troppo" nelle profondità.
-            else if (isStrategical && ss->ply <= 2 && depth >= 9 && staticState.legalMoveCount <= 14
-                     && std::abs(ss->staticEval) <= 160)
-            {
-                depth = std::max(depth - 1, Depth(1));
+                int reduction = 0;
+
+                // Determine reduction based on Shashin style
+                // Strategical positions: more aggressive reduction
+                if (isStrategical)
+                {
+                    reduction = 2;  // More aggressive reduction in strategical positions
+                }
+                // Tactical positions: preserve depth
+                else if (isAggressive || isTacticalReactive || isTactical || isSacrificial)
+                {
+                    // Preserve depth, but allow some reduction at very high depths
+                    if (depth > 12)
+                        reduction = 1;
+                    else
+                        reduction = 0;
+                }
+                // Default: moderate reduction
+                else
+                {
+                    reduction = 1;
+                }
+
+                // Additional adjustments for special conditions
+                if (isFortressNode)
+                {
+                    // Extra reduction in fortresses
+                    reduction = std::min(reduction + 1, 3);
+                }
+
+                if (gameCycle)
+                {
+                    reduction = std::max(reduction - 1, 0);  // Less reduction in game cycles
+                }
+
+                // Apply the additional reduction, ensuring depth doesn't drop below 1
+                depth = std::max(originalDepth - reduction, 1);
             }
         }
-        // ---------------------------------------------
     }
+    //by Shashin end
     // Step 11. ProbCut
     // If we have a good enough capture (or queen promotion) and a reduced search
     // returns a value much above beta, we can (almost) safely prune the previous move.
+    probCutBeta = beta + 235 - 63 * improving;
+    if (depth >= 3 && !disableNMAndPC
+        && !is_decisive(beta)  //learning
+        // If value from transposition table is lower than probCutBeta, don't attempt
+        // probCut there
+        && !(is_valid(ttData.value) && ttData.value < probCutBeta))
     {
-        probCutBeta = beta + 235 - 63 * improving;
+        // Shashin adjustment: skip ProbCut in inappropriate positions
+        bool skipProbCut = isFortressNode || (isStrategical && !staticState.kingDanger);
 
-        // ---  LOGICA PROBCUT ---
-
-        // 1. CHAOS DETECTION
-        // Disabilitiamo ProbCut nel caos SOLO se la profondità è rilevante (>= 8).
-        // Questo salva efficienza nelle ricerche superficiali del match.
-        const bool isChaos = localShashinManager.isShashinStyle(
-          {ShashinPosition::CAPABLANCA_PETROSIAN, ShashinPosition::CAPABLANCA_TAL,
-           ShashinPosition::TAL_CAPABLANCA_PETROSIAN});
-
-        const bool chaosSensitive = isChaos && depth >= 8;
-
-        // 2. Hot Tactics Definition:
-        // Include il nuovo nodeHot "leggero" (solo check/promo) e il chaos profondo.
-        const bool hotTactics = staticState.kingDanger || staticState.pawnsNearPromotion
-                             || isSacrificial || stmKingExposed || opponentKingExposed
-                             || dynamicDerived.isHighTal || chaosSensitive || nodeHot;
-
-        // 3. Gatekeeper:
-        // ProbCut corre libero tranne nelle vere emergenze.
-        const bool allowProbCut = !disableNMAndPC && !ss->inCheck && !hotTactics;
-
-        if (depth >= 3 && allowProbCut
-            && !is_decisive(beta)
-            // If value from transposition table is lower than probCutBeta, don't attempt
-            // probCut there
-            && !(is_valid(ttData.value) && ttData.value < probCutBeta))
+        if (!skipProbCut)
         {
-            // Skip ProbCut nelle fortezze (sicurezza extra, ridondante ma veloce)
-            if (!isFortressNode)
+            assert(probCutBeta < VALUE_INFINITE && probCutBeta > beta);
+
+            MovePicker mp(pos, ttData.move, probCutBeta - ss->staticEval, &captureHistory);
+            Depth      dynamicReduction = std::max((ss->staticEval - beta) / 315, -1);
+            Depth      probCutDepth     = std::clamp(depth - 5 - dynamicReduction, 0, depth);
+
+            // Shashin-based depth adjustments
+            if (isCapablanca && depth > 8)
             {
-                assert(probCutBeta < VALUE_INFINITE && probCutBeta > beta);
+                probCutDepth = std::clamp(depth - 7 - dynamicReduction, 0, depth);
+            }
+            else
+            {
+                // Adjust depth based on Shashin style
+                if (isStrategical)
+                    probCutDepth =
+                      std::clamp(probCutDepth - 1, 0, depth);  // Less aggressive in strategical
+                else if (isAggressive)
+                    probCutDepth =
+                      std::clamp(probCutDepth + 1, 0, depth);  // More aggressive in tactical
+            }
 
-                MovePicker mp(pos, ttData.move, probCutBeta - ss->staticEval, &captureHistory);
-                Depth      dynamicReduction = std::max((ss->staticEval - beta) / 315, -1);
-                Depth      probCutDepth     = std::clamp(depth - 5 - dynamicReduction, 0, depth);
+            while ((move = mp.next_move()) != Move::none())
+            {
+                assert(move.is_ok());
 
-                // --- TUNING PROFONDITÀ (Logica v3) ---
-                // Se Capablanca è "sicuro" (ply basso, vantaggio netto), taglia di più.
-                // Questo recupera velocità nelle partite posizionali.
-                if (isStrategical && ss->ply <= 2 && ss->staticEval >= beta + 120)
+                if (move == excludedMove || !pos.legal(move))
+                    continue;
+
+                assert(pos.capture_stage(move));
+
+                do_move(pos, move, st, ss);
+
+                // Perform a preliminary qsearch to verify that the move holds
+                value = -qsearch<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1);
+
+                // If the qsearch held, perform the regular search
+                if (value >= probCutBeta && probCutDepth > 0)
                 {
-                    // Aggressivo: verifica più corta (-1) -> taglio più facile
-                    probCutDepth = std::max(Depth(0), Depth(probCutDepth - 1));
+                    value = -search<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1,
+                                           probCutDepth, !cutNode);
                 }
-                else
+
+                undo_move(pos, move);
+
+                if (value >= probCutBeta)
                 {
-                    // Altrimenti (Tal/Petrosian/Caos/Nodi profondi) prudenza.
-                    // Conservativo: verifica più lunga (+1) -> taglio più difficile
-                    probCutDepth = std::min(depth, Depth(probCutDepth + 1));
-                }
-                // ------------------------------------
+                    // Save ProbCut data into transposition table
+                    ttWriter.write(posKey, value_to_tt(value, ss->ply), ss->ttPv, BOUND_LOWER,
+                                   probCutDepth + 1, move, unadjustedStaticEval, tt.generation());
 
-                while ((move = mp.next_move()) != Move::none())
-                {
-                    assert(move.is_ok());
-
-                    if (move == excludedMove || !pos.legal(move))
-                        continue;
-
-                    assert(pos.capture_stage(move));
-
-                    do_move(pos, move, st, ss);
-
-                    // Perform a preliminary qsearch to verify that the move holds
-                    value = -qsearch<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1);
-
-                    // If the qsearch held, perform the regular search
-                    if (value >= probCutBeta && probCutDepth > 0)
-                    {
-                        value = -search<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1,
-                                               probCutDepth, !cutNode);
-                    }
-
-                    undo_move(pos, move);
-
-                    if (value >= probCutBeta)
-                    {
-                        // Save ProbCut data into transposition table
-                        ttWriter.write(posKey, value_to_tt(value, ss->ply), ss->ttPv, BOUND_LOWER,
-                                       probCutDepth + 1, move, unadjustedStaticEval,
-                                       tt.generation());
-
-                        if (!is_decisive(value))
-                            return value - (probCutBeta - beta);
-                    }
+                    if (!is_decisive(value))
+                        return value - (probCutBeta - beta);
                 }
             }
         }
+    }
+
+    // Shashin: Reduce depth in fortress positions when appropriate
+    if (isFortressNode && depth > 12 && !ss->inCheck)
+    {
+        depth = std::max(depth - 2, 9);
     }
 
 moves_loop:  // When in check, search starts here
 
-    // Step 12. A small Probcut idea
+    // Step 12. A small Probcut idea - Balanced Hybrid Safety
     probCutBeta = beta + 418;
-
-    const bool hotTacticsStep12 =
-      staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial || stmKingExposed
-      || opponentKingExposed || dynamicDerived.isHighTal || isAggressive || isPetrosian || nodeHot;
-
+    //from Shashin Crystal begin
     const bool commonProbcut = (ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 4
                             && ttData.value >= probCutBeta && !is_decisive(beta)
                             && is_valid(ttData.value) && !is_decisive(ttData.value);
 
     if (commonProbcut)
     {
-        // FIX: Se non c'è "Hot Tactics", fidati.
-        // Se c'è Hot Tactics, richiedi depth alta del TT.
-        if (!hotTacticsStep12 || ttData.depth >= depth - 2)
-        {
+        bool tacticalRisk = staticState.kingDanger || staticState.pawnsNearPromotion
+                         || isSacrificial || stmKingExposed || opponentKingExposed;
+
+        if (!tacticalRisk || ttData.depth >= depth - 2)
             return probCutBeta;
-        }
     }
     //from Shashin Crystal end
 
@@ -2021,6 +2013,18 @@ moves_loop:  // When in check, search starts here
             // Calcolo soglia base Stockfish
             int moveCountThreshold = (3 + depth * depth) / (2 - improving);
 
+            // --- UNICA MODIFICA SHASHIN PERMESSA ---
+            // Solo per depth > 8, e solo ±1 nella soglia quiet moves.
+            // Rimuoviamo TUTTI gli altri bias (marginBias, futilityBias, seeBias) che causavano -90 ELO.
+            if (depth > 8)
+            {
+                if (isStrategical)
+                    moveCountThreshold -= 1;  // Pruning leggermente più stretto
+                else if (isAggressive)
+                    moveCountThreshold += 1;  // Pruning leggermente più largo
+            }
+            // --- END SHASHIN ADJUSTMENT ---
+
             // Skip quiet moves if movecount exceeds our threshold
             if (moveCount >= moveCountThreshold)
                 mp.skip_quiet_moves();
@@ -2096,7 +2100,14 @@ moves_loop:  // When in check, search starts here
             Value singularBeta  = ttData.value - (53 + 75 * (ss->ttPv && !PvNode)) * depth / 60;
             Depth singularDepth = newDepth / 2;
 
-            // Shashin move-ordering bias disabled: no style-based sniper singular extension.
+            // --- MODIFICA SHASHIN: SNIPER EXTENSION ---
+            // Estendiamo la ricerca SOLO sui nodi singolari (tattici) in modalità aggressiva.
+            // Questo permette di vedere combinazioni profonde senza rallentare il resto.
+            if (isAggressive && staticState.kingDanger && depth > 12)
+            {
+                singularDepth += std::max(1, singularDepth / 6);  // +20% circa, più efficiente
+            }
+            // ------------------------------------------
 
             ss->excludedMove = move;
             value = search<NonPV>(pos, ss, singularBeta - 1, singularBeta, singularDepth, cutNode);
@@ -2174,11 +2185,29 @@ skipExtensionAndPruning:  // full threads search patch
             r += 1119;
 
         // Increase reduction if next ply has a lot of fail high
-        // Shashin move-ordering bias disabled: no style-based cutoffCnt reduction tweaks.
+        //by shashin begin
         if ((ss + 1)->cutoffCnt > 1)
         {
-            r += 180 + 1024 * ((ss + 1)->cutoffCnt > 2) + 75 * ((ss + 1)->cutoffCnt > 3)
-               + 1024 * allNode;
+            // Logica tattica: usa formula ShashChess originale (meno aggressiva)
+            if (dynamicDerived.isHighTal || dynamicDerived.isTacticalReactive
+                || staticState.isSacrificial)
+            {
+                // Formula ShashChess: conservativa per preservare profondità tattica
+                r += 120 + 1024 * ((ss + 1)->cutoffCnt > 2) + 100 * ((ss + 1)->cutoffCnt > 3)
+                   + 1024 * allNode;
+            }
+            // Logica strategica: usa formula Stockfish patch (più aggressiva)
+            else if (isStrategical)
+            {
+                // Formula Stockfish patch: più aggressiva per efficienza
+                r += 256 + 1024 * ((ss + 1)->cutoffCnt > 2) + 1024 * allNode;
+            }
+            // Default: compromesso bilanciato
+            else
+            {
+                r += 180 + 1024 * ((ss + 1)->cutoffCnt > 2) + 75 * ((ss + 1)->cutoffCnt > 3)
+                   + 1024 * allNode;
+            }
         }
         //by shashin end
         // For first picked move (ttMove) reduce reduction
@@ -2203,11 +2232,43 @@ skipExtensionAndPruning:  // full threads search patch
         // Step 17. Late moves reduction / extension (LMR)
         if (depth >= 2 && moveCount > std::max(sibs, 1) && doLMRStep)
         {
+            // Salviamo r originale per verificare se cambiarlo
+            int original_r = r;
 
             // Calcolo base della profondità ridotta (Standard Stockfish)
             Depth d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
 
-            // Shashin move-ordering bias disabled: keep Stockfish default LMR behavior.
+            // --- MODIFICA SHASHIN ULTRA-CONSERVATIVA ---
+            // Obiettivo: Minimizzare l'impatto sull'ELO.
+            // Condizione di sicurezza: depth > 5 e ss->ply > 1 per non toccare la radice o i primi rami.
+
+            if (depth > 5 && ss->ply > 1)
+            {
+                // Caso 1: Tal/Aggressive
+                if (isAggressive && (givesCheck || capture))
+                {
+                    r -= 60;
+                }
+                // Caso 2: Petrosian/Strategical
+                else if (isStrategical && !capture && !givesCheck && depth > 8)
+                {
+                    r += 40;
+                }
+
+                // Ricalcoliamo 'd' (profondità ridotta) solo se 'r' è cambiato
+                if (r != original_r)
+                {
+                    d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
+                }
+            }
+
+            // Fortezze: Riduzione minima per non sbagliare i finali
+            if (isFortressNode)
+            {
+                d = std::max(1, d - 1);
+            }
+            // ------------------------------------------
+
             ss->reduction = newDepth - d;
             value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
             ss->reduction = 0;
@@ -2215,25 +2276,26 @@ skipExtensionAndPruning:  // full threads search patch
             // Do a full-depth search when reduced LMR search fails high
             if (value > alpha)
             {
-                // Costringe Capablanca a verificare meglio le varianti (più Elo a 25+10).
-                int deeperMargin = (dynamicDerived.isHighTal || isSacrificial
-                                    || staticState.kingDanger || staticState.pawnsNearPromotion)
-                                   ? 30
-                                 : isStrategical ? 45
-                                                 : 50;
+                const bool doDeeperSearch    = d < newDepth && value > bestValue + 50;
+                const bool doShallowerSearch = value < bestValue + 9;
 
-                int shallowMargin = (dynamicDerived.isHighTal || isSacrificial) ? 12
-                                  : isStrategical                               ? 9
-                                                                                : 9;
-
-                const bool doDeeperSearch    = d < newDepth && value > bestValue + deeperMargin;
-                const bool doShallowerSearch = value < bestValue + shallowMargin;
-
+                // Standard Stockfish re-search logic (Crystal Logic rimossa per stabilità)
                 newDepth += doDeeperSearch - doShallowerSearch;
                 if (newDepth > d)
                     value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, newDepth, !cutNode);
 
+                // --- MODIFICA A: BONUS HISTORY AUMENTATI ---
+                // Aumentiamo leggermente i bonus per orientare l'apprendimento della history
+                // senza stravolgere l'ordinamento immediato.
                 int bonus = 1365;
+                if (isAggressive)
+                    bonus += 25;  // Da +40 a +25 (-37%)
+                else if (isStrategical)
+                    bonus += 12;  // Da +20 a +12 (-40%)
+                if (isFortressNode)
+                    bonus += 30;  // Da +60 a +30 (-50%)
+
+                // ------------------------------------------
 
                 update_continuation_histories(ss, movedPiece, move.to_sq(), bonus);
             }
@@ -2570,9 +2632,9 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     const auto& dynamicDerived = rootShashinState.dynamicDerived;
 
     // Accesso ottimizzato alle variabili di stato
-    const bool isStrategical  = dynamicDerived.isStrategical;
-    const bool isAggressive   = dynamicDerived.isAggressive;
-    bool       isFortressNode = MoveConfig::isFortress;
+    const bool isStrategical = dynamicDerived.isStrategical;
+    const bool isAggressive  = dynamicDerived.isAggressive;
+
     if (!PvNode && is_valid(ttData.value)
         && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER)))
     {
@@ -2727,7 +2789,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         moveCountThreshold = 1;
     if (staticState.kingDanger)
         moveCountThreshold++;
-    if (isFortressNode)
+    if (MoveConfig::isFortress)
         moveCountThreshold++;
 
     // B) SEE Margin
@@ -2743,7 +2805,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         // PETROSIAN: Taglio netto per sfruttare l'NPS alto.
         seeMargin = -50;
     }
-    else if (isFortressNode)
+    else if (MoveConfig::isFortress)
     {
         seeMargin = -10;
     }
@@ -2783,27 +2845,33 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                     continue;
                 }
 
-                // === FIX SHASHIN: SAFETY & TACTICS ===
-
-                // Definiamo se siamo in modalità tattica (Tal/Reactive/Danger)
-                const bool useTacticalLogic = dynamicDerived.isHighTal
-                                           || dynamicDerived.isTacticalReactive
-                                           || (staticState.kingDanger && !isStrategical);
-
-                // LOGICA:
-                // 1. Se useTacticalLogic è VERO: Saltiamo questo blocco if.
-                //    Non facciamo pruning. Vediamo la mossa anche se il SEE è negativo.
-                // 2. Se useTacticalLogic è FALSO: Entriamo nel blocco.
-                //    Applichiamo il pruning usando la fix di sicurezza di Stockfish.
-
-                if (!useTacticalLogic && !pos.see_ge(move, alpha - futilityBase))
+                // === PATCH SHASHIN INTELLIGENTE (LOGICA INVERTITA) ===
+                if (!pos.see_ge(move, alpha - futilityBase))
                 {
-                    // Stockfish Upstream Fix: bestValue non deve mai scendere (max).
-                    // Questo previene bug di valutazione nei finali strategici.
-                    bestValue = std::max(bestValue, std::min(alpha, futilityBase));
+                    // Logica tattica (vecchio comportamento) per:
+                    // 1. Stili Tal aggressivi
+                    // 2. Posizioni tattiche reattive
+                    // 3. Pericolo del re (tranne in posizioni strategiche)
+                    const bool useTacticalLogic = dynamicDerived.isHighTal
+                                               || dynamicDerived.isTacticalReactive
+                                               || (staticState.kingDanger && !isStrategical);
+
+                    if (useTacticalLogic)
+                    {
+                        // COMPORTAMENTO TATTICO (ShashChess originale)
+                        // Permette alla valutazione di scendere per esplorare mosse apparentemente negative
+                        // ma potenzialmente vincenti (sacrifici, combinazioni nascoste)
+                        bestValue = std::min(alpha, futilityBase);
+                    }
+                    else
+                    {
+                        // COMPORTAMENTO STRATEGICO (patch Stockfish)
+                        // Mantiene la valutazione stabile, evitando crolli ingiustificati
+                        // Ottimo per posizioni strategiche e partite lunghe
+                        bestValue = std::max(bestValue, std::min(alpha, futilityBase));
+                    }
                     continue;
                 }
-                // =====================================
             }
 
             // --- PHASE 4: HYBRID PRUNING OPTIMIZATION ---
@@ -2951,14 +3019,14 @@ Depth Search::Worker::reduction(
     // Nota: High Tal non è incluso, ed è giusto così: se stiamo già vincendo nettamente,
     // non serve rallentare la ricerca, basta l'efficienza standard.
     if (isAggressive)
-        reductionScale = (reductionScale * 95) / 100;
+        reductionScale = (reductionScale * 97) / 100;
 
     // 2. PETROSIAN (Strategical - Capablanca):
     // La fase di manovra/consolidamento. Aumentiamo la riduzione (+5%).
     // Questo simula lo stile di Petrosian: scartare rapidamente le mosse "sporche" o dubbie
     // per concentrare tutto il tempo sulla profilassi e sulla linea principale.
     else if (isStrategical)
-        reductionScale = (reductionScale * 105) / 100;
+        reductionScale = (reductionScale * 103) / 100;
 
     // -----------------------------------------
 
@@ -3136,6 +3204,7 @@ void update_quiet_histories(
     workerThread.sharedHistory.pawn_entry(pos)[pos.moved_piece(move)][move.to_sq()]
       << bonus * (bonus > 0 ? 905 : 505) / 1024;
 }
+
 }
 // no skill
 
@@ -3570,10 +3639,6 @@ Value ShashinManager::static_value(const Eval::NNUE::Networks&    networks,
         StateInfo st;
         auto [dp, dts] = accumulators.push();
         rootPos.do_move(move, st, rootPos.gives_check(move), dp, dts, nullptr, nullptr);
-
-        // --- FIX PLY UPDATE ---
-        (ss + 1)->ply = ss->ply + 1;  // <--- AGGIUNGERE QUESTA RIGA
-        // ----------------------
 
         Value val = -static_value(networks, accumulators, refreshTable, rootPos, ss + 1, -optimism);
 
