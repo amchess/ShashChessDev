@@ -878,41 +878,31 @@ void Search::Worker::iterative_deepening() {
             selDepth = 0;
 
             // Reset aspiration window starting size
+            // --- FIX ASPIRATION WINDOW (Hybrid Tattica) ---
+            // 1. Base Stockfish solida (include meanSquaredScore per stabilità nei match)
+            delta = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 9000;
+
+            // 2. Modulazione Shashin (Fine-tuned)
             if (isStrategical)
             {
-                delta = 8 + threadIdx % 6;
-                if (rootDepth > 10)
-                    delta += (rootDepth - 10) / 3;
+                // Nelle posizioni strategiche, ci aspettiamo meno oscillazioni.
+                // Stringiamo leggermente (90%) per guadagnare efficienza.
+                delta = std::max(6, (delta * 9) / 10);
+
+                // Se è una fortezza, stringiamo ancora di più
                 if (MoveConfig::isFortress)
-                {
-                    delta = 5 + threadIdx % 4;
-                    if (rootDepth > 10)
-                        delta += (rootDepth - 10) / 3;
-                }
+                    delta = std::max(5, delta - 2);
             }
-            else if (isAggressive)
+            else if (isAggressive || isHighTal)
             {
-                delta = 15 + threadIdx % 10;
-                if (isHighTal)
-                    delta = 18 + threadIdx % 12;
-            }
-            else
-            {
-                delta = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 9000;
-            }
-            if (rootDepth < 10)
-                delta = std::min(delta, 15);
-            else
-            {
-                // Default: original Stockfish calculation
-                delta = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 9000;
+                // Nelle posizioni Tal, le oscillazioni sono normali.
+                // Allarghiamo (125%) per evitare troppi re-search costosi.
+                delta = (delta * 5) / 4;
             }
 
-            // Additional adjustment based on depth
+            // Sicurezza a basse profondità
             if (rootDepth < 10)
-            {
-                delta = std::min(delta, 15);  // Limit window at low depths
-            }
+                delta = std::min(delta, 15);
 
             Value avg = rootMoves[pvIdx].averageScore;
             alpha     = std::max(avg - delta, -VALUE_INFINITE);
@@ -1842,7 +1832,7 @@ Value Search::Worker::search(
     // If we have a good enough capture (or queen promotion) and a reduced search
     // returns a value much above beta, we can (almost) safely prune the previous move.
     probCutBeta = beta + 235 - 63 * improving;
-    if (depth >= 3 && !disableNMAndPC
+    if (depth >= 3 && !disableNMAndPC && !ss->inCheck
         && !is_decisive(beta)  //learning
         // If value from transposition table is lower than probCutBeta, don't attempt
         // probCut there
@@ -1909,12 +1899,6 @@ Value Search::Worker::search(
                 }
             }
         }
-    }
-
-    // Shashin: Reduce depth in fortress positions when appropriate
-    if (isFortressNode && depth > 12 && !ss->inCheck)
-    {
-        depth = std::max(depth - 2, 9);
     }
 
 moves_loop:  // When in check, search starts here
@@ -2252,7 +2236,8 @@ skipExtensionAndPruning:  // full threads search patch
                 // Caso 2: Petrosian/Strategical
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
                 {
-                    r += 40;
+                    // Aumentiamo la riduzione per recuperare tempo per le posizioni tattiche.
+                    r += 52;
                 }
 
                 // Ricalcoliamo 'd' (profondità ridotta) solo se 'r' è cambiato
@@ -3022,11 +3007,11 @@ Depth Search::Worker::reduction(
         reductionScale = (reductionScale * 97) / 100;
 
     // 2. PETROSIAN (Strategical - Capablanca):
-    // La fase di manovra/consolidamento. Aumentiamo la riduzione (+5%).
-    // Questo simula lo stile di Petrosian: scartare rapidamente le mosse "sporche" o dubbie
-    // per concentrare tutto il tempo sulla profilassi e sulla linea principale.
+    // La fase di manovra/consolidamento.
+    // Passiamo a 104% (era 103%). Leggermente più aggressivi nel pruning strategico
+    // per compensare il costo delle posizioni tattiche/reattive.
     else if (isStrategical)
-        reductionScale = (reductionScale * 103) / 100;
+        reductionScale = (reductionScale * 104) / 100;
 
     // -----------------------------------------
 
