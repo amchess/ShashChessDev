@@ -895,9 +895,9 @@ void Search::Worker::iterative_deepening() {
             }
             else if (isAggressive || isHighTal)
             {
-                // Nelle posizioni Tal, le oscillazioni sono normali.
-                // Allarghiamo (125%) per evitare troppi re-search costosi.
-                delta = (delta * 5) / 4;
+                // Tattico puro: finestra allargata del 12.5% (compromesso stabilità/tattica)
+                // Riduce i re-search inutili rispetto al 25% precedente.
+                delta = (delta * 9) / 8;
             }
 
             // Sicurezza a basse profondità
@@ -1166,47 +1166,11 @@ Value Search::Worker::search(
     constexpr bool rootNode = nodeType == Root;
     const bool     allNode  = !(PvNode || cutNode);
 
+    //from Shashih begin
     auto&                   localShashinManager = *this->shashinManager;
     const RootShashinState& rootShashinState    = localShashinManager.getState();  //for ShashChess
-    // From Shashin fortress begin
-
-    bool isFortressNode = localShashinManager.isFortress(rootPos);
-    if (depth > 24 && !PvNode && isFortressNode)
-    {
-        depth = std::max(depth - 1, Depth(10));
-
-        int progress = pos.rule50_count();
-        if (progress < 29)
-        {
-            return ss->staticEval;
-        }
-        if (pos.count<ALL_PIECES>() > 12)
-        {
-            return ss->staticEval;
-        }
-        int window = std::min(15, 50 - progress - 10);
-        if (progress >= (50 - window))
-        {
-            double weight = (progress - (50 - window)) / double(window);
-            weight        = std::clamp(weight, 0.0, 1.0);
-
-            bool  useNNUE  = (nodeType != NonPV) && (depth > 25);
-            Value baseEval = useNNUE ? evaluate(pos) : ss->staticEval;
-
-            Value drawInf = static_cast<Value>((1.0 - weight) * baseEval + weight * VALUE_DRAW);
-            constexpr Value DrawBoundary = VALUE_DRAW - 384;
-            if (drawInf >= DrawBoundary)
-                return std::clamp(drawInf, DrawBoundary, VALUE_DRAW);
-        }
-
-        if (depth < 15)
-        {
-            static constexpr int Bonus[16] = {330, 308, 286, 264, 242, 220, 198, 176,
-                                              154, 132, 110, 88,  66,  44,  22,  0};
-            ss->staticEval += Bonus[depth];
-        }
-    }
-    // From Shashin fortress end
+    bool                    isFortressNode      = localShashinManager.isFortress(rootPos);
+    //from Shashih end
 
     // Dive into quiescence search when the depth reaches zero
     if (depth <= 0)
@@ -2236,8 +2200,9 @@ skipExtensionAndPruning:  // full threads search patch
                 // Caso 2: Petrosian/Strategical
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
                 {
-                    // Aumentiamo la riduzione per recuperare tempo per le posizioni tattiche.
-                    r += 52;
+                    // Valore ottimizzato (+40) per garantire la conversione del vantaggio
+                    // nei finali tecnici (le famose "pepite").
+                    r += 40;
                 }
 
                 // Ricalcoliamo 'd' (profondità ridotta) solo se 'r' è cambiato
@@ -3008,10 +2973,9 @@ Depth Search::Worker::reduction(
 
     // 2. PETROSIAN (Strategical - Capablanca):
     // La fase di manovra/consolidamento.
-    // Passiamo a 104% (era 103%). Leggermente più aggressivi nel pruning strategico
-    // per compensare il costo delle posizioni tattiche/reattive.
+    // Torniamo a 103% per massima stabilità nei match lunghi.
     else if (isStrategical)
-        reductionScale = (reductionScale * 104) / 100;
+        reductionScale = (reductionScale * 103) / 100;
 
     // -----------------------------------------
 
