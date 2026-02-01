@@ -2116,7 +2116,7 @@ skipExtensionAndPruning:  // full threads search patch
             // Strategical style: more reduction in quiet phases
             else if (isStrategical && !ss->inCheck && depth > 6)
             {
-                r += 224;  // Added reduction by 0.25 plies
+                r += 256;  // Added reduction by 0.25 plies
             }
         }
 
@@ -2226,10 +2226,16 @@ skipExtensionAndPruning:  // full threads search patch
             // Do a full-depth search when reduced LMR search fails high
             if (value > alpha)
             {
-                const bool doDeeperSearch    = d < newDepth && value > bestValue + 50;
+                // --- SHASHIN CONVERSION TUNING (V10a) ---
+                // Nelle posizioni strategiche (pepite), abbassiamo la soglia per il re-search profondo.
+                // Se una mossa migliora di 40cp (invece di 50), merita di essere verificata a fondo.
+                // Questo aiuta a concretizzare vantaggi posizionali stabili.
+                int deeperMargin = isStrategical ? 40 : 50;
+
+                const bool doDeeperSearch    = d < newDepth && value > bestValue + deeperMargin;
                 const bool doShallowerSearch = value < bestValue + 9;
 
-                // Standard Stockfish re-search logic (Crystal Logic rimossa per stabilità)
+                // Logic standard con tuning dinamico
                 newDepth += doDeeperSearch - doShallowerSearch;
                 if (newDepth > d)
                     value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, newDepth, !cutNode);
