@@ -897,7 +897,7 @@ void Search::Worker::iterative_deepening() {
             {
                 // Tattico puro: finestra allargata del 12.5% (compromesso stabilità/tattica)
                 // Riduce i re-search inutili rispetto al 25% precedente.
-                delta = (delta * 11) / 10;
+                delta = (delta * 9) / 8;
             }
 
             // Sicurezza a basse profondità
@@ -2116,7 +2116,7 @@ skipExtensionAndPruning:  // full threads search patch
             // Strategical style: more reduction in quiet phases
             else if (isStrategical && !ss->inCheck && depth > 6)
             {
-                r += 256;  // Added reduction by 0.25 plies
+                r += 224;  // Added reduction by 0.25 plies
             }
         }
 
@@ -2200,9 +2200,9 @@ skipExtensionAndPruning:  // full threads search patch
                 // Caso 2: Petrosian/Strategical
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
                 {
-                    // Valore ottimizzato (+35) per garantire la conversione del vantaggio
+                    // Valore ottimizzato (+40) per garantire la conversione del vantaggio
                     // nei finali tecnici (le famose "pepite").
-                    r += 35;
+                    r += 40;
                 }
 
                 // Ricalcoliamo 'd' (profondità ridotta) solo se 'r' è cambiato
