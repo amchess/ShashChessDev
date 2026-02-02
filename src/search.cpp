@@ -1757,7 +1757,7 @@ Value Search::Worker::search(
                 // Strategical positions: more aggressive reduction
                 if (isStrategical)
                 {
-                    reduction = 2;  // More aggressive reduction in strategical positions
+                    reduction = 1;  // More aggressive reduction in strategical positions
                 }
                 // Tactical positions: preserve depth
                 else if (isAggressive || isTacticalReactive || isTactical || isSacrificial)
