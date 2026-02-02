@@ -895,12 +895,12 @@ void Search::Worker::iterative_deepening() {
             }
             else if (isAggressive || isHighTal)
             {
-                // Tattico puro: finestra allargata del 12.5% (compromesso stabilità/tattica)
-                // Riduce i re-search inutili rispetto al 25% precedente.
-                delta = (delta * 9) / 8;
+                // Tattico puro: finestra allargata del 25% (come main)
+                // Riduce i re-search inutili e stabilizza il match play.
+                delta = (delta * 5) / 4;
             }
 
-            // Sicurezza a basse profondità
+            // Sicurezzcd c:\git\1a a basse profondità
             if (rootDepth < 10)
                 delta = std::min(delta, 15);
 
