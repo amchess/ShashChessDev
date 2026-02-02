@@ -897,7 +897,7 @@ void Search::Worker::iterative_deepening() {
             {
                 // Tattico puro: finestra allargata del 25% (come main)
                 // Riduce i re-search inutili e stabilizza il match play.
-                delta = (delta * 5) / 4;
+                delta = (delta * 9) / 8;
             }
 
             // Sicurezzcd c:\git\1a a basse profondità
