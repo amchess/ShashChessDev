@@ -1818,11 +1818,10 @@ Value Search::Worker::search(
     {
         probCutBeta = beta + 235 - 63 * improving;
 
-        // --- DEFINIZIONE RISCHIO TATTICO (Main Logic) ---
-        // Importante per evitare ProbCut suicidi in posizioni complesse
+        // Aggiungiamo isTacticalReactive per coerenza con il Manager fixato.
         const bool tacticalRisk = staticState.kingDanger || staticState.pawnsNearPromotion
                                || isSacrificial || stmKingExposed || opponentKingExposed || isTal
-                               || isPetrosian;
+                               || isPetrosian || dynamicDerived.isTacticalReactive;
 
         // Aggiungiamo tacticalRisk alla condizione base
         const bool allowProbCut = !disableNMAndPC && !ss->inCheck && !tacticalRisk;
@@ -2097,12 +2096,12 @@ moves_loop:  // When in check, search starts here
             Value singularBeta  = ttData.value - (53 + 75 * (ss->ttPv && !PvNode)) * depth / 60;
             Depth singularDepth = newDepth / 2;
 
-            // --- MODIFICA SHASHIN: SNIPER EXTENSION ---
-            // Estendiamo la ricerca SOLO sui nodi singolari (tattici) in modalità aggressiva.
-            // Questo permette di vedere combinazioni profonde senza rallentare il resto.
-            if (isAggressive && staticState.kingDanger && depth > 12)
+            // --- MODIFICA SHASHIN: SNIPER EXTENSION (Optimized) ---
+            // Alziamo a depth > 14. Attiviamo il costo extra solo quando
+            // siamo abbastanza profondi da fare la differenza.
+            if (isAggressive && staticState.kingDanger && depth > 14)
             {
-                singularDepth += std::max(1, singularDepth / 6);  // +20% circa, più efficiente
+                singularDepth += std::max(1, singularDepth / 6);
             }
             // ------------------------------------------
 
@@ -2240,21 +2239,18 @@ skipExtensionAndPruning:  // full threads search patch
 
             if (depth > 5 && ss->ply > 1)
             {
-                // 1. TAL/AGGRESSIVE: USARE LA POTENZA DELLA MAIN
-                // Estensione forte (-80) per vedere tattiche profonde che la 149 (-60) perdeva.
+                // 1. TAL/AGGRESSIVE
                 if (isAggressive && (givesCheck || capture))
                 {
-                    r -= 80;
+                    r -= 60;
                 }
-                // 2. PETROSIAN/STRATEGICAL: COMPROMESSO
-                // Main usa +80 (veloce ma rischia cecità). 149 usa +40 (sicuro ma lento).
-                // Proviamo +60: Abbastanza veloce per il match, abbastanza attento per le pepite.
+                // 2. PETROSIAN/STRATEGICAL
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
                 {
                     r += 60;
                 }
 
-                // Ricalcoliamo 'd' (profondità ridotta) solo se 'r' è cambiato
+                // Ricalcoliamo 'd' solo se 'r' è cambiato
                 if (r != original_r)
                 {
                     d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
@@ -2275,8 +2271,10 @@ skipExtensionAndPruning:  // full threads search patch
             // Do a full-depth search when reduced LMR search fails high
             if (value > alpha)
             {
-                const bool doDeeperSearch    = d < newDepth && value > bestValue + 50;
-                const bool doShallowerSearch = value < bestValue + 9;
+                const bool doDeeperSearch = d < newDepth && value > bestValue + 50;
+                // FIX: disable doShallowerSearch to improve match stability
+                const bool doShallowerSearch =
+                  false;  // was: value < bestValue + 9;  <-- QUESTO È OK!
 
                 // Standard Stockfish re-search logic (Crystal Logic rimossa per stabilità)
                 newDepth += doDeeperSearch - doShallowerSearch;
@@ -2860,9 +2858,9 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                     // TACTICAL MODE:
                     // Invece di disattivare completamente il pruning (come nella Main = lento),
                     // o di usare la soglia standard (cieco ai sacrifici), "rilassiamo" la soglia.
-                    // Abbassiamo di 200 punti (sacrificio pezzo leggero).
-                    // Vediamo i sacrifici (-200), ma tagliamo ancora i blunder gravi (es. Donna per nulla).
-                    seeThreshold -= 200;
+                    // Abbassiamo di 130 punti (sacrificio pezzo leggero).
+                    // Vediamo i sacrifici (-130), ma tagliamo ancora i blunder gravi (es. Donna per nulla).
+                    seeThreshold -= 130;
                 }
 
                 // 4. Applicazione Pruning

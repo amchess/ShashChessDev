@@ -71,8 +71,10 @@ bool ShashinManager::allowStockfishProbCut() const {
 }
 
 bool ShashinManager::isTacticalReactive() const {
-    return anyOf(state.dynamicBase.currentRange, ShashinPosition::CAPABLANCA_PETROSIAN,
-                 ShashinPosition::LOW_PETROSIAN);
+    // FIX: Consideriamo 'reattiva' la Capablanca-Petrosian SOLO se c'è pericolo reale.
+    // Altrimenti è solo posizionale e non dobbiamo sprecare nodi tattici.
+    return isInRange(ShashinPosition::LOW_PETROSIAN)
+        || (isInRange(ShashinPosition::CAPABLANCA_PETROSIAN) && state.staticState.kingDanger);
 }
 
 bool ShashinManager::isTacticalDefensive() const {
