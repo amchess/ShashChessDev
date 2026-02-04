@@ -2271,12 +2271,11 @@ skipExtensionAndPruning:  // full threads search patch
             // Do a full-depth search when reduced LMR search fails high
             if (value > alpha)
             {
-                const bool doDeeperSearch = d < newDepth && value > bestValue + 50;
-                // FIX: disable doShallowerSearch to improve match stability
-                const bool doShallowerSearch =
-                  false;  // was: value < bestValue + 9;  <-- QUESTO È OK!
+                // Adjust full-depth search based on LMR results - if the result was
+                // good enough search deeper, if it was bad enough search shallower.
+                const bool doDeeperSearch    = d < newDepth && value > bestValue + 50;
+                const bool doShallowerSearch = value < bestValue + 9;
 
-                // Standard Stockfish re-search logic (Crystal Logic rimossa per stabilità)
                 newDepth += doDeeperSearch - doShallowerSearch;
                 if (newDepth > d)
                     value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, newDepth, !cutNode);
