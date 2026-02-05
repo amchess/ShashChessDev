@@ -1675,38 +1675,42 @@ Value Search::Worker::search(
     // The depth condition is important for mate finding.
     {
         // --- SHASHIN ADJUSTMENTS (TIGHTENED - HYBRID) ---
+        // In questa formula, margine PIU' GRANDE => pruning PIU' DIFFICILE => si cerca DI PIU'.
         int marginMultiplier = 100;  // Base Stockfish (100%)
 
-        // HYBRID: Tal (Aggressive) E Petrosian (Tactical Defensive)
-        // Richiedono precisione tattica: margine ridotto (90%) per non perdere colpi.
+        // Tal/Aggressive + Petrosian (difesa tattica):
+        // Vogliamo evitare pruning "ottimistici" basati sulla statica.
+        // Margine AUMENTATO (120%) => Pruning più difficile => Più profondità.
         if (isAggressive || isPetrosian)
         {
-            marginMultiplier = 90;
+            marginMultiplier = 120;
         }
         else if (isStrategical)
         {
-            // Capablanca (Strategic): Pruning efficiente (110%) come nel Main.
-            marginMultiplier = 110;
+            // Capablanca/Strategic:
+            // Vogliamo efficienza nelle posizioni tranquille.
+            // Margine RIDOTTO (80%) => Pruning più facile => Più velocità.
+            marginMultiplier = 80;
         }
 
-        // King Danger: fattore critico
-        if (staticState.kingDanger)
+        // King danger / promozioni / sacrifici:
+        // Il pruning statico è pericoloso qui. Serve un margine enorme per evitare tagli sbagliati.
+        if (!isFortressNode
+            && (staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial))
         {
-            marginMultiplier = std::min(marginMultiplier, 85);
+            marginMultiplier = std::max(marginMultiplier, 130);
         }
 
-        // Fortress: Logica Ibrida
+        // Fortress: qui invece vogliamo tagliare duro (linee sterili).
         if (isFortressNode)
         {
-            // Se Strategical (Match) -> 80 (Main, efficiente)
-            // Se Tactical/Solving -> 60 (149, sicuro per non rompere i test)
-            marginMultiplier = isStrategical ? 80 : 60;
+            marginMultiplier = 60;
         }
 
-        // Adjustment per mobilità (semplificato e sicuro)
+        // Mobilità: se siamo strategici ma con tanta mobilità, non stringiamo troppo la vite.
         if (isStrategical && legalMoveCount > 30)
         {
-            marginMultiplier = std::min(marginMultiplier + 5, 115);
+            marginMultiplier = std::min(marginMultiplier + 5, 100);
         }
         // --- END SHASHIN ADJUSTMENTS ---
 
@@ -2242,12 +2246,14 @@ skipExtensionAndPruning:  // full threads search patch
             // --- SHASHIN LMR ADJUSTMENT
             if (depth > 5 && ss->ply > 1)
             {
-                // 1. Aggressive: Riduzione minore (-60) per trovare tattiche
+                // 1. Aggressive (Tal):
+                // Aumentiamo ancora la profondità (-70 invece di -60).
+                // Serve a vedere quel "ply in più" nelle pepite tattiche.
                 if (isAggressive && (givesCheck || capture))
                 {
-                    r -= 60;
+                    r -= 70;
                 }
-                // 2. Strategical: Aumento riduzione moderato (+40)
+                // 2. Strategical (Capablanca):
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
                 {
                     r += 40;
