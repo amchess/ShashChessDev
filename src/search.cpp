@@ -1674,44 +1674,30 @@ Value Search::Worker::search(
     // Step 8. Futility pruning: child node
     // The depth condition is important for mate finding.
     {
-        // --- SHASHIN ADJUSTMENTS (TIGHTENED - HYBRID) ---
+        // --- SHASHIN ADJUSTMENTS (Solid & Saf) ---
         // In questa formula, margine PIU' GRANDE => pruning PIU' DIFFICILE => si cerca DI PIU'.
         int marginMultiplier = 100;  // Base Stockfish (100%)
 
-        // Tal/Aggressive + Petrosian (difesa tattica):
-        // Vogliamo evitare pruning "ottimistici" basati sulla statica.
-        // Margine AUMENTATO (120%) => Pruning più difficile => Più profondità.
+        // - Aggressive/Petrosian: pruning un filo più facile (90%) per ripulire l'albero (evita rumore in TT).
+        // - Strategical: pruning un filo più difficile (110%) per non tagliare conversioni posizionali.
         if (isAggressive || isPetrosian)
-        {
-            marginMultiplier = 120;
-        }
+            marginMultiplier = 90;
         else if (isStrategical)
-        {
-            // Capablanca/Strategic:
-            // Vogliamo efficienza nelle posizioni tranquille.
-            // Margine RIDOTTO (80%) => Pruning più facile => Più velocità.
-            marginMultiplier = 80;
-        }
+            marginMultiplier = 110;
 
-        // King danger / promozioni / sacrifici:
-        // Il pruning statico è pericoloso qui. Serve un margine enorme per evitare tagli sbagliati.
-        if (!isFortressNode
-            && (staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial))
-        {
-            marginMultiplier = std::max(marginMultiplier, 130);
-        }
+        // Nodi "caldi": qui NON vogliamo pruning statico aggressivo.
+        // (king danger / promozioni / sacrifici / alta Tal / tattica reattiva).
+        // FIX CRITICO: Usiamo std::max per ingrandire il margine (rendere il taglio più difficile).
+        if (!isFortressNode && nodeHot)
+            marginMultiplier = std::max(marginMultiplier, 120);
 
-        // Fortress: qui invece vogliamo tagliare duro (linee sterili).
+        // Fortress: qui invece vogliamo tagliare duro (linee spesso sterili/drawish).
         if (isFortressNode)
-        {
             marginMultiplier = 60;
-        }
 
         // Mobilità: se siamo strategici ma con tanta mobilità, non stringiamo troppo la vite.
         if (isStrategical && legalMoveCount > 30)
-        {
-            marginMultiplier = std::min(marginMultiplier + 5, 100);
-        }
+            marginMultiplier = std::min(marginMultiplier + 5, 115);
         // --- END SHASHIN ADJUSTMENTS ---
 
         auto futility_margin = [&](Depth d) {
@@ -2103,12 +2089,14 @@ moves_loop:  // When in check, search starts here
             Value singularBeta  = ttData.value - (53 + 75 * (ss->ttPv && !PvNode)) * depth / 60;
             Depth singularDepth = newDepth / 2;
 
-            // --- MODIFICA SHASHIN: SNIPER EXTENSION (Optimized) ---
-            // Alziamo a depth > 14. Attiviamo il costo extra solo quando
-            // siamo abbastanza profondi da fare la differenza.
-            if (isAggressive && staticState.kingDanger && depth > 14)
+            // --- MODIFICA SHASHIN: SNIPER EXTENSION (Mix v4 Boost, controllato) ---
+            // Obiettivo: recuperare suite senza sfondare il match.
+            // 1) Abbassiamo la soglia (14 -> 12) per entrare un po' prima.
+            // 2) Aggiungiamo isSacrificial per coprire Tal-style sacrifici.
+            // 3) Riduciamo leggermente l'impatto ( /7 ) per non rallentare troppo.
+            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 12)
             {
-                singularDepth += std::max(1, singularDepth / 6);
+                singularDepth += std::max(1, singularDepth / 7);
             }
             // ------------------------------------------
 
@@ -2247,11 +2235,9 @@ skipExtensionAndPruning:  // full threads search patch
             if (depth > 5 && ss->ply > 1)
             {
                 // 1. Aggressive (Tal):
-                // Aumentiamo ancora la profondità (-70 invece di -60).
-                // Serve a vedere quel "ply in più" nelle pepite tattiche.
                 if (isAggressive && (givesCheck || capture))
                 {
-                    r -= 70;
+                    r -= 60;
                 }
                 // 2. Strategical (Capablanca):
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
