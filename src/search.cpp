@@ -1678,10 +1678,15 @@ Value Search::Worker::search(
         // In questa formula, margine PIU' GRANDE => pruning PIU' DIFFICILE => si cerca DI PIU'.
         int marginMultiplier = 100;  // Base Stockfish (100%)
 
-        // Logica Mix v2 (Solida):
-        // 90% per Tal/Petrosian (pulizia albero), 110% per Strategical (efficienza).
+        // --- SHASHIN ADJUSTMENTS Unleashed ---
+        // 1. TAL/AGGRESSIVE: 100% (Standard).
+        // Non usiamo 90 (taglia soluzioni) né 120 (troppo sporco).
+        // Lasciamo che il motore esplori naturalmente la tattica.
         if (isAggressive || isPetrosian)
-            marginMultiplier = 90;
+            marginMultiplier = 100;
+
+        // 2. STRATEGICAL: 110% (Efficienza).
+        // Qui manteniamo il vantaggio di velocità potando le linee morte.
         else if (isStrategical)
             marginMultiplier = 110;
 
@@ -2088,11 +2093,10 @@ moves_loop:  // When in check, search starts here
             Value singularBeta  = ttData.value - (53 + 75 * (ss->ttPv && !PvNode)) * depth / 60;
             Depth singularDepth = newDepth / 2;
 
-            // --- MODIFICA SHASHIN: SNIPER EXTENSION ---
-            // 1) Depth > 12: Catturiamo tattiche che nascono prima.
-            // 2) Divisore / 6: Estendiamo un po' di più per risolvere le posizioni.
-            // 3) Includiamo isSacrificial.
-            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 12)
+            // --- MODIFICA SHASHIN: SNIPER EXTENSION (Deep Search) ---
+            // Abbassiamo a depth > 8. Dobbiamo catturare i semi tattici subito
+            // per replicare i 3.5M nodi della Patch 149.
+            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 8)
             {
                 singularDepth += std::max(1, singularDepth / 6);
             }
