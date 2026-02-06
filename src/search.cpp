@@ -1294,10 +1294,9 @@ Value Search::Worker::search(
     bool        isAggressive        = localShashinManager.isAggressive();
     bool        isTactical          = localShashinManager.isTactical();
     bool        isComplex           = localShashinManager.isComplexPosition();
-    // Include isTacticalReactive (che ora copre Capablanca-Petrosian) e HighTal.
+
     const bool nodeHot = staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial
-                      || stmKingExposed || opponentKingExposed || dynamicDerived.isHighTal
-                      || dynamicDerived.isTacticalReactive;
+                      || stmKingExposed || opponentKingExposed;
     uint8_t legalMoveCount = staticState.legalMoveCount;
     //from crystal shashin end
     if (!rootNode)
@@ -1674,28 +1673,27 @@ Value Search::Worker::search(
     // Step 8. Futility pruning: child node
     // The depth condition is important for mate finding.
     {
-        // --- SHASHIN ADJUSTMENTS (Solid & Saf) ---
+        // --- SHASHIN ADJUSTMENTS (Agile & Efficient) ---
         // In questa formula, margine PIU' GRANDE => pruning PIU' DIFFICILE => si cerca DI PIU'.
         int marginMultiplier = 100;  // Base Stockfish (100%)
 
-        // - Aggressive/Petrosian: pruning un filo più facile (90%) per ripulire l'albero (evita rumore in TT).
-        // - Strategical: pruning un filo più difficile (110%) per non tagliare conversioni posizionali.
+        // Logica Mix v2 (Solida):
+        // 90% per Tal/Petrosian (pulizia albero), 110% per Strategical (efficienza).
         if (isAggressive || isPetrosian)
             marginMultiplier = 90;
         else if (isStrategical)
             marginMultiplier = 110;
 
-        // Nodi "caldi": qui NON vogliamo pruning statico aggressivo.
-        // (king danger / promozioni / sacrifici / alta Tal / tattica reattiva).
-        // FIX CRITICO: Usiamo std::max per ingrandire il margine (rendere il taglio più difficile).
-        if (!isFortressNode && nodeHot)
-            marginMultiplier = std::max(marginMultiplier, 120);
+        if (staticState.kingDanger)
+        {
+            marginMultiplier = std::max(marginMultiplier, 130);
+        }
 
-        // Fortress: qui invece vogliamo tagliare duro (linee spesso sterili/drawish).
+        // Fortress
         if (isFortressNode)
             marginMultiplier = 60;
 
-        // Mobilità: se siamo strategici ma con tanta mobilità, non stringiamo troppo la vite.
+        // Adjustment per mobilità
         if (isStrategical && legalMoveCount > 30)
             marginMultiplier = std::min(marginMultiplier + 5, 115);
         // --- END SHASHIN ADJUSTMENTS ---
@@ -2089,14 +2087,13 @@ moves_loop:  // When in check, search starts here
             Value singularBeta  = ttData.value - (53 + 75 * (ss->ttPv && !PvNode)) * depth / 60;
             Depth singularDepth = newDepth / 2;
 
-            // --- MODIFICA SHASHIN: SNIPER EXTENSION (Mix v4 Boost, controllato) ---
-            // Obiettivo: recuperare suite senza sfondare il match.
-            // 1) Abbassiamo la soglia (14 -> 12) per entrare un po' prima.
-            // 2) Aggiungiamo isSacrificial per coprire Tal-style sacrifici.
-            // 3) Riduciamo leggermente l'impatto ( /7 ) per non rallentare troppo.
-            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 12)
+            // --- MODIFICA SHASHIN: SNIPER EXTENSION (Mix v5 - Aggressive) ---
+            // 1) Depth > 10: Catturiamo tattiche che nascono prima.
+            // 2) Divisore / 6: Estendiamo un po' di più per risolvere le posizioni.
+            // 3) Includiamo isSacrificial.
+            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 10)
             {
-                singularDepth += std::max(1, singularDepth / 7);
+                singularDepth += std::max(1, singularDepth / 6);
             }
             // ------------------------------------------
 
