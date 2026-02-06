@@ -1674,19 +1674,14 @@ Value Search::Worker::search(
     // Step 8. Futility pruning: child node
     // The depth condition is important for mate finding.
     {
-        // --- SHASHIN ADJUSTMENTS (Agile & Efficient) ---
-        // In questa formula, margine PIU' GRANDE => pruning PIU' DIFFICILE => si cerca DI PIU'.
-        int marginMultiplier = 100;  // Base Stockfish (100%)
+        // --- SHASHIN ADJUSTMENTS (Efficient & Sharp) ---
+        int marginMultiplier = 100;
 
-        // --- SHASHIN ADJUSTMENTS Unleashed ---
-        // 1. TAL/AGGRESSIVE: 100% (Standard).
-        // Non usiamo 90 (taglia soluzioni) né 120 (troppo sporco).
-        // Lasciamo che il motore esplori naturalmente la tattica.
+        // 90% per Tal/Petrosian: Tagliamo i rami morti per scendere in profondità su quelli vivi.
         if (isAggressive || isPetrosian)
-            marginMultiplier = 100;
-
-        // 2. STRATEGICAL: 110% (Efficienza).
-        // Qui manteniamo il vantaggio di velocità potando le linee morte.
+            marginMultiplier = 90;
+        
+        // Strategical: 110% (Prudenza posizionale)
         else if (isStrategical)
             marginMultiplier = 110;
 
@@ -2093,10 +2088,9 @@ moves_loop:  // When in check, search starts here
             Value singularBeta  = ttData.value - (53 + 75 * (ss->ttPv && !PvNode)) * depth / 60;
             Depth singularDepth = newDepth / 2;
 
-            // --- MODIFICA SHASHIN: SNIPER EXTENSION (Deep Search) ---
-            // Abbassiamo a depth > 8. Dobbiamo catturare i semi tattici subito
-            // per replicare i 3.5M nodi della Patch 149.
-            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 8)
+            // --- MODIFICA SHASHIN: SNIPER EXTENSION (Balanced) ---
+            // Torniamo a > 10. È abbastanza presto per le tattiche, ma abbastanza tardi per essere affidabile.
+            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 10)
             {
                 singularDepth += std::max(1, singularDepth / 6);
             }
