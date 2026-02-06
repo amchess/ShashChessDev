@@ -1680,7 +1680,7 @@ Value Search::Worker::search(
         // 90% per Tal/Petrosian: Tagliamo i rami morti per scendere in profondità su quelli vivi.
         if (isAggressive || isPetrosian)
             marginMultiplier = 90;
-        
+
         // Strategical: 110% (Prudenza posizionale)
         else if (isStrategical)
             marginMultiplier = 110;
@@ -2089,8 +2089,8 @@ moves_loop:  // When in check, search starts here
             Depth singularDepth = newDepth / 2;
 
             // --- MODIFICA SHASHIN: SNIPER EXTENSION (Balanced) ---
-            // Torniamo a > 10. È abbastanza presto per le tattiche, ma abbastanza tardi per essere affidabile.
-            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 10)
+            // > 11. È abbastanza presto per le tattiche, ma abbastanza tardi per essere affidabile.
+            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 11)
             {
                 singularDepth += std::max(1, singularDepth / 6);
             }
