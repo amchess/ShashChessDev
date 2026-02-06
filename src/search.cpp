@@ -1296,7 +1296,8 @@ Value Search::Worker::search(
     bool        isComplex           = localShashinManager.isComplexPosition();
 
     const bool nodeHot = staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial
-                      || stmKingExposed || opponentKingExposed;
+                      || stmKingExposed || opponentKingExposed || dynamicDerived.isHighTal;
+
     uint8_t legalMoveCount = staticState.legalMoveCount;
     //from crystal shashin end
     if (!rootNode)
@@ -2087,11 +2088,11 @@ moves_loop:  // When in check, search starts here
             Value singularBeta  = ttData.value - (53 + 75 * (ss->ttPv && !PvNode)) * depth / 60;
             Depth singularDepth = newDepth / 2;
 
-            // --- MODIFICA SHASHIN: SNIPER EXTENSION (Mix v5 - Aggressive) ---
-            // 1) Depth > 10: Catturiamo tattiche che nascono prima.
+            // --- MODIFICA SHASHIN: SNIPER EXTENSION ---
+            // 1) Depth > 12: Catturiamo tattiche che nascono prima.
             // 2) Divisore / 6: Estendiamo un po' di più per risolvere le posizioni.
             // 3) Includiamo isSacrificial.
-            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 10)
+            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 12)
             {
                 singularDepth += std::max(1, singularDepth / 6);
             }
