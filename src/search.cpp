@@ -1296,7 +1296,8 @@ Value Search::Worker::search(
     bool        isComplex           = localShashinManager.isComplexPosition();
 
     const bool nodeHot = staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial
-                      || stmKingExposed || opponentKingExposed || dynamicDerived.isHighTal;
+                      || stmKingExposed || opponentKingExposed || dynamicDerived.isHighTal
+                      || isTacticalReactive;
 
     uint8_t legalMoveCount = staticState.legalMoveCount;
     //from crystal shashin end
@@ -1674,7 +1675,7 @@ Value Search::Worker::search(
     // Step 8. Futility pruning: child node
     // The depth condition is important for mate finding.
     {
-        // --- SHASHIN ADJUSTMENTS (Efficient & Sharp) ---
+        // --- SHASHIN ADJUSTMENTS (Mix v11 - Controlled) ---
         int marginMultiplier = 100;
 
         // 90% per Tal/Petrosian: Tagliamo i rami morti per scendere in profondità su quelli vivi.
@@ -1685,9 +1686,18 @@ Value Search::Worker::search(
         else if (isStrategical)
             marginMultiplier = 110;
 
-        if (staticState.kingDanger)
+        // Nodi caldi: evitiamo futility pruning troppo ottimistico basato sulla statica.
+        // Manteniamo un cap moderato (110) per non far esplodere l'albero come nel v3.
+        if (!isFortressNode && nodeHot)
         {
-            marginMultiplier = std::max(marginMultiplier, 130);
+            marginMultiplier = std::max(marginMultiplier, 110);
+        }
+
+        // Pericolo re: un filo più prudente, ma senza arrivare a 130 (che sporcava la TT).
+        // Cap a 120 invece di 130.
+        if (!isFortressNode && staticState.kingDanger)
+        {
+            marginMultiplier = std::max(marginMultiplier, 120);
         }
 
         // Fortress
@@ -1706,8 +1716,6 @@ Value Search::Worker::search(
             futilityMult = (futilityMult * marginMultiplier) / 100;
 
             // FORMULA STOCKFISH ORIGINALE (Ripristinata)
-            // Rimossi i termini custom 'statScore' e 'legalMoveCount' che
-            // interferivano con il tuning di Stockfish.
             return futilityMult * d
                  - (2474 * improving + 331 * opponentWorsening) * futilityMult / 1024
                  + std::abs(correctionValue) / 174665;
@@ -1717,7 +1725,6 @@ Value Search::Worker::search(
             && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval))
         {
             // Ritorno al valore standard di Stockfish.
-            // Rimuoviamo le variazioni (3*beta+eval)/4 per stabilità.
             return (2 * beta + eval) / 3;
         }
     }
@@ -2088,11 +2095,11 @@ moves_loop:  // When in check, search starts here
             Value singularBeta  = ttData.value - (53 + 75 * (ss->ttPv && !PvNode)) * depth / 60;
             Depth singularDepth = newDepth / 2;
 
-            // --- MODIFICA SHASHIN: SNIPER EXTENSION (Balanced) ---
-            // > 11. È abbastanza presto per le tattiche, ma abbastanza tardi per essere affidabile.
-            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 11)
+            // --- MODIFICA SHASHIN: SNIPER EXTENSION (controllato) ---
+            // > 12. È abbastanza presto per le tattiche, ma abbastanza tardi per essere affidabile.
+            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 12)
             {
-                singularDepth += std::max(1, singularDepth / 6);
+                singularDepth += std::max(1, singularDepth / 7);
             }
             // ------------------------------------------
 
@@ -2233,7 +2240,7 @@ skipExtensionAndPruning:  // full threads search patch
                 // 1. Aggressive (Tal):
                 if (isAggressive && (givesCheck || capture))
                 {
-                    r -= 60;
+                    r -= 40;
                 }
                 // 2. Strategical (Capablanca):
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
