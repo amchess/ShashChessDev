@@ -1295,10 +1295,12 @@ Value Search::Worker::search(
     bool        isTactical          = localShashinManager.isTactical();
     bool        isComplex           = localShashinManager.isComplexPosition();
 
-    // Definiamo i nodi "caldi" per proteggere le pepite tattiche dal pruning eccessivo.
-    const bool nodeHot = staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial
-                      || stmKingExposed || opponentKingExposed || dynamicDerived.isHighTal
-                      || isTacticalReactive;
+    // --- SMART NODE HOT ---
+    // nodeHot = pericolo "reale". HighTal e Reactive contano solo se c'è sangue sulla scacchiera.
+    const bool nodeHot =
+      staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial || stmKingExposed
+      || opponentKingExposed || (dynamicDerived.isHighTal && staticState.kingDanger)
+      || (isTacticalReactive && (staticState.kingDanger || stmKingExposed || opponentKingExposed));
 
     uint8_t legalMoveCount = staticState.legalMoveCount;
     //from crystal shashin end
@@ -1687,19 +1689,14 @@ Value Search::Worker::search(
         else if (isStrategical)
             marginMultiplier = 110;
 
-        // Nodi caldi: evitiamo futility pruning troppo ottimistico basato sulla statica.
+        // --- PULIZIA ALBERO ---
+        // Rimosso il blocco "if (kingDanger) margin=120/130" che causava l'esplosione dei nodi.
+
+        // Manteniamo solo la protezione NodeHot "Smart".
+        // Se il nodo è davvero caldo (pericolo reale), garantiamo margine 110.
         if (!isFortressNode && nodeHot)
         {
             marginMultiplier = std::max(marginMultiplier, 110);
-        }
-
-        // King danger: non sparare subito a 120 (rischio "spazzatura" / TT rumorosa).
-        // Alziamo a 120 SOLO se ci sono segnali tattici "reali", non kingDanger marginale.
-        if (!isFortressNode && staticState.kingDanger
-            && (stmKingExposed || opponentKingExposed || isSacrificial
-                || staticState.pawnsNearPromotion))
-        {
-            marginMultiplier = std::max(marginMultiplier, 120);
         }
 
         // Fortress
@@ -2097,7 +2094,8 @@ moves_loop:  // When in check, search starts here
             Value singularBeta  = ttData.value - (53 + 75 * (ss->ttPv && !PvNode)) * depth / 60;
             Depth singularDepth = newDepth / 2;
 
-            // --- MODIFICA SHASHIN: SNIPER EXTENSION ---
+            // --- MODIFICA SHASHIN: SNIPER EXTENSION Aggressive 149) ---
+            // Recuperiamo la potenza: depth > 10 e divisore / 6.
             if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 10)
             {
                 singularDepth += std::max(1, singularDepth / 6);
