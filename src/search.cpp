@@ -1295,6 +1295,7 @@ Value Search::Worker::search(
     bool        isTactical          = localShashinManager.isTactical();
     bool        isComplex           = localShashinManager.isComplexPosition();
 
+    // Definiamo i nodi "caldi" per proteggere le pepite tattiche dal pruning eccessivo.
     const bool nodeHot = staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial
                       || stmKingExposed || opponentKingExposed || dynamicDerived.isHighTal
                       || isTacticalReactive;
@@ -1687,15 +1688,16 @@ Value Search::Worker::search(
             marginMultiplier = 110;
 
         // Nodi caldi: evitiamo futility pruning troppo ottimistico basato sulla statica.
-        // Manteniamo un cap moderato (110) per non far esplodere l'albero come nel v3.
         if (!isFortressNode && nodeHot)
         {
             marginMultiplier = std::max(marginMultiplier, 110);
         }
 
-        // Pericolo re: un filo più prudente, ma senza arrivare a 130 (che sporcava la TT).
-        // Cap a 120 invece di 130.
-        if (!isFortressNode && staticState.kingDanger)
+        // King danger: non sparare subito a 120 (rischio "spazzatura" / TT rumorosa).
+        // Alziamo a 120 SOLO se ci sono segnali tattici "reali", non kingDanger marginale.
+        if (!isFortressNode && staticState.kingDanger
+            && (stmKingExposed || opponentKingExposed || isSacrificial
+                || staticState.pawnsNearPromotion))
         {
             marginMultiplier = std::max(marginMultiplier, 120);
         }
@@ -2095,11 +2097,10 @@ moves_loop:  // When in check, search starts here
             Value singularBeta  = ttData.value - (53 + 75 * (ss->ttPv && !PvNode)) * depth / 60;
             Depth singularDepth = newDepth / 2;
 
-            // --- MODIFICA SHASHIN: SNIPER EXTENSION (controllato) ---
-            // > 12. È abbastanza presto per le tattiche, ma abbastanza tardi per essere affidabile.
-            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 12)
+            // --- MODIFICA SHASHIN: SNIPER EXTENSION ---
+            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 10)
             {
-                singularDepth += std::max(1, singularDepth / 7);
+                singularDepth += std::max(1, singularDepth / 6);
             }
             // ------------------------------------------
 
