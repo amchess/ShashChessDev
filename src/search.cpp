@@ -1681,10 +1681,11 @@ Value Search::Worker::search(
         // --- SHASHIN MIX v13: DRACONIAN PRUNING ---
         int marginMultiplier = 100;
 
-        // 1. Taglio Draconiano (85%):
-        // Tal e Petrosian devono potare duro per finanziare lo Sniper.
+        // 1. Taglio Bilanciato (90%):
+        // L'85% era troppo severo (132 solved). Torniamo a 90% per lasciar passare le tattiche,
+        // ma ci affidiamo allo Sniper anticipato (Step 15) per risolverle.
         if (isAggressive || isPetrosian)
-            marginMultiplier = 85;
+            marginMultiplier = 90;
 
         // 2. Strategical Standard (100%):
         // Il 110% era troppo permissivo. Torniamo allo standard.
