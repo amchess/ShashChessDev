@@ -2098,12 +2098,10 @@ moves_loop:  // When in check, search starts here
             Value singularBeta  = ttData.value - (53 + 75 * (ss->ttPv && !PvNode)) * depth / 60;
             Depth singularDepth = newDepth / 2;
 
-            // --- MODIFICA SHASHIN: SNIPER EXTENSION (Mix v13.1 - Smart Early Entry) ---
-            // Sfruttiamo i nodi risparmiati nello Step 8 per entrare prima (Depth > 9).
-            // Filtro "nodeHot" obbligatorio per non sprecare risorse su falsi allarmi.
-            if ((isAggressive || isSacrificial) && staticState.kingDanger
-                && nodeHot     // <--- FILTRO FONDAMENTALE
-                && depth > 9)  // <--- INGRESSO ANTICIPATO (era 10)
+            // --- MODIFICA SHASHIN: SNIPER EXTENSION (Mix v15 - Unshackled) ---
+            // Rimossa la museruola "nodeHot" che ci costava soluzioni (134 vs 137).
+            // Torniamo a Depth > 10 per stabilità, ma senza filtri.
+            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 10)
             {
                 singularDepth += std::max(1, singularDepth / 6);
             }
@@ -2243,10 +2241,12 @@ skipExtensionAndPruning:  // full threads search patch
             // --- SHASHIN LMR ADJUSTMENT
             if (depth > 5 && ss->ply > 1)
             {
-                // 1. Aggressive (Tal):
+                // 1. Aggressive (Tal) - TURBO MODE:
+                // Albero pulito dallo Step 8 (90%) -> Possiamo spingere la profondità (-55).
+                // Questo è il fattore chiave per superare quota 137.
                 if (isAggressive && (givesCheck || capture))
                 {
-                    r -= 40;
+                    r -= 55;
                 }
                 // 2. Strategical (Capablanca):
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
