@@ -1681,11 +1681,12 @@ Value Search::Worker::search(
         // --- SHASHIN MIX v13: DRACONIAN PRUNING ---
         int marginMultiplier = 100;
 
-        // 1. Taglio Bilanciato (90%):
-        // L'85% era troppo severo (132 solved). Torniamo a 90% per lasciar passare le tattiche,
-        // ma ci affidiamo allo Sniper anticipato (Step 15) per risolverle.
+        // --- MIX v16: GOLDILOCKS PRUNING (88%) ---
+        // 90% era troppo largo (ha perso il match 43-60).
+        // 85% era troppo stretto (pochi solved).
+        // 88% è il punto di equilibrio per recuperare Elo e velocità.
         if (isAggressive || isPetrosian)
-            marginMultiplier = 90;
+            marginMultiplier = 88;
 
         // 2. Strategical Standard (100%):
         // Il 110% era troppo permissivo. Torniamo allo standard.
