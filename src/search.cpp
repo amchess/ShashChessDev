@@ -1678,22 +1678,25 @@ Value Search::Worker::search(
     // Step 8. Futility pruning: child node
     // The depth condition is important for mate finding.
     {
-        // --- SHASHIN ADJUSTMENTS (Mix v11 - Controlled) ---
+        // --- SHASHIN MIX v13: DRACONIAN PRUNING ---
         int marginMultiplier = 100;
 
-        // 90% per Tal/Petrosian: Tagliamo i rami morti per scendere in profondità su quelli vivi.
+        // 1. Taglio Draconiano (85%):
+        // Tal e Petrosian devono potare duro per finanziare lo Sniper.
         if (isAggressive || isPetrosian)
-            marginMultiplier = 90;
+            marginMultiplier = 85;
 
-        // Strategical: 110% (Prudenza posizionale)
+        // 2. Strategical Standard (100%):
+        // Il 110% era troppo permissivo. Torniamo allo standard.
         else if (isStrategical)
-            marginMultiplier = 110;
+            marginMultiplier = 100;
 
-        // --- PULIZIA ALBERO ---
-        // Rimosso il blocco "if (kingDanger) margin=120/130" che causava l'esplosione dei nodi.
+        // 3. Default più stretto
+        else
+            marginMultiplier = 95;
 
-        // Manteniamo solo la protezione NodeHot "Smart".
-        // Se il nodo è davvero caldo (pericolo reale), garantiamo margine 110.
+        // --- PROTEZIONE CRITICA (SALVAVITA) ---
+        // Se è una pepita (nodeHot), annulliamo il taglio e garantiamo 110.
         if (!isFortressNode && nodeHot)
         {
             marginMultiplier = std::max(marginMultiplier, 110);
@@ -2094,9 +2097,12 @@ moves_loop:  // When in check, search starts here
             Value singularBeta  = ttData.value - (53 + 75 * (ss->ttPv && !PvNode)) * depth / 60;
             Depth singularDepth = newDepth / 2;
 
-            // --- MODIFICA SHASHIN: SNIPER EXTENSION Aggressive 149) ---
-            // Recuperiamo la potenza: depth > 10 e divisore / 6.
-            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 10)
+            // --- MODIFICA SHASHIN: SNIPER EXTENSION (Mix v13.1 - Smart Early Entry) ---
+            // Sfruttiamo i nodi risparmiati nello Step 8 per entrare prima (Depth > 9).
+            // Filtro "nodeHot" obbligatorio per non sprecare risorse su falsi allarmi.
+            if ((isAggressive || isSacrificial) && staticState.kingDanger
+                && nodeHot     // <--- FILTRO FONDAMENTALE
+                && depth > 9)  // <--- INGRESSO ANTICIPATO (era 10)
             {
                 singularDepth += std::max(1, singularDepth / 6);
             }
