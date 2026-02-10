@@ -2242,12 +2242,14 @@ skipExtensionAndPruning:  // full threads search patch
             // --- SHASHIN LMR ADJUSTMENT
             if (depth > 5 && ss->ply > 1)
             {
-                // 1. Aggressive (Tal) - TURBO MODE:
-                // Albero pulito dallo Step 8 (90%) -> Possiamo spingere la profondità (-55).
-                // Questo è il fattore chiave per superare quota 137.
+                // --- SMART TURBO LMR ---
+                // Moduliamo la riduzione in base al pericolo "Totale" (nodeHot).
                 if (isAggressive && (givesCheck || capture))
                 {
-                    r -= 55;
+                    // Se il nodo è caldo (KingDanger, Promozione o Sacrificio),
+                    // spingiamo al massimo (-60) per il KO.
+                    // Altrimenti (cattura banale), stiamo sul sicuro (-45) per salvare Elo.
+                    r -= (nodeHot ? 60 : 45);
                 }
                 // 2. Strategical (Capablanca):
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
