@@ -2242,14 +2242,11 @@ skipExtensionAndPruning:  // full threads search patch
             // --- SHASHIN LMR ADJUSTMENT
             if (depth > 5 && ss->ply > 1)
             {
-                // --- SMART TURBO LMR ---
-                // Moduliamo la riduzione in base al pericolo "Totale" (nodeHot).
+                // --- MAX POWER TURBO ---
+                // L'88% allo Step 8 ci proteggerà dai danni posizionali.
                 if (isAggressive && (givesCheck || capture))
                 {
-                    // Se il nodo è caldo (KingDanger, Promozione o Sacrificio),
-                    // spingiamo al massimo (-60) per il KO.
-                    // Altrimenti (cattura banale), stiamo sul sicuro (-45) per salvare Elo.
-                    r -= (nodeHot ? 60 : 45);
+                    r -= 60;
                 }
                 // 2. Strategical (Capablanca):
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
