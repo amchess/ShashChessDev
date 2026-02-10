@@ -1686,7 +1686,7 @@ Value Search::Worker::search(
         // L'86% (133 solved) ha dimostrato che scendere sotto l'88 è instabile.
         // Cerchiamo le soluzioni extra potenziando lo Sniper (Step 15).
         if (isAggressive || isPetrosian)
-            marginMultiplier = 88;
+            marginMultiplier = 89;
 
         // 2. Strategical Standard (100%):
         // Il 110% era troppo permissivo. Torniamo allo standard.
