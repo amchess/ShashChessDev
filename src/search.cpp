@@ -2099,10 +2099,11 @@ moves_loop:  // When in check, search starts here
             Value singularBeta  = ttData.value - (53 + 75 * (ss->ttPv && !PvNode)) * depth / 60;
             Depth singularDepth = newDepth / 2;
 
-            // --- MODIFICA SHASHIN: SNIPER EXTENSION (Mix v15 - Unshackled) ---
-            // Rimossa la museruola "nodeHot" che ci costava soluzioni (134 vs 137).
-            // Torniamo a Depth > 10 per stabilità, ma senza filtri.
-            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 10)
+            // --- EARLY SNIPER ---
+            // Anticipiamo l'ingresso a Depth > 9 per catturare le tattiche prima.
+            // Fondamentale ora che usiamo il pruning all'88% (più largo).
+            // Manteniamo SENZA filtro nodeHot (Unshackled).
+            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 9)
             {
                 singularDepth += std::max(1, singularDepth / 6);
             }
@@ -2242,11 +2243,10 @@ skipExtensionAndPruning:  // full threads search patch
             // --- SHASHIN LMR ADJUSTMENT
             if (depth > 5 && ss->ply > 1)
             {
-                // --- MAX POWER TURBO ---
-                // L'88% allo Step 8 ci proteggerà dai danni posizionali.
+                // --- TURBO STANDARD ---
                 if (isAggressive && (givesCheck || capture))
                 {
-                    r -= 60;
+                    r -= 55;
                 }
                 // 2. Strategical (Capablanca):
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
