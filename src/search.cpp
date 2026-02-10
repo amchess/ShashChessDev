@@ -1681,12 +1681,12 @@ Value Search::Worker::search(
         // --- SHASHIN MIX v13: DRACONIAN PRUNING ---
         int marginMultiplier = 100;
 
-        // --- MIX v16: GOLDILOCKS PRUNING (88%) ---
-        // 90% era troppo largo (ha perso il match 43-60).
-        // 85% era troppo stretto (pochi solved).
-        // 88% è il punto di equilibrio per recuperare Elo e velocità.
+        // --- MIX v20: PRECISION TUNING (86%) ---
+        // 88% (v16) = 138 solved, Match Patta.
+        // 85% (v15) = 141 solved, Match Perso.
+        // 86% è il tentativo di catturare le 140 solved mantenendo la tenuta.
         if (isAggressive || isPetrosian)
-            marginMultiplier = 88;
+            marginMultiplier = 86;
 
         // 2. Strategical Standard (100%):
         // Il 110% era troppo permissivo. Torniamo allo standard.
@@ -2099,11 +2099,10 @@ moves_loop:  // When in check, search starts here
             Value singularBeta  = ttData.value - (53 + 75 * (ss->ttPv && !PvNode)) * depth / 60;
             Depth singularDepth = newDepth / 2;
 
-            // --- EARLY SNIPER ---
-            // Anticipiamo l'ingresso a Depth > 9 per catturare le tattiche prima.
-            // Fondamentale ora che usiamo il pruning all'88% (più largo).
-            // Manteniamo SENZA filtro nodeHot (Unshackled).
-            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 9)
+            // --- MIX v20: SNIPER STANDARD ---
+            // Il tentativo a Depth > 9 (135 solved) ha generato troppo overhead.
+            // Torniamo a > 10 che ci aveva dato i record (138 e 141).
+            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 10)
             {
                 singularDepth += std::max(1, singularDepth / 6);
             }
