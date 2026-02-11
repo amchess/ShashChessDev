@@ -1855,11 +1855,13 @@ Value Search::Worker::search(
                 {
                     // Adjust depth based on Shashin style
                     if (isStrategical)
+                    {
                         // Strategical generico: un po' più aggressivo (-1)
                         probCutDepth = std::clamp(probCutDepth - 1, 0, depth);
-                    else if (isAggressive)
-                        // Tactical: più prudente (+1) per non prendere abbagli
-                        probCutDepth = std::clamp(probCutDepth + 1, 0, depth);
+                    }
+                    // RIMOSSO il blocco su isAggressive (+1).
+                    // Ora il ProbCut lavora a piena velocità anche in attacco.
+                    // Lo Sniper Elite (Step 15) correggerà eventuali errori.
                 }
 
                 while ((move = mp.next_move()) != Move::none())
@@ -2099,15 +2101,13 @@ moves_loop:  // When in check, search starts here
             Value singularBeta  = ttData.value - (53 + 75 * (ss->ttPv && !PvNode)) * depth / 60;
             Depth singularDepth = newDepth / 2;
 
-            // --- MIX v24: HYBRID SNIPER ---
-            // Il divisore /4 (Elite) costa troppo in match (-67 sconfitte).
-            // Il divisore /6 (Standard) è troppo cieco (138 solved).
-            // SOLUZIONE: Usiamo /4 SOLO se c'è un sacrificio reale (isSacrificial).
-            // Altrimenti usiamo /6 per risparmiare tempo e nodi.
+            // --- MIX v25: SNIPER ELITE (RESTORED) ---
+            // Torniamo alla configurazione della v21 che faceva 149 solved.
+            // Rimuoviamo la logica ibrida che rallentava la ricerca (3278ms).
+            // Lo Sniper /4 "taglia prima" provando la singolarità.
             if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 10)
             {
-                int sniperDivisor = isSacrificial ? 4 : 6;
-                singularDepth += std::max(1, singularDepth / sniperDivisor);
+                singularDepth += std::max(1, singularDepth / 4);
             }
             // ------------------------------------------
 
