@@ -1681,12 +1681,12 @@ Value Search::Worker::search(
         // --- SHASHIN MIX v13: DRACONIAN PRUNING ---
         int marginMultiplier = 100;
 
-        // --- SOLID BASE (88%) ---
-        // Torniamo all'88% della v16 (138 solved / Match Patta).
-        // L'86% (133 solved) ha dimostrato che scendere sotto l'88 è instabile.
-        // Cerchiamo le soluzioni extra potenziando lo Sniper (Step 15).
+        // --- MIX v23: SNIPER PROTECTED (87%) ---
+        // L'89% (v22) ha perso troppe partite (-64). Troppo dispersivo.
+        // Torniamo a stringere (87%) per solidità e velocità.
+        // Ci affidiamo allo Sniper Elite (/4) dello Step 15 per non perdere la tattica.
         if (isAggressive || isPetrosian)
-            marginMultiplier = 89;
+            marginMultiplier = 87;
 
         // 2. Strategical Standard (100%):
         // Il 110% era troppo permissivo. Torniamo allo standard.
