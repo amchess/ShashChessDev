@@ -1681,12 +1681,12 @@ Value Search::Worker::search(
         // --- SHASHIN MIX v13: DRACONIAN PRUNING ---
         int marginMultiplier = 100;
 
-        // --- MIX v23: SNIPER PROTECTED (87%) ---
-        // L'89% (v22) ha perso troppe partite (-64). Troppo dispersivo.
-        // Torniamo a stringere (87%) per solidità e velocità.
-        // Ci affidiamo allo Sniper Elite (/4) dello Step 15 per non perdere la tattica.
+        // --- MIX v24: HYBRID STABILITY (88%) ---
+        // Torniamo all'unico valore che ha garantito il pareggio (v16) e 149 solved (v21).
+        // L'87% e l'89% hanno fallito. L'88% è la costante magica.
+        // La differenza la farà lo Sniper Ibrido allo Step 15.
         if (isAggressive || isPetrosian)
-            marginMultiplier = 87;
+            marginMultiplier = 88;
 
         // 2. Strategical Standard (100%):
         // Il 110% era troppo permissivo. Torniamo allo standard.
@@ -2099,14 +2099,15 @@ moves_loop:  // When in check, search starts here
             Value singularBeta  = ttData.value - (53 + 75 * (ss->ttPv && !PvNode)) * depth / 60;
             Depth singularDepth = newDepth / 2;
 
-            // --- SNIPER ELITE (Boosted Extension) ---
-            // Base: Depth > 10 (Stabile).
-            // Boost: Divisore /4 invece di /6.
-            // Estendiamo più aggressivamente le linee di attacco forzate
-            // per trovare le 3 posizioni mancanti senza toccare il pruning globale.
+            // --- MIX v24: HYBRID SNIPER ---
+            // Il divisore /4 (Elite) costa troppo in match (-67 sconfitte).
+            // Il divisore /6 (Standard) è troppo cieco (138 solved).
+            // SOLUZIONE: Usiamo /4 SOLO se c'è un sacrificio reale (isSacrificial).
+            // Altrimenti usiamo /6 per risparmiare tempo e nodi.
             if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 10)
             {
-                singularDepth += std::max(1, singularDepth / 4);
+                int sniperDivisor = isSacrificial ? 4 : 6;
+                singularDepth += std::max(1, singularDepth / sniperDivisor);
             }
             // ------------------------------------------
 
