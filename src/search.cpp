@@ -2021,12 +2021,14 @@ moves_loop:  // When in check, search starts here
                     int extraReduction = (depth > 12 && !staticState.pawnsNearPromotion) ? 2 : 1;
                     moveCountThreshold -= extraReduction;
                 }
-                // --- MIX v27: TACTICAL COMPLETE ---
-                // Abbiamo visto che la v26 (48%) perdeva perché cieca agli attacchi senza promozione.
-                // Ora allarghiamo se c'è Promozione OPPURE KingDanger.
-                // Questo recupera le 149 posizioni risolte senza appesantire tutto il resto.
+                // --- MIX v28: SMART AGGRESSION ---
+                // La v27 (KingDanger su tutto) ha causato esplosione dell'albero (141 solved, 46% win).
+                // La v26 (Solo Promozione) era cieca (142 solved).
+                // SOLUZIONE: Estendiamo sul Re SOLO se c'è odore di sangue (isSacrificial).
+                // Questo filtra i "falsi allarmi" e recupera la velocità e la precisione.
                 else if ((isAggressive || isPetrosian)
-                         && (staticState.pawnsNearPromotion || staticState.kingDanger))
+                         && (staticState.pawnsNearPromotion
+                             || (staticState.kingDanger && isSacrificial)))
                 {
                     moveCountThreshold += 2;
                 }
