@@ -2021,11 +2021,13 @@ moves_loop:  // When in check, search starts here
                     int extraReduction = (depth > 12 && !staticState.pawnsNearPromotion) ? 2 : 1;
                     moveCountThreshold -= extraReduction;
                 }
-                else if ((isAggressive || isPetrosian) && staticState.pawnsNearPromotion)
+                // --- MIX v27: TACTICAL COMPLETE ---
+                // Abbiamo visto che la v26 (48%) perdeva perché cieca agli attacchi senza promozione.
+                // Ora allarghiamo se c'è Promozione OPPURE KingDanger.
+                // Questo recupera le 149 posizioni risolte senza appesantire tutto il resto.
+                else if ((isAggressive || isPetrosian)
+                         && (staticState.pawnsNearPromotion || staticState.kingDanger))
                 {
-                    // TATTICI: Allarghiamo SOLO se c'è pericolo di promozione (+2).
-                    // Togliamo il +1 generico che appesantiva il motore inutilmente.
-                    // Lo Sniper Elite farà il resto sulle linee critiche.
                     moveCountThreshold += 2;
                 }
             }
