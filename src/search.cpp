@@ -1681,14 +1681,15 @@ Value Search::Worker::search(
         // --- SHASHIN MIX v13: DRACONIAN PRUNING ---
         int marginMultiplier = 100;
 
-        // --- MIX v29: SURGICAL PRUNING ---
-        // Se c'è pericolo per il Re, NON possiamo permetterci di potare all'88%.
-        // Rischiamo di tagliare la combinazione vincente (come successo nella v28: 139 solved).
-        // SOLUZIONE: Se KingDanger -> 100% (Sicurezza). Altrimenti -> 88% (Velocità).
+        // --- MIX v31: POLARIZED PRUNING ---
+        // La v30 era troppo lenta. La v29 (100%/88%) era cieca (131 solved).
+        // NUOVA STRATEGIA:
+        // 1. DANGER: 115% (Ultra-Safe). Non potiamo quasi nulla se il Re rischia. Recupera i puzzle.
+        // 2. SAFE: 85% (Ultra-Fast). Se non c'è pericolo, tagliamo aggressivamente per guadagnare tempo.
         if ((isAggressive || isPetrosian) && staticState.kingDanger)
-            marginMultiplier = 100;
+            marginMultiplier = 115;
         else if (isAggressive || isPetrosian)
-            marginMultiplier = 88;
+            marginMultiplier = 85;
 
         // 2. Strategical Standard (100%):
         // Il 110% era troppo permissivo. Torniamo allo standard.
@@ -2023,12 +2024,11 @@ moves_loop:  // When in check, search starts here
                     int extraReduction = (depth > 12 && !staticState.pawnsNearPromotion) ? 2 : 1;
                     moveCountThreshold -= extraReduction;
                 }
-                // --- MIX v30: PERFECT STORM ---
-                // Manteniamo lo Step 8 dinamico (v29) che ci ha dato il +1 Elo.
-                // Reintroduciamo l'estensione sui sacrifici (v28) per recuperare le 149 posizioni.
-                // Ora funzionerà perché lo Step 8 non poterà più le varianti estese qui.
-                else if ((isAggressive || isPetrosian) 
-                         && (staticState.pawnsNearPromotion || (staticState.kingDanger && isSacrificial)))
+                // --- MIX v31: CLEAN RESTORE ---
+                // La v30 (Extension) è crollata al 42%. Rimuoviamo immediatamente l'estensione su KingDanger.
+                // Torniamo alla logica v29 che ha vinto il match.
+                // La gestione tattica sarà affidata ESCLUSIVAMENTE allo Step 8 Polarizzato.
+                else if ((isAggressive || isPetrosian) && staticState.pawnsNearPromotion)
                 {
                     moveCountThreshold += 2;
                 }
