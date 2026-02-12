@@ -1681,11 +1681,13 @@ Value Search::Worker::search(
         // --- SHASHIN MIX v13: DRACONIAN PRUNING ---
         int marginMultiplier = 100;
 
-        // --- MIX v24: HYBRID STABILITY (88%) ---
-        // Torniamo all'unico valore che ha garantito il pareggio (v16) e 149 solved (v21).
-        // L'87% e l'89% hanno fallito. L'88% è la costante magica.
-        // La differenza la farà lo Sniper Ibrido allo Step 15.
-        if (isAggressive || isPetrosian)
+        // --- MIX v29: SURGICAL PRUNING ---
+        // Se c'è pericolo per il Re, NON possiamo permetterci di potare all'88%.
+        // Rischiamo di tagliare la combinazione vincente (come successo nella v28: 139 solved).
+        // SOLUZIONE: Se KingDanger -> 100% (Sicurezza). Altrimenti -> 88% (Velocità).
+        if ((isAggressive || isPetrosian) && staticState.kingDanger)
+            marginMultiplier = 100;
+        else if (isAggressive || isPetrosian)
             marginMultiplier = 88;
 
         // 2. Strategical Standard (100%):
@@ -2021,14 +2023,11 @@ moves_loop:  // When in check, search starts here
                     int extraReduction = (depth > 12 && !staticState.pawnsNearPromotion) ? 2 : 1;
                     moveCountThreshold -= extraReduction;
                 }
-                // --- MIX v28: SMART AGGRESSION ---
-                // La v27 (KingDanger su tutto) ha causato esplosione dell'albero (141 solved, 46% win).
-                // La v26 (Solo Promozione) era cieca (142 solved).
-                // SOLUZIONE: Estendiamo sul Re SOLO se c'è odore di sangue (isSacrificial).
-                // Questo filtra i "falsi allarmi" e recupera la velocità e la precisione.
-                else if ((isAggressive || isPetrosian)
-                         && (staticState.pawnsNearPromotion
-                             || (staticState.kingDanger && isSacrificial)))
+                // --- MIX v29: CLEAN SPEED ---
+                // Rimuoviamo la logica KingDanger da qui (che causava o cecità o esplosione).
+                // La gestione tattica è delegata allo Step 8 (Pruning ridotto).
+                // Qui allarghiamo SOLO per le promozioni, per mantenere i 3073ms.
+                else if ((isAggressive || isPetrosian) && staticState.pawnsNearPromotion)
                 {
                     moveCountThreshold += 2;
                 }
