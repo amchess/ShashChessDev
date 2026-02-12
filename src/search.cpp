@@ -1859,9 +1859,12 @@ Value Search::Worker::search(
                         // Strategical generico: un po' più aggressivo (-1)
                         probCutDepth = std::clamp(probCutDepth - 1, 0, depth);
                     }
-                    // RIMOSSO il blocco su isAggressive (+1).
-                    // Ora il ProbCut lavora a piena velocità anche in attacco.
-                    // Lo Sniper Elite (Step 15) correggerà eventuali errori.
+                    else if (isAggressive)
+                    {
+                        // Tactical: Torniamo prudenti (+1) per non potare le tattiche.
+                        // Fondamentale per tornare a 149 solved.
+                        probCutDepth = std::clamp(probCutDepth + 1, 0, depth);
+                    }
                 }
 
                 while ((move = mp.next_move()) != Move::none())
@@ -2018,10 +2021,12 @@ moves_loop:  // When in check, search starts here
                     int extraReduction = (depth > 12 && !staticState.pawnsNearPromotion) ? 2 : 1;
                     moveCountThreshold -= extraReduction;
                 }
-                else if (isAggressive || isPetrosian)
+                else if ((isAggressive || isPetrosian) && staticState.pawnsNearPromotion)
                 {
-                    // TATTICI: Allarghiamo per vedere più mosse (+1 o +2 se pedoni pericolosi)
-                    moveCountThreshold += (staticState.pawnsNearPromotion ? 2 : 1);
+                    // TATTICI: Allarghiamo SOLO se c'è pericolo di promozione (+2).
+                    // Togliamo il +1 generico che appesantiva il motore inutilmente.
+                    // Lo Sniper Elite farà il resto sulle linee critiche.
+                    moveCountThreshold += 2;
                 }
             }
             // ---------------------------------------
