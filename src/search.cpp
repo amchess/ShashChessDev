@@ -2023,11 +2023,12 @@ moves_loop:  // When in check, search starts here
                     int extraReduction = (depth > 12 && !staticState.pawnsNearPromotion) ? 2 : 1;
                     moveCountThreshold -= extraReduction;
                 }
-                // --- MIX v29: CLEAN SPEED ---
-                // Rimuoviamo la logica KingDanger da qui (che causava o cecità o esplosione).
-                // La gestione tattica è delegata allo Step 8 (Pruning ridotto).
-                // Qui allarghiamo SOLO per le promozioni, per mantenere i 3073ms.
-                else if ((isAggressive || isPetrosian) && staticState.pawnsNearPromotion)
+                // --- MIX v30: PERFECT STORM ---
+                // Manteniamo lo Step 8 dinamico (v29) che ci ha dato il +1 Elo.
+                // Reintroduciamo l'estensione sui sacrifici (v28) per recuperare le 149 posizioni.
+                // Ora funzionerà perché lo Step 8 non poterà più le varianti estese qui.
+                else if ((isAggressive || isPetrosian) 
+                         && (staticState.pawnsNearPromotion || (staticState.kingDanger && isSacrificial)))
                 {
                     moveCountThreshold += 2;
                 }
