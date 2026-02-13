@@ -1681,15 +1681,16 @@ Value Search::Worker::search(
         // --- SHASHIN MIX v13: DRACONIAN PRUNING ---
         int marginMultiplier = 100;
 
-        // --- MIX v31: POLARIZED PRUNING ---
-        // La v30 era troppo lenta. La v29 (100%/88%) era cieca (131 solved).
-        // NUOVA STRATEGIA:
-        // 1. DANGER: 115% (Ultra-Safe). Non potiamo quasi nulla se il Re rischia. Recupera i puzzle.
-        // 2. SAFE: 85% (Ultra-Fast). Se non c'è pericolo, tagliamo aggressivamente per guadagnare tempo.
+        // --- MIX v32: GOLDEN RATIO ---
+        // La v31 (85% Safe) ha perso Elo (-2) per instabilità posizionale ma ha fatto 140 solved.
+        // La v29 (88% Safe) ha vinto Elo (+1) ma ne risolveva solo 131.
+        // SOLUZIONE: Fusione dei valori migliori.
+        // 1. DANGER: 115% (v31). Mantiene la visione tattica (140 solved).
+        // 2. SAFE: 88% (v29). Ripristina la solidità posizionale (Elo positivo).
         if ((isAggressive || isPetrosian) && staticState.kingDanger)
             marginMultiplier = 115;
         else if (isAggressive || isPetrosian)
-            marginMultiplier = 85;
+            marginMultiplier = 88;
 
         // 2. Strategical Standard (100%):
         // Il 110% era troppo permissivo. Torniamo allo standard.
