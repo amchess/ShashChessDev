@@ -1681,14 +1681,12 @@ Value Search::Worker::search(
         // --- SHASHIN MIX v13: DRACONIAN PRUNING ---
         int marginMultiplier = 100;
 
-        // --- MIX v32: GOLDEN RATIO ---
-        // La v31 (85% Safe) ha perso Elo (-2) per instabilità posizionale ma ha fatto 140 solved.
-        // La v29 (88% Safe) ha vinto Elo (+1) ma ne risolveva solo 131.
-        // SOLUZIONE: Fusione dei valori migliori.
-        // 1. DANGER: 115% (v31). Mantiene la visione tattica (140 solved).
-        // 2. SAFE: 88% (v29). Ripristina la solidità posizionale (Elo positivo).
+        // --- MIX v33: PERFECT BALANCE ---
+        // La v32 (115% Danger) ha perso fiato alla lunga (-2 Elo su 300 games), pur vedendo 138 puzzle.
+        // La v29 (100% Danger) vinceva il match (+1 Elo) ma era cieca (131 puzzle).
+        // SOLUZIONE: 107%. Il punto medio esatto per mantenere Elo E visione tattica.
         if ((isAggressive || isPetrosian) && staticState.kingDanger)
-            marginMultiplier = 115;
+            marginMultiplier = 107;
         else if (isAggressive || isPetrosian)
             marginMultiplier = 88;
 
