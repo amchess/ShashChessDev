@@ -1681,14 +1681,19 @@ Value Search::Worker::search(
         // --- SHASHIN MIX v13: DRACONIAN PRUNING ---
         int marginMultiplier = 100;
 
-        // --- MIX v33: PERFECT BALANCE ---
-        // La v32 (115% Danger) ha perso fiato alla lunga (-2 Elo su 300 games), pur vedendo 138 puzzle.
-        // La v29 (100% Danger) vinceva il match (+1 Elo) ma era cieca (131 puzzle).
-        // SOLUZIONE: 107%. Il punto medio esatto per mantenere Elo E visione tattica.
+        // --- MIX v35: THE DEPTH MIRACLE ---
+        // La v32 (115%) vedeva 138 puzzle ma perdeva Elo per lentezza ad alte profondità.
+        // La v34 (100%) vinceva Elo (+1) ma scendeva a 131 puzzle per cecità a basse profondità.
+        // SOLUZIONE: Se siamo a basse/medie profondità (< 12) usiamo 115% per vedere la tattica.
+        // Se andiamo in profondità (>= 12) torniamo a 100% per recuperare la velocità di Stockfish.
         if ((isAggressive || isPetrosian) && staticState.kingDanger)
-            marginMultiplier = 107;
+        {
+            marginMultiplier = (depth < 12) ? 115 : 100;
+        }
         else if (isAggressive || isPetrosian)
+        {
             marginMultiplier = 88;
+        }
 
         // 2. Strategical Standard (100%):
         // Il 110% era troppo permissivo. Torniamo allo standard.
