@@ -1664,20 +1664,37 @@ Value Search::Worker::search(
     // Step 8. Futility pruning: child node
     // The depth condition is important for mate finding.
     {
-        // --- THE 149 TACTICAL FIX (Step 8) ---
+        // --- SHASHIN ADJUSTMENTS (TIGHTENED) ---
         int marginMultiplier = 100;  // Base Stockfish (100%)
 
-        if (isAggressive) marginMultiplier = 90;
-        else if (isStrategical) marginMultiplier = 110;
-
-        // Se c'è pericolo, NON tagliare (110) come faceva la 149.
-        if (staticState.kingDanger)
+        if (isAggressive)
         {
-            marginMultiplier = std::max(marginMultiplier, 110);
+            // Old: ~75-85%. New: 90%.
+            // Riduciamo il margine (cerchiamo di più) ma senza esagerare.
+            marginMultiplier = 90;
+        }
+        else if (isStrategical)
+        {
+            marginMultiplier = 110;
         }
 
-        if (isFortressNode) marginMultiplier = 60;
+        // King Danger: fattore critico
+        if (staticState.kingDanger)
+        {
+            // La Main castrava a 85 (Cieca). La 149 pompava a 110 (Lenta).
+            // SOLUZIONE: 100 (Standard Stockfish base).
+            // Rimuoviamo la "benda" senza sprecare tempo in rami inutili.
+            marginMultiplier = 100;
+        }
 
+        // Fortress: Eccezione necessaria
+        // Le fortezze richiedono precisione assoluta, manteniamo 60.
+        if (isFortressNode)
+        {
+            marginMultiplier = 80;
+        }
+
+        // Adjustment per mobilità (semplificato e sicuro)
         if (isStrategical && legalMoveCount > 30)
         {
             marginMultiplier = std::min(marginMultiplier + 5, 115);
@@ -2069,14 +2086,12 @@ moves_loop:  // When in check, search starts here
             Value singularBeta  = ttData.value - (53 + 75 * (ss->ttPv && !PvNode)) * depth / 60;
             Depth singularDepth = newDepth / 2;
 
-            // --- MODIFICA SHASHIN: SNIPER EXTENSION ---
-            // Estendiamo la ricerca SOLO sui nodi singolari (tattici) in modalità aggressiva.
-            // Questo permette di vedere combinazioni profonde senza rallentare il resto.
-            if (isAggressive && rootShashinState.staticState.kingDanger && depth > 10)
+            // --- MODIFICA SHASHIN: SNIPER EXTENSION (149 POWER) ---
+            // Estendiamo la ricerca sulle linee forzate o sui sacrifici.
+            // Modifica ultra-sicura: approfondisce solo le varianti tattiche già innescate.
+            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 10)
             {
-                // Aumentiamo la profondità del 20% circa.
-                // Su depth 20, guadagni +4 ply su quella singola linea forzata.
-                singularDepth += std::max(1, singularDepth / 5);
+                singularDepth += std::max(1, singularDepth / 4);
             }
             // ------------------------------------------
 
@@ -2816,30 +2831,26 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                     continue;
                 }
 
-                // === FIX SHASHIN: SAFETY & TACTICS ===
-                // === THE 149 TACTICAL FIX (QSearch) ===
+                // === PATCH SHASHIN INTELLIGENTE (LOGICA INVERTITA MAIN) ===
                 if (!pos.see_ge(move, alpha - futilityBase))
                 {
                     const bool useTacticalLogic = dynamicDerived.isHighTal
                                                || dynamicDerived.isTacticalReactive
                                                || (staticState.kingDanger && !isStrategical);
 
-                    // Se non siamo in tattica, potiamo la spazzatura (Stile Main per +5 Elo)
-                    if (!useTacticalLogic)
+                    if (useTacticalLogic)
                     {
-                        bestValue = std::max(bestValue, std::min(alpha, futilityBase));
-                        continue;
+                        bestValue = std::min(alpha, futilityBase);
                     }
                     else
                     {
-                        // Se siamo in tattica (Stile 149Pari), abbassiamo il valore ma NON FACCIAMO CONTINUE.
-                        // Il motore calcolerà questo sacrificio!
-                        bestValue = std::min(alpha, futilityBase);
+                        bestValue = std::max(bestValue, std::min(alpha, futilityBase));
                     }
+                    continue;  // IL SEGRETO DELLA MAIN: TAGLIA SEMPRE LA SPAZZATURA!
                 }
-
+                // =====================================
             }
-            // -----------
+
             // --- PHASE 4: HYBRID PRUNING OPTIMIZATION ---
             if (!capture)
             {
