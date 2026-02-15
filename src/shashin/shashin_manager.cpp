@@ -71,10 +71,7 @@ bool ShashinManager::allowStockfishProbCut() const {
 }
 
 bool ShashinManager::isTacticalReactive() const {
-    // Includiamo CAPABLANCA_PETROSIAN perché indica pressione avversaria.
-    // Sarà poi search.cpp a decidere se usare questa flag dentro 'nodeHot'.
-    return anyOf(state.dynamicBase.currentRange, ShashinPosition::CAPABLANCA_PETROSIAN,
-                 ShashinPosition::LOW_PETROSIAN);
+    return anyOf(state.dynamicBase.currentRange, ShashinPosition::LOW_PETROSIAN);
 }
 
 bool ShashinManager::isTacticalDefensive() const {
