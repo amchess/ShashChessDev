@@ -2185,23 +2185,27 @@ skipExtensionAndPruning:  // full threads search patch
             // Calcolo base della profondità ridotta (Standard Stockfish)
             Depth d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
 
-            // --- MODIFICA SHASHIN ULTRA-CONSERVATIVA ---
-            // Obiettivo: Minimizzare l'impatto sull'ELO.
-            // Condizione di sicurezza: depth > 5 e ss->ply > 1 per non toccare la radice o i primi rami.
-
+            // --- SHASHIN LMR HYBRID TUNING (CORRETTO) ---
             if (depth > 5 && ss->ply > 1)
             {
-                // Caso 1: Tal/Aggressive
+                // Caso 1: TAL (Attacco Estremo)
                 if (isAggressive && (givesCheck || capture))
                 {
-                    r -= 60;
+                    r -= 60;  // Profondità extra per trovare il colpo del KO
                 }
-                // Caso 2: Petrosian/Strategical
+                // Caso 2: PETROSIAN (Difesa e Profilassi)
+                else if (isPetrosian && !capture)
+                {
+                    // La difesa richiede una precisione millimetrica.
+                    // Non tagliamo, anzi diamo un po' di respiro.
+                    r -= 40;
+                }
+                // Caso 3: CAPABLANCA (Strategico Puro)
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
                 {
-                    // Valore ottimizzato (+40) per garantire la conversione del vantaggio
-                    // nei finali tecnici (le famose "pepite").
-                    r += 40;
+                    // IL MOTORE DEL MATCH: Posizione chiusa/noiosa.
+                    // Falciata in puro stile Stockfish Main (+80) per correre velocissimi.
+                    r += 80;
                 }
 
                 // Ricalcoliamo 'd' (profondità ridotta) solo se 'r' è cambiato
