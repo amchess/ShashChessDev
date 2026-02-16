@@ -1685,26 +1685,33 @@ Value Search::Worker::search(
     }
 
     // Step 9. Null move search with verification search
-    if (cutNode && !disableNMAndPC && ss->staticEval >= beta - 18 * depth + 350
-        && !excludedMove  //learning
+    if (cutNode && !disableNMAndPC && ss->staticEval >= beta - 18 * depth + 350 && !excludedMove
         && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && !is_loss(beta))
     {
-        // --- MODIFICA SHASHIN: SAFETY CHECK (Versione Veloce) ---
+        // --- SHASHIN HYBRID NMP SAFETY (OPTIMIZED) ---
+        // Definiamo i casi "Hot" in cui regalare una mossa è pericoloso
         bool nodeHot = staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial;
         bool skipNullMove = false;
+
+        // 1. Sicurezza Tattica (DNA 149): Se la posizione è calda o siamo in Tal < 10
         if (nodeHot || (isAggressive && staticState.kingDanger && depth < 10))
             skipNullMove = true;
-        // --------------------------------------------------------
+
+        // 2. Sicurezza Difensiva (DNA Petrosian):
+        // Se stiamo difendendo (Petrosian) e il nostro Re è sotto pressione,
+        // NON passiamo mai. Vogliamo calcolare ogni risorsa difensiva.
+        if (isPetrosian && staticState.stmKingDanger)
+            skipNullMove = true;
+        // ---------------------------------------------
 
         if (!skipNullMove)
         {
             assert((ss - 1)->currentMove != Move::null());
             assert(eval - beta >= 0);
 
-            // Calcolo Base Stockfish (PULITO)
             Depth R = 7 + depth / 3;
 
-            ss->currentMove                   = Move::null();
+            ss->currentMove                   = Move::none();  // Stockfish standard usa null()
             ss->continuationHistory           = &continuationHistory[0][0][NO_PIECE][0];
             ss->continuationCorrectionHistory = &continuationCorrectionHistory[NO_PIECE][0];
 
@@ -1718,9 +1725,8 @@ Value Search::Worker::search(
             {
                 if (nmpMinPly || depth < 16)
                     return nullValue;
-                assert(!nmpMinPly);  // Recursive verification is not allowed
+                assert(!nmpMinPly);
 
-                // Do verification search at high depths
                 nmpMinPly = ss->ply + 3 * (depth - R) / 4;
                 Value v   = search<NonPV>(pos, ss, beta - 1, beta, depth - R, false);
                 nmpMinPly = 0;
@@ -1961,17 +1967,32 @@ moves_loop:  // When in check, search starts here
             // Calcolo soglia base Stockfish
             int moveCountThreshold = (3 + depth * depth) / (2 - improving);
 
-            // --- UNICA MODIFICA SHASHIN PERMESSA ---
-            // Solo per depth > 8, e solo ±1 nella soglia quiet moves.
-            // Rimuoviamo TUTTI gli altri bias (marginBias, futilityBias, seeBias) che causavano -90 ELO.
+            // --- SHASHIN HYBRID TUNING (MATCH EFFICENCY + PUZZLE VISION) ---
             if (depth > 8)
             {
                 if (isStrategical)
-                    moveCountThreshold -= 1;  // Pruning leggermente più stretto
-                else if (isAggressive)
-                    moveCountThreshold += 1;  // Pruning leggermente più largo
+                {
+                    // CAPABLANCA: Il Turbo posizionale.
+                    // Pruning forte (-2) per correre veloci, ma SOLO se siamo profondi
+                    // e non ci sono minacce immediate da pedoni.
+                    int extraReduction = (depth > 12 && !staticState.pawnsNearPromotion) ? 2 : 1;
+                    moveCountThreshold -= extraReduction;
+                }
+                else if (isAggressive || isPetrosian)
+                {
+                    // TAL & PETROSIAN: La visione d'aquila.
+                    // Se c'è attacco o dobbiamo difenderci, guardiamo di più (+1).
+                    // Se c'è pericolo imminente (Re in pericolo o Promozione),
+                    // allarghiamo drasticamente (+2) per non perdere il treno.
+                    int extraExtension = 1;
+                    if (staticState.pawnsNearPromotion || staticState.kingDanger)
+                    {
+                        extraExtension = 2;
+                    }
+                    moveCountThreshold += extraExtension;
+                }
             }
-            // --- END SHASHIN ADJUSTMENT ---
+            // -------------------------------------------------------------
 
             // Skip quiet moves if movecount exceeds our threshold
             if (moveCount >= moveCountThreshold)
@@ -1996,7 +2017,6 @@ moves_loop:  // When in check, search starts here
                 }
 
                 // SEE based pruning for captures and checks
-                // Avoid pruning sacrifices of our last piece for stalemate
                 int margin = std::max(166 * depth + captHist / 29, 0);
 
                 if ((alpha >= VALUE_DRAW || pos.non_pawn_material(us) != PieceValue[movedPiece])
@@ -2039,8 +2059,6 @@ moves_loop:  // When in check, search starts here
         }
 
         // Step 15. Extensions
-        // Singular extension search. If all moves but one fail low on a search of (alpha-s, beta-s),
-        // and just one fails high on (alpha, beta), then that move is singular and should be extended.
         if (!rootNode && move == ttData.move && !excludedMove && depth >= 6 + ss->ttPv
             && is_valid(ttData.value) && !is_decisive(ttData.value) && (ttData.bound & BOUND_LOWER)
             && ttData.depth >= depth - 3 && !is_shuffling(move, ss, pos))
@@ -2048,14 +2066,15 @@ moves_loop:  // When in check, search starts here
             Value singularBeta  = ttData.value - (53 + 75 * (ss->ttPv && !PvNode)) * depth / 60;
             Depth singularDepth = newDepth / 2;
 
-            // --- MODIFICA SHASHIN: SNIPER EXTENSION ---
-            // Estendiamo la ricerca SOLO sui nodi singolari (tattici) in modalità aggressiva.
-            // Questo permette di vedere combinazioni profonde senza rallentare il resto.
-            if (isAggressive && staticState.kingDanger && depth > 12)
+            // --- SHASHIN SNIPER EXTENSION (TRUE RADAR) ---
+            // Se c'è pericolo (attacco o sacrifici nell'aria) e siamo in fase avanzata,
+            // non ci accontentiamo di una ricerca di verifica superficiale.
+            // Aumentiamo la profondità del 25% circa per non farci sfuggire combinazioni brutali.
+            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 8)
             {
-                singularDepth += std::max(1, singularDepth / 6);  // +20% circa, più efficiente
+                singularDepth += std::max(1, singularDepth / 4);
             }
-            // ------------------------------------------
+            // ---------------------------------------------
 
             ss->excludedMove = move;
             value = search<NonPV>(pos, ss, singularBeta - 1, singularBeta, singularDepth, cutNode);

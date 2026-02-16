@@ -180,15 +180,25 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
             if (ply < LOW_PLY_HISTORY_SIZE)
                 m.value += 8 * (*lowPlyHistory)[ply][m.raw()] / (1 + ply);
 
-            // *** UNICA MICRO-MODIFICA SHASHIN ***
-            // Solo per posizioni strategiche (Capablanca) e profondità > 6.
-            // Serve a favorire leggermente le manovre posizionali sicure a parità di history.
-            if (MoveConfig::isStrategical && depth > 6)
+            // *** SHASHIN MOVEPICK TUNING ***
+            if (depth > 6)
             {
-                // Piccolo bonus (+30) se non è un pedone e non va in presa
-                if (type_of(pc) != PAWN && !pos.attackers_to(to, ~us))
+                // 1. CAPABLANCA: Favorisce l'occupazione di avamposti sicuri.
+                if (MoveConfig::isStrategical && type_of(pc) != PAWN && !pos.attackers_to(to, ~us))
                 {
                     m.value += 30;
+                }
+
+                // 2. FASI TATTICHE (Tal, Petrosian, Caos): Bonus Sopravvivenza/Dinamismo.
+                // Se NON siamo in fase puramente strategica (c'è tensione)
+                // e stiamo spostando un pezzo importante VIA da una minaccia verso la salvezza.
+                else if (!MoveConfig::isStrategical && type_of(pc) != PAWN)
+                {
+                    // Se la casa di partenza ERA minacciata, e la casa di arrivo è SICURA
+                    if (pos.attackers_to(from, ~us) && !pos.attackers_to(to, ~us))
+                    {
+                        m.value += 25;
+                    }
                 }
             }
         }
