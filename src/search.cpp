@@ -1693,14 +1693,6 @@ Value Search::Worker::search(
         bool nodeHot = staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial;
         bool skipNullMove = false;
 
-#ifdef GOLD_DIGGER
-        // GOLD DIGGER RAFFINATO:
-        // Disabilita la Null Move Pruning se c'è tensione (Hot), se siamo in modalità
-        // Tal (attacco), Aggressive, o Petrosian (difesa critica).
-        // Permette la NMP SOLO in posizioni strategiche tranquille per scendere in profondità.
-        if (nodeHot || isAggressive || isTal || isPetrosian)
-            skipNullMove = true;
-#else
         // 1. Sicurezza Tattica (DNA 149): Se la posizione è calda o siamo in Tal < 10
         if (nodeHot || (isAggressive && staticState.kingDanger && depth < 10))
             skipNullMove = true;
@@ -1710,7 +1702,6 @@ Value Search::Worker::search(
         // NON passiamo mai. Vogliamo calcolare ogni risorsa difensiva.
         if (isPetrosian && staticState.stmKingDanger)
             skipNullMove = true;
-#endif
         // ---------------------------------------------
 
         if (!skipNullMove)
@@ -1977,12 +1968,6 @@ moves_loop:  // When in check, search starts here
             int moveCountThreshold = (3 + depth * depth) / (2 - improving);
 
             // --- SHASHIN HYBRID TUNING (MATCH EFFICENCY + PUZZLE VISION) ---
-#ifdef GOLD_DIGGER
-            // GOLD DIGGER RAFFINATO:
-            // Più andiamo in profondità, più mosse guardiamo. Se il Re è in pericolo,
-            // aggiungiamo altre 5 mosse silenziose da analizzare per trovare vie di fuga o attacchi lenti.
-            moveCountThreshold += (depth / 2) + (staticState.kingDanger ? 5 : 0);
-#else
             if (depth > 8)
             {
                 if (isStrategical)
@@ -2007,7 +1992,6 @@ moves_loop:  // When in check, search starts here
                     moveCountThreshold += extraExtension;
                 }
             }
-#endif
             // -------------------------------------------------------------
 
             // Skip quiet moves if movecount exceeds our threshold
@@ -2083,23 +2067,13 @@ moves_loop:  // When in check, search starts here
             Depth singularDepth = newDepth / 2;
 
             // --- SHASHIN SNIPER EXTENSION (TRUE RADAR) ---
-#ifdef GOLD_DIGGER
-            // GOLD DIGGER RAFFINATO:
-            // Se c'è un sacrificio nell'aria o dinamismo, la ricerca di verifica viene
-            // pompata del +33%. Evita false potature sulle linee forzate dei puzzle.
-            if (isTactical || staticState.isSacrificial || staticState.kingDanger)
-            {
-                singularDepth += std::max(2, singularDepth / 3);
-            }
-#else
             // Se c'è pericolo (attacco o sacrifici nell'aria) e siamo in fase avanzata,
             // non ci accontentiamo di una ricerca di verifica superficiale.
             // Aumentiamo la profondità del 25% circa per non farci sfuggire combinazioni brutali.
-            if ((isAggressive || staticState.isSacrificial) && staticState.kingDanger && depth > 8)
+            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 8)
             {
                 singularDepth += std::max(1, singularDepth / 4);
             }
-#endif
             // ---------------------------------------------
 
             ss->excludedMove = move;
@@ -2231,22 +2205,6 @@ skipExtensionAndPruning:  // full threads search patch
             Depth d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
 
             // --- SHASHIN LMR HYBRID TUNING (CORRETTO) ---
-#ifdef GOLD_DIGGER
-            // GOLD DIGGER RAFFINATO:
-            if (depth > 3)
-            {
-                // Attacchi, scacchi, catture o sacrifici non vengono quasi MAI ridotti (-90)
-                if (isAggressive || givesCheck || capture || staticState.isSacrificial)
-                    r -= 90;
-                // In difesa, allarghiamo un po' per trovare risorse miracolose
-                else if (isPetrosian)
-                    r -= 40;
-
-                // NOTA: Nessun bonus Capablanca qui. Le mosse strategiche seguono l'LMR standard.
-                if (r != original_r)
-                    d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
-            }
-#else
             if (depth > 5 && ss->ply > 1)
             {
                 // Caso 1: TAL (Attacco Estremo)
@@ -2281,7 +2239,6 @@ skipExtensionAndPruning:  // full threads search patch
             {
                 d = std::max(1, d - 1);
             }
-#endif
             // ------------------------------------------
 
             ss->reduction = newDepth - d;
@@ -2809,12 +2766,6 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
     // B) SEE Margin
     int seeMargin = -80;  // Standard Stockfish
-#ifdef GOLD_DIGGER
-    // GOLD DIGGER RAFFINATO:
-    // Se c'è pericolo sul Re, permettiamo sacrifici massicci di Donna/Torre (-500).
-    // Altrimenti, permettiamo sacrifici di pezzo leggero o qualità (-200).
-    seeMargin = staticState.kingDanger ? -500 : -200;
-#else
     if (isAggressive || dynamicDerived.isHighTal)
     {
         // TAL: Visione Tattica Estesa
@@ -2823,14 +2774,13 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     }
     else if (isStrategical)
     {
-        // CAPABLANCA: Taglio netto per sfruttare l'NPS alto.
+        // PETROSIAN: Taglio netto per sfruttare l'NPS alto.
         seeMargin = -50;
     }
     else if (MoveConfig::isFortress)
     {
         seeMargin = -10;
     }
-#endif
     // C) Volatility Check (Flag)
     const bool extremelyVolatile = dynamicDerived.isHighTal && staticState.kingDanger;
     // ----------------------------------------------------------------------
@@ -2870,11 +2820,6 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                 // === PATCH SHASHIN INTELLIGENTE (LOGICA INVERTITA) ===
                 if (!pos.see_ge(move, alpha - futilityBase))
                 {
-#ifdef GOLD_DIGGER
-                    // GOLD DIGGER RAFFINATO:
-                    // Esplora sempre i meandri tattici apparentemente negativi. Non si arrende mai.
-                    const bool useTacticalLogic = true;
-#else
                     // Logica tattica (vecchio comportamento) per:
                     // 1. Stili Tal aggressivi
                     // 2. Posizioni tattiche reattive
@@ -2882,7 +2827,6 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                     const bool useTacticalLogic = dynamicDerived.isHighTal
                                                || dynamicDerived.isTacticalReactive
                                                || (staticState.kingDanger && !isStrategical);
-#endif
 
                     if (useTacticalLogic)
                     {
@@ -2946,6 +2890,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             if (!forceCheckSearch && !pos.see_ge(move, seeMargin))
                 continue;
         }
+
 
         // Step 7. Make and search the move
         do_move(pos, move, st, givesCheck, ss);
