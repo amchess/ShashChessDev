@@ -1255,9 +1255,18 @@ Value Search::Worker::search(
     bool        isPetrosian         = localShashinManager.isPetrosian();
     bool        isCapablanca        = localShashinManager.isCapablanca();
     bool        isAggressive        = localShashinManager.isAggressive();
-    bool        isTactical          = localShashinManager.isTactical();
-    bool        isComplex           = localShashinManager.isComplexPosition();
-    uint8_t     legalMoveCount      = staticState.legalMoveCount;
+#ifdef GOLD_DIGGER
+    // Formula GoldDigger (DNA 149 potenziato): rileva minacce anche reattive
+    const bool nodeHot = staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial
+                      || stmKingExposed || opponentKingExposed
+                      || (isTacticalReactive && stmKingExposed);
+#else
+    // Formula Main 142: mantiene la stabilità dei match
+    const bool nodeHot = staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial;
+#endif
+    bool    isTactical     = localShashinManager.isTactical();
+    bool    isComplex      = localShashinManager.isComplexPosition();
+    uint8_t legalMoveCount = staticState.legalMoveCount;
     //from crystal shashin end
     if (!rootNode)
     {
@@ -1688,20 +1697,21 @@ Value Search::Worker::search(
     if (cutNode && !disableNMAndPC && ss->staticEval >= beta - 18 * depth + 350 && !excludedMove
         && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && !is_loss(beta))
     {
-        // --- SHASHIN HYBRID NMP SAFETY (OPTIMIZED) ---
-        // Definiamo i casi "Hot" in cui regalare una mossa è pericoloso
-        bool nodeHot = staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial;
+        // --- SHASHIN HYBRID NMP SAFETY ---
         bool skipNullMove = false;
 
-        // 1. Sicurezza Tattica (DNA 149): Se la posizione è calda o siamo in Tal < 10
+#ifdef GOLD_DIGGER
+        // GOLD DIGGER: Nessun limite di profondità se la posizione scotta o stiamo attaccando
+        if (nodeHot || isAggressive || (isPetrosian && staticState.stmKingDanger))
+            skipNullMove = true;
+#else
+        // MAIN 142: Mantiene il limite depth < 10 per l'efficienza nei match
         if (nodeHot || (isAggressive && staticState.kingDanger && depth < 10))
             skipNullMove = true;
 
-        // 2. Sicurezza Difensiva (DNA Petrosian):
-        // Se stiamo difendendo (Petrosian) e il nostro Re è sotto pressione,
-        // NON passiamo mai. Vogliamo calcolare ogni risorsa difensiva.
         if (isPetrosian && staticState.stmKingDanger)
             skipNullMove = true;
+#endif
         // ---------------------------------------------
 
         if (!skipNullMove)
@@ -1970,20 +1980,33 @@ moves_loop:  // When in check, search starts here
             // --- SHASHIN HYBRID TUNING (MATCH EFFICENCY + PUZZLE VISION) ---
             if (depth > 8)
             {
+#ifdef GOLD_DIGGER
+                // GOLD DIGGER: Sfruttiamo nodeHot per un'ampiezza dinamica.
+                if (isStrategical && !nodeHot)
+                {
+                    // Se la posizione è calma e strategica, potiamo per mantenere NPS.
+                    int extraReduction = (depth > 12 && !staticState.pawnsNearPromotion) ? 2 : 1;
+                    moveCountThreshold -= extraReduction;
+                }
+                else if (nodeHot || isAggressive || isPetrosian)
+                {
+                    // Se il nodo scotta (nodeHot) o siamo in stili tattici, allarghiamo.
+                    // Il GoldDigger garantisce +2 mosse se c'è tensione, per non perdere colpi.
+                    int extraExtension =
+                      (nodeHot || staticState.pawnsNearPromotion || staticState.kingDanger) ? 2 : 1;
+                    moveCountThreshold += extraExtension;
+                }
+#else
+                // MAIN 142: Mantiene la logica originale da match.
                 if (isStrategical)
                 {
                     // CAPABLANCA: Il Turbo posizionale.
-                    // Pruning forte (-2) per correre veloci, ma SOLO se siamo profondi
-                    // e non ci sono minacce immediate da pedoni.
                     int extraReduction = (depth > 12 && !staticState.pawnsNearPromotion) ? 2 : 1;
                     moveCountThreshold -= extraReduction;
                 }
                 else if (isAggressive || isPetrosian)
                 {
                     // TAL & PETROSIAN: La visione d'aquila.
-                    // Se c'è attacco o dobbiamo difenderci, guardiamo di più (+1).
-                    // Se c'è pericolo imminente (Re in pericolo o Promozione),
-                    // allarghiamo drasticamente (+2) per non perdere il treno.
                     int extraExtension = 1;
                     if (staticState.pawnsNearPromotion || staticState.kingDanger)
                     {
@@ -1991,6 +2014,7 @@ moves_loop:  // When in check, search starts here
                     }
                     moveCountThreshold += extraExtension;
                 }
+#endif
             }
             // -------------------------------------------------------------
 
@@ -2066,14 +2090,23 @@ moves_loop:  // When in check, search starts here
             Value singularBeta  = ttData.value - (53 + 75 * (ss->ttPv && !PvNode)) * depth / 60;
             Depth singularDepth = newDepth / 2;
 
-            // --- SHASHIN SNIPER EXTENSION (TRUE RADAR) ---
-            // Se c'è pericolo (attacco o sacrifici nell'aria) e siamo in fase avanzata,
-            // non ci accontentiamo di una ricerca di verifica superficiale.
-            // Aumentiamo la profondità del 25% circa per non farci sfuggire combinazioni brutali.
+// --- SHASHIN SNIPER EXTENSION (TRUE RADAR) ---
+#ifdef GOLD_DIGGER
+            // GOLD DIGGER: Radar potenziato basato sul nodeHot dinamico.
+            // Se il nodo scotta (pericolo re, sacrifici, pedoni passati),
+            // aumentiamo la precisione della verifica (+25%) per stanare tattiche nascoste.
+            if (nodeHot && depth > 8)
+            {
+                singularDepth += std::max(1, singularDepth / 4);
+            }
+#else
+            // MAIN 142: Mantiene il radar selettivo per garantire efficienza nei match.
+            // Si attiva solo in stili aggressivi o sacrificiali con pericolo re.
             if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 8)
             {
                 singularDepth += std::max(1, singularDepth / 4);
             }
+#endif
             // ---------------------------------------------
 
             ss->excludedMove = move;
@@ -2156,7 +2189,7 @@ skipExtensionAndPruning:  // full threads search patch
         if ((ss + 1)->cutoffCnt > 1)
         {
             // Logica tattica: usa formula ShashChess originale (meno aggressiva)
-            if (dynamicDerived.isHighTal || isTacticalReactive || staticState.isSacrificial)
+            if (dynamicDerived.isHighTal || isTacticalReactive || isSacrificial)
             {
                 // Formula ShashChess: conservativa per preservare profondità tattica
                 r += 120 + 1024 * ((ss + 1)->cutoffCnt > 2) + 100 * ((ss + 1)->cutoffCnt > 3)
@@ -2204,36 +2237,48 @@ skipExtensionAndPruning:  // full threads search patch
             // Calcolo base della profondità ridotta (Standard Stockfish)
             Depth d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
 
-            // --- SHASHIN LMR HYBRID TUNING (CORRETTO) ---
+            // --- SHASHIN LMR HYBRID TUNING (NODE HOT EXPLOIT) ---
             if (depth > 5 && ss->ply > 1)
             {
-                // Caso 1: TAL (Attacco Estremo)
+#ifdef GOLD_DIGGER
+                // 1. MASSIMA ALLERTA (Nodo Hot con mosse forzanti)
+                // Se il nodo scotta e stiamo facendo scacco o cattura, ABBATTIAMO la riduzione.
+                if (nodeHot && (givesCheck || capture))
+                {
+                    r -= 70;  // Esplorazione tattica estrema per il solving
+                }
+                // 2. PETROSIAN (Difesa: nodo Hot ma mossa tranquilla)
+                else if (isPetrosian && nodeHot && !capture)
+                {
+                    r -= 30;  // Diamo respiro per trovare le difese silenziose
+                }
+                // 3. CAPABLANCA / FASE TRANQUILLA (Nessun pericolo)
+                else if (!nodeHot && !capture && !givesCheck && depth > 8)
+                {
+                    r += 80;  // Motore da match: corri veloce e taglia tutto il superfluo
+                }
+#else
+                // MAIN 142: Parametri originali sintonizzati per la massima forza Elo
                 if (isAggressive && (givesCheck || capture))
                 {
-                    r -= 60;  // Profondità extra per trovare il colpo del KO
+                    r -= 60;  // Standard Tal-Shashin 142
                 }
-                // Caso 2: PETROSIAN (Difesa e Profilassi)
                 else if (isPetrosian && !capture)
                 {
-                    // La difesa richiede una precisione millimetrica.
-                    // Non tagliamo, anzi diamo un po' di respiro.
-                    r -= 40;
+                    r -= 40;  // Standard Petrosian-Shashin 142
                 }
-                // Caso 3: CAPABLANCA (Strategico Puro)
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
                 {
-                    // IL MOTORE DEL MATCH: Posizione chiusa/noiosa.
-                    // Falciata in puro stile Stockfish Main (+80) per correre velocissimi.
-                    r += 80;
+                    r += 80;  // Standard Capablanca-Shashin 142
                 }
+#endif
 
-                // Ricalcoliamo 'd' (profondità ridotta) solo se 'r' è cambiato
+                // Ricalcoliamo 'd' solo se 'r' è cambiato
                 if (r != original_r)
                 {
                     d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
                 }
             }
-
             // Fortezze: Riduzione minima per non sbagliare i finali
             if (isFortressNode)
             {
@@ -2606,6 +2651,15 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     // Accesso ottimizzato alle variabili di stato
     const bool isStrategical = dynamicDerived.isStrategical;
     const bool isAggressive  = dynamicDerived.isAggressive;
+    const bool isSacrificial = staticState.isSacrificial;
+
+#ifdef GOLD_DIGGER
+    const bool nodeHot = staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial
+                      || staticState.stmKingExposed || staticState.opponentKingExposed
+                      || (dynamicDerived.isTacticalReactive && staticState.stmKingExposed);
+#else
+    const bool nodeHot = staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial;
+#endif
 
     if (!PvNode && is_valid(ttData.value)
         && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER)))
@@ -2737,12 +2791,21 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
         futilityBase = ss->staticEval + 351;
 
-        // --- SHASHIN OPTIMIZATION 1: FUTILITY BASE (Outside Loop) ---
-        // Correggiamo il valore ridicolo (+3) con qualcosa di sensato.
+        // --- SHASHIN OPTIMIZATION 1: FUTILITY BASE (Dynamic) ---
+#ifdef GOLD_DIGGER
+        // GOLD DIGGER: Se il nodo è "Hot" o siamo aggressivi, allarghiamo la base
+        // per permettere sacrifici speculativi di pezzo leggero.
+        if (nodeHot || isAggressive)
+            futilityBase += 65;
+        else if (isStrategical)
+            futilityBase -= 25;
+#else
+        // MAIN 142: Logica originale sintonizzata per i match
         if (dynamicDerived.isHighTal)
             futilityBase += 30;
         else if (isStrategical)
             futilityBase -= 20;
+#endif
         // ------------------------------------------------------------
     }
 
@@ -2766,21 +2829,25 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
     // B) SEE Margin
     int seeMargin = -80;  // Standard Stockfish
-    if (isAggressive || dynamicDerived.isHighTal)
-    {
-        // TAL: Visione Tattica Estesa
-        // -110 permette di vedere i sacrifici di pezzo speculativi ("Tal Magic").
-        seeMargin = staticState.kingDanger ? -110 : -90;
-    }
+
+#ifdef GOLD_DIGGER
+    // GOLD DIGGER: Margine molto profondo (-150) se il nodo scotta o c'è un sacrificio.
+    // Questo permette di vedere combinazioni dove si perde un pezzo per un attacco decisivo.
+    if (nodeHot || isSacrificial)
+        seeMargin = -150;
+    else if (isAggressive)
+        seeMargin = -100;
     else if (isStrategical)
-    {
-        // PETROSIAN: Taglio netto per sfruttare l'NPS alto.
+        seeMargin = -60;
+#else
+    // MAIN 142: Valori standard per il gioco da match
+    if (isAggressive || dynamicDerived.isHighTal)
+        seeMargin = staticState.kingDanger ? -110 : -90;
+    else if (isStrategical)
         seeMargin = -50;
-    }
+#endif
     else if (MoveConfig::isFortress)
-    {
         seeMargin = -10;
-    }
     // C) Volatility Check (Flag)
     const bool extremelyVolatile = dynamicDerived.isHighTal && staticState.kingDanger;
     // ----------------------------------------------------------------------
@@ -2817,16 +2884,22 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                     continue;
                 }
 
-                // === PATCH SHASHIN INTELLIGENTE (LOGICA INVERTITA) ===
+                // === PATCH SHASHIN INTELLIGENTE (LOGICA INVERTITA CRYSTAL) ===
                 if (!pos.see_ge(move, alpha - futilityBase))
                 {
-                    // Logica tattica (vecchio comportamento) per:
-                    // 1. Stili Tal aggressivi
-                    // 2. Posizioni tattiche reattive
-                    // 3. Pericolo del re (tranne in posizioni strategiche)
+#ifdef GOLD_DIGGER
+                    // GOLD DIGGER: La logica tattica (che permette di esplorare sacrifici apparentemente
+                    // perdenti) si attiva ogni volta che il nodo scotta (nodeHot) o c'è un sacrificio in corso,
+                    // oltre che per le posizioni HighTal.
+                    const bool useTacticalLogic =
+                      dynamicDerived.isHighTal || dynamicDerived.isTacticalReactive || isSacrificial
+                      || (staticState.kingDanger && !isStrategical) || nodeHot;
+#else
+                    // MAIN 142: Mantiene la stabilità strategica dei match (Logica Originale 142)
                     const bool useTacticalLogic = dynamicDerived.isHighTal
                                                || dynamicDerived.isTacticalReactive
                                                || (staticState.kingDanger && !isStrategical);
+#endif
 
                     if (useTacticalLogic)
                     {
