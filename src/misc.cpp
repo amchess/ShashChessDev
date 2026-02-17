@@ -156,6 +156,12 @@ std::string engine_version_info() {
 #endif
     }
 
+// --- NOME PERSONALIZZATO PER GOLD DIGGER ---
+#ifdef GOLD_DIGGER
+    ss << " GoldDigger";
+#endif
+    // -------------------------------------------
+
     return ss.str();
 }
 
