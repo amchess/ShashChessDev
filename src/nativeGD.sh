@@ -6,11 +6,13 @@ set -e
 # Numero di core disponibili per velocizzare la compilazione
 CORES=$(nproc)
 
-echo "Inizio compilazione ShashChess GoldDigger Edition su Linux..."
+echo "Inizio compilazione ShashChess GoldDigger Edition su Linux (Native)..."
 
-# Compilazione con flag GOLD_DIGGER attivato
-# Usiamo ARCH=x86-64-bmi2 o ARCH=native a seconda delle tue preferenze
-make profile-build ARCH=native COMP=gcc EXTRACXXFLAGS="-DGOLD_DIGGER" -j $CORES
+# Pulizia preventiva
+make clean
+
+# Compilazione con flag GOLD_DIGGER forzato tramite ENV_CXXFLAGS
+make profile-build ARCH=native COMP=gcc ENV_CXXFLAGS="-DGOLD_DIGGER" -j $CORES
 
 # Pulizia dei simboli per ridurre la dimensione del file
 strip shashchess
