@@ -1701,9 +1701,18 @@ Value Search::Worker::search(
         bool skipNullMove = false;
 
 #ifdef GOLD_DIGGER
-        // GOLD DIGGER: Nessun limite di profondità se la posizione scotta o stiamo attaccando
-        if (nodeHot || isAggressive || (isPetrosian && staticState.stmKingDanger))
+        // GOLD DIGGER: Intelligenza 149. Disabilita NMP solo nei nodi non puramente strategici,
+        // o se c'è pericolo reale. Rimesso un limite di profondità (depth < 12)
+        // per evitare l'esplosione dei nodi alla radice dell'albero.
+        if (!isStrategical)
+        {
+            if (nodeHot || (isAggressive && staticState.kingDanger && depth < 12))
+                skipNullMove = true;
+        }
+        else if (staticState.pawnsNearPromotion)
+        {
             skipNullMove = true;
+        }
 #else
         // MAIN 142: Mantiene il limite depth < 10 per l'efficienza nei match
         if (nodeHot || (isAggressive && staticState.kingDanger && depth < 10))
@@ -2241,21 +2250,20 @@ skipExtensionAndPruning:  // full threads search patch
             if (depth > 5 && ss->ply > 1)
             {
 #ifdef GOLD_DIGGER
-                // 1. MASSIMA ALLERTA (Nodo Hot con mosse forzanti)
-                // Se il nodo scotta e stiamo facendo scacco o cattura, ABBATTIAMO la riduzione.
+                // GOLD DIGGER: Ispirato alla 149, ma con il boost tattico di nodeHot.
+                // Riduzione chirurgica: -55 per mosse forzanti in posizioni calde (evita l'esplosione nodi).
                 if (nodeHot && (givesCheck || capture))
                 {
-                    r -= 70;  // Esplorazione tattica estrema per il solving
+                    r -= 55;  // Valore magico della 149
                 }
-                // 2. PETROSIAN (Difesa: nodo Hot ma mossa tranquilla)
-                else if (isPetrosian && nodeHot && !capture)
+                else if (isAggressive && (givesCheck || capture))
                 {
-                    r -= 30;  // Diamo respiro per trovare le difese silenziose
+                    r -= 40;  // Boost moderato se non è Hot ma siamo comunque aggressivi
                 }
-                // 3. CAPABLANCA / FASE TRANQUILLA (Nessun pericolo)
-                else if (!nodeHot && !capture && !givesCheck && depth > 8)
+                else if (isStrategical && !capture && !givesCheck && depth > 8)
                 {
-                    r += 80;  // Motore da match: corri veloce e taglia tutto il superfluo
+                    r +=
+                      40;  // Ritorno al valore 149 per accelerare nelle fasi di quiete strategica
                 }
 #else
                 // MAIN 142: Parametri originali sintonizzati per la massima forza Elo
@@ -2888,12 +2896,13 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                 if (!pos.see_ge(move, alpha - futilityBase))
                 {
 #ifdef GOLD_DIGGER
-                    // GOLD DIGGER: La logica tattica (che permette di esplorare sacrifici apparentemente
-                    // perdenti) si attiva ogni volta che il nodo scotta (nodeHot) o c'è un sacrificio in corso,
-                    // oltre che per le posizioni HighTal.
-                    const bool useTacticalLogic =
-                      dynamicDerived.isHighTal || dynamicDerived.isTacticalReactive || isSacrificial
-                      || (staticState.kingDanger && !isStrategical) || nodeHot;
+                    // GOLD DIGGER: Massima apertura tattica.
+                    // Se il nodo scotta (nodeHot), c'è un sacrificio (isSacrificial) o siamo in assetto
+                    // aggressivo/tattico, forziamo l'esplorazione anche con SEE negativo.
+                    const bool useTacticalLogic = nodeHot || isSacrificial || isAggressive
+                                               || dynamicDerived.isHighTal
+                                               || dynamicDerived.isTacticalReactive
+                                               || (staticState.kingDanger && !isStrategical);
 #else
                     // MAIN 142: Mantiene la stabilità strategica dei match (Logica Originale 142)
                     const bool useTacticalLogic = dynamicDerived.isHighTal
