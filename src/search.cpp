@@ -1637,39 +1637,38 @@ Value Search::Worker::search(
         // --- SHASHIN ADJUSTMENTS (TIGHTENED) ---
         int marginMultiplier = 100;  // Base Stockfish (100%)
 
-        if (isAggressive)
-        {
-            // Old: ~75-85%. New: 90%.
-            // Riduciamo il margine (cerchiamo di più) ma senza esagerare.
-            marginMultiplier = 90;
-        }
+#ifdef GOLD_DIGGER
+        // GOLD DIGGER: Logica 149 Esatta (Salvataggio dai tagli)
+        if (isAggressive || isPetrosian)
+            marginMultiplier = 88;
         else if (isStrategical)
-        {
             marginMultiplier = 100;
-        }
+        else
+            marginMultiplier = 95;
 
-        // King Danger: fattore critico
-        if (staticState.kingDanger)
+        if (!isFortressNode && nodeHot)
         {
-            // Old: cap a 70. New: cap a 85.
-            // Non disabilitare il pruning troppo aggressivamente.
-            marginMultiplier = std::min(marginMultiplier, 85);
+            marginMultiplier = std::max(marginMultiplier, 110);  // LA CHIAVE DELLA 149
         }
-
-        // Fortress: Eccezione necessaria
-        // Le fortezze richiedono precisione assoluta, manteniamo 60.
         if (isFortressNode)
-        {
             marginMultiplier = 60;
-        }
-
-        // Adjustment per mobilità (semplificato e sicuro)
         if (isStrategical && legalMoveCount > 30)
-        {
             marginMultiplier = std::min(marginMultiplier + 5, 115);
-        }
-        // --- END SHASHIN ADJUSTMENTS ---
+#else
+        // MAIN 142
+        if (isAggressive)
+            marginMultiplier = 90;
+        else if (isStrategical)
+            marginMultiplier = 100;
 
+        if (staticState.kingDanger)
+            marginMultiplier = std::min(marginMultiplier, 85);
+        if (isFortressNode)
+            marginMultiplier = 60;
+        if (isStrategical && legalMoveCount > 30)
+            marginMultiplier = std::min(marginMultiplier + 5, 115);
+#endif
+        // --- END SHASHIN ADJUSTMENTS ---
         auto futility_margin = [&](Depth d) {
             Value futilityMult = 76 - 23 * !ss->ttHit;
 
@@ -1701,7 +1700,7 @@ Value Search::Worker::search(
         bool skipNullMove = false;
 
 #ifdef GOLD_DIGGER
-        // GOLD DIGGER: Replica esatta della 149. Nessuna sovra-ingegnerizzazione.
+        // GOLD DIGGER: Replica esatta della 149 (con nodeHot di salvataggio)
         if (isStrategical)
         {
             if (staticState.pawnsNearPromotion)
@@ -1709,7 +1708,7 @@ Value Search::Worker::search(
         }
         else
         {
-            if (staticState.kingDanger && depth < 10)
+            if (nodeHot || (isAggressive && staticState.kingDanger && depth < 10))
                 skipNullMove = true;
         }
 #else
@@ -1826,8 +1825,12 @@ Value Search::Worker::search(
         // probCut there
         && !(is_valid(ttData.value) && ttData.value < probCutBeta))
     {
-        // Shashin adjustment: skip ProbCut in inappropriate positions
+// Shashin adjustment: skip ProbCut in inappropriate positions
+#ifdef GOLD_DIGGER
+        bool skipProbCut = isFortressNode || nodeHot;
+#else
         bool skipProbCut = isFortressNode || (isStrategical && !staticState.kingDanger);
+#endif
 
         if (!skipProbCut)
         {
@@ -2100,10 +2103,8 @@ moves_loop:  // When in check, search starts here
 
 // --- SHASHIN SNIPER EXTENSION (TRUE RADAR) ---
 #ifdef GOLD_DIGGER
-            // GOLD DIGGER: Radar potenziato basato sul nodeHot dinamico.
-            // Se il nodo scotta (pericolo re, sacrifici, pedoni passati),
-            // aumentiamo la precisione della verifica (+25%) per stanare tattiche nascoste.
-            if (nodeHot && depth > 8)
+            // GOLD DIGGER: Replica esatta 149
+            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 8)
             {
                 singularDepth += std::max(1, singularDepth / 4);
             }
@@ -2244,15 +2245,22 @@ skipExtensionAndPruning:  // full threads search patch
 
             // Calcolo base della profondità ridotta (Standard Stockfish)
             Depth d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
-
             // --- SHASHIN LMR HYBRID TUNING (NODE HOT EXPLOIT) ---
             if (depth > 5 && ss->ply > 1)
             {
 #ifdef GOLD_DIGGER
-                // GOLD DIGGER: Replica esatta LMR della 149. Nessun nodeHot, solo stili.
-                if (isAggressive && (givesCheck || capture))
+                // GOLD DIGGER: Replica esatta LMR della 149
+                if (dynamicDerived.isHighTal)
+                {
+                    r -= 60;
+                }
+                else if (isAggressive && (givesCheck || capture))
                 {
                     r -= 55;
+                }
+                else if (isPetrosian && !capture)
+                {
+                    r -= 40;
                 }
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
                 {
@@ -2792,21 +2800,11 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
         futilityBase = ss->staticEval + 351;
 
-        // --- SHASHIN OPTIMIZATION 1: FUTILITY BASE (Dynamic) ---
-#ifdef GOLD_DIGGER
-        // GOLD DIGGER: Se il nodo è "Hot" o siamo aggressivi, allarghiamo la base
-        // per permettere sacrifici speculativi di pezzo leggero.
-        if (nodeHot || isAggressive)
-            futilityBase += 65;
-        else if (isStrategical)
-            futilityBase -= 25;
-#else
-        // MAIN 142: Logica originale sintonizzata per i match
+        // --- SHASHIN OPTIMIZATION 1: FUTILITY BASE (Original 149/142) ---
         if (dynamicDerived.isHighTal)
             futilityBase += 30;
         else if (isStrategical)
             futilityBase -= 20;
-#endif
         // ------------------------------------------------------------
     }
 

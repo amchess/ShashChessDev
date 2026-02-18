@@ -1,11 +1,11 @@
-=== Benchmark ShashChess 02/18/2026 14:54:45 ===
-========================================Time: 2887 ms, Nodes: 2620838, Nodes/sec: 907806
-Time: 2836 ms, Nodes: 2620838, Nodes/sec: 924131
-Time: 2845 ms, Nodes: 2620838, Nodes/sec: 921208
-Time: 2867 ms, Nodes: 2620838, Nodes/sec: 914139
-Time: 2802 ms, Nodes: 2620838, Nodes/sec: 935345
+=== Benchmark ShashChess 02/18/2026 17:19:46 ===
+========================================Time: 2515 ms, Nodes: 2572692, Nodes/sec: 1022939
+Time: 2475 ms, Nodes: 2572692, Nodes/sec: 1039471
+Time: 2489 ms, Nodes: 2572692, Nodes/sec: 1033624
+Time: 2679 ms, Nodes: 2572692, Nodes/sec: 960318
+Time: 2511 ms, Nodes: 2572692, Nodes/sec: 1024568
 ========================================
 Media dei risultati su 5 esecuzioni:
-Average Total time (ms) : 2847
-Average Nodes searched  : 2620838
-Average Nodes/second    : 920526
+Average Total time (ms) : 2534
+Average Nodes searched  : 2572692
+Average Nodes/second    : 1016184
