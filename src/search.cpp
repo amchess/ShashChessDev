@@ -1761,7 +1761,12 @@ Value Search::Worker::search(
     // Step 10. Internal iterative reductions
     // At sufficient depth, reduce depth for PV/Cut nodes without a TTMove.
     // (*Scaler) Making IIR more aggressive scales poorly.
+#ifdef GOLD_DIGGER
+    // GOLD DIGGER EXTREME: Non ridurre MAI l'orizzonte se il nodo scotta o siamo aggressivi.
+    if (!allNode && depth >= 6 && !ttData.move && priorReduction <= 3 && !(nodeHot || isAggressive))
+#else
     if (!allNode && depth >= 6 && !ttData.move && priorReduction <= 3)
+#endif
     {
         Depth originalDepth = depth;
 
@@ -1990,20 +1995,20 @@ moves_loop:  // When in check, search starts here
             if (depth > 8)
             {
 #ifdef GOLD_DIGGER
-                // GOLD DIGGER: Sfruttiamo nodeHot per un'ampiezza dinamica.
+                // GOLD DIGGER EXTREME: Ampiezza dinamica pura.
                 if (isStrategical && !nodeHot)
                 {
-                    // Se la posizione è calma e strategica, potiamo per mantenere NPS.
                     int extraReduction = (depth > 12 && !staticState.pawnsNearPromotion) ? 2 : 1;
                     moveCountThreshold -= extraReduction;
                 }
-                else if (nodeHot || isAggressive || isPetrosian)
+                else if (nodeHot)
                 {
-                    // Se il nodo scotta (nodeHot) o siamo in stili tattici, allarghiamo.
-                    // Il GoldDigger garantisce +2 mosse se c'è tensione, per non perdere colpi.
-                    int extraExtension =
-                      (nodeHot || staticState.pawnsNearPromotion || staticState.kingDanger) ? 2 : 1;
-                    moveCountThreshold += extraExtension;
+                    // PEPITA: Se scotta, allarghiamo la soglia di 4 mosse per non perdere i sacrifici silenziosi
+                    moveCountThreshold += 4;
+                }
+                else if (isAggressive || isPetrosian)
+                {
+                    moveCountThreshold += 1;
                 }
 #else
                 // MAIN 142: Mantiene la logica originale da match.
@@ -2250,15 +2255,18 @@ skipExtensionAndPruning:  // full threads search patch
             if (depth > 5 && ss->ply > 1)
             {
 #ifdef GOLD_DIGGER
-                // GOLD DIGGER: Ispirato alla 149, ma con il boost tattico di nodeHot.
-                // Riduzione chirurgica: -55 per mosse forzanti in posizioni calde (evita l'esplosione nodi).
+                // GOLD DIGGER EXTREME: Filtro intelligente basato sull'efficacia della mossa (history).
                 if (nodeHot && (givesCheck || capture))
                 {
-                    r -= 55;  // Valore magico della 149
+                    // Se la mossa fa scacco O ha una storia pregressa positiva, scendiamo a fondo.
+                    if (givesCheck || ss->statScore > 0)
+                        r -= 55;
+                    else
+                        r -= 20;  // Cattura con history negativa: boost moderato per non esplodere
                 }
                 else if (isAggressive && (givesCheck || capture))
                 {
-                    r -= 40;  // Boost moderato se non è Hot ma siamo comunque aggressivi
+                    r -= 40;
                 }
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
                 {
