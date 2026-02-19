@@ -2075,15 +2075,20 @@ moves_loop:  // When in check, search starts here
         {
             // Calcolo soglia base Stockfish
             int moveCountThreshold = (3 + depth * depth) / (2 - improving);
+
 // --- SHASHIN HYBRID TUNING (MATCH EFFICENCY + PUZZLE VISION) ---
 #ifdef GOLD_DIGGER
-            // GOLD DIGGER (da 149match-2 pura): Tuning bilanciato senza esplosioni di nodi.
+            // GOLD DIGGER: Allargamento mirato per non sprecare nodi (Tuning 149).
             if (depth > 8)
             {
-                if (isStrategical)
+                if (isStrategical && !nodeHot)
                 {
                     int extraReduction = (depth > 12 && !staticState.pawnsNearPromotion) ? 2 : 1;
                     moveCountThreshold -= extraReduction;
+                }
+                else if (nodeHot)
+                {
+                    moveCountThreshold += 2;  // Ridotto da 3 a 2 per non esaurire il tempo!
                 }
                 else if (isAggressive || isPetrosian)
                 {
@@ -2188,8 +2193,8 @@ moves_loop:  // When in check, search starts here
 
 // --- SHASHIN SNIPER EXTENSION (TRUE RADAR) ---
 #ifdef GOLD_DIGGER
-            // GOLD DIGGER (da 149match-2 pura): Lo Sniper Elite originale per le 3 posizioni!
-            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 10)
+            // GOLD DIGGER: Sniper guidato dal super-radar ma innescato a profondità sicura (Tuning 149).
+            if (nodeHot && depth > 10)
             {
                 singularDepth += std::max(1, singularDepth / 4);
             }
@@ -2203,6 +2208,7 @@ moves_loop:  // When in check, search starts here
             }
 #endif
             // ---------------------------------------------
+
             ss->excludedMove = move;
             value = search<NonPV>(pos, ss, singularBeta - 1, singularBeta, singularDepth, cutNode);
             ss->excludedMove = Move::none();
@@ -2333,12 +2339,13 @@ skipExtensionAndPruning:  // full threads search patch
 
 // --- SHASHIN LMR HYBRID TUNING ---
 #ifdef GOLD_DIGGER
-            // GOLD DIGGER (da 149match-2 pura):
+            // GOLD DIGGER (Tuning 149: Radar Tattico + Freno disinserito):
             if (depth > 5 && ss->ply > 1)
             {
-                if (isAggressive && (givesCheck || capture))
+                if (nodeHot || (isAggressive && (givesCheck || capture)))
                 {
-                    r -= 55;
+                    // Massima esplorazione sui nodi caldi
+                    r -= 60;
                 }
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
                 {
