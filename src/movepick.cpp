@@ -180,7 +180,21 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
             if (ply < LOW_PLY_HISTORY_SIZE)
                 m.value += 8 * (*lowPlyHistory)[ply][m.raw()] / (1 + ply);
 
-            // *** SHASHIN MOVEPICK TUNING ***
+// *** SHASHIN MOVEPICK TUNING ***
+#ifdef GOLD_DIGGER
+            // GOLD DIGGER (da 149match-2 pura): Nessun "Bonus Ritirata".
+            // Nei puzzle tattici, indietreggiare per salvare un pezzo in presa è spesso
+            // la mossa sbagliata. Lasciamo la History pura per far emergere i sacrifici!
+            if (MoveConfig::isStrategical && depth > 6)
+            {
+                // Manteniamo solo il bonus Capablanca per le manovre posizionali
+                if (type_of(pc) != PAWN && !pos.attackers_to(to, ~us))
+                {
+                    m.value += 30;
+                }
+            }
+#else
+            // MAIN 142
             if (depth > 6)
             {
                 // 1. CAPABLANCA: Favorisce l'occupazione di avamposti sicuri.
@@ -201,6 +215,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
                     }
                 }
             }
+#endif
         }
         else  // Type == EVASIONS
         {
