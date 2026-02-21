@@ -182,38 +182,15 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
 
 // *** SHASHIN MOVEPICK TUNING ***
 #ifdef GOLD_DIGGER
-            // GOLD DIGGER: Nessun Bonus Ritirata, attiviamo il BONUS D'ASSALTO!
-            if (depth > 6)
+            // GOLD DIGGER (da 149match-2 pura): Nessun "Bonus Ritirata".
+            // Nei puzzle tattici, indietreggiare per salvare un pezzo in presa è spesso
+            // la mossa sbagliata. Lasciamo la History pura per far emergere i sacrifici!
+            if (MoveConfig::isStrategical && depth > 6)
             {
-                if (MoveConfig::isStrategical)
+                // Manteniamo solo il bonus Capablanca per le manovre posizionali
+                if (type_of(pc) != PAWN && !pos.attackers_to(to, ~us))
                 {
-                    // Manteniamo il bonus Capablanca per le manovre posizionali
-                    if (type_of(pc) != PAWN && !pos.attackers_to(to, ~us))
-                    {
-                        m.value += 30;
-                    }
-                }
-                else
-                {
-                    // FASI TATTICHE (Tal / Caos): FORZA BRUTA OFFENSIVA
-
-                    // 1. Amplificazione Scacchi: Se la mossa dà scacco (già c'è un bonus di base), lo spingiamo in cima
-                    if (pos.check_squares(pt) & to)
-                    {
-                        m.value += 150;
-                    }
-
-                    // 2. Pedoni Kamikaze/Passati: Spinte aggressive dalla quinta traversa in su
-                    if (pt == PAWN && relative_rank(us, to) >= RANK_5)
-                    {
-                        m.value += 100;
-                    }
-
-                    // 3. Invasione: Pezzi che si tuffano verso la metà campo nemica
-                    else if (pt != PAWN && relative_rank(us, to) > relative_rank(us, from))
-                    {
-                        m.value += 60;
-                    }
+                    m.value += 30;
                 }
             }
 #else

@@ -2342,23 +2342,18 @@ skipExtensionAndPruning:  // full threads search patch
 
 // --- SHASHIN LMR HYBRID TUNING ---
 #ifdef GOLD_DIGGER
-            // GOLD DIGGER (149match-2 + Radar Tattico):
+            // GOLD DIGGER
             if (depth > 5 && ss->ply > 1)
             {
-                if (nodeHot || (isAggressive && (givesCheck || capture)))
+                if (nodeHot && (givesCheck || capture))
                 {
-                    // Massima esplorazione: se il radar è acceso o siamo in attacco forzante,
-                    // diminuiamo drasticamente la potatura (LMR) per trovare sacrifici nascosti.
-                    r -= 60;
+                    r -= 100;  // ZERO LMR: Ricerca a profondità totale per i colpi letali
                 }
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
                 {
-                    // Posizionale: usiamo il +40 della 149-2 (molto più sicuro del +80 del Main)
-                    // per evitare di tagliare varianti profonde nei puzzle.
                     r += 40;
                 }
 
-                // Ricalcoliamo 'd' (profondità ridotta) solo se 'r' è cambiato
                 if (r != original_r)
                 {
                     d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
@@ -3031,6 +3026,23 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             // --- END PHASE 4 ---
             // --- SHASHIN TACTICAL EXCEPTION (BALANCED) ---
             bool forceCheckSearch = false;
+#ifdef GOLD_DIGGER
+            // GOLD DIGGER: Ricreiamo il radar "nodeHot" localmente per la QSearch:
+            bool nodeHot = staticState.kingDanger || staticState.pawnsNearPromotion
+                        || staticState.isSacrificial || staticState.stmKingExposed
+                        || staticState.opponentKingExposed
+                        || (dynamicDerived.isHighTal && staticState.kingDanger)
+                        || (dynamicDerived.isTacticalReactive
+                            && (staticState.kingDanger || staticState.stmKingExposed
+                                || staticState.opponentKingExposed));
+
+            if (nodeHot)
+            {
+                if (givesCheck)
+                    forceCheckSearch = true;  // Calcola tutti gli scacchi
+                seeMargin = -1000;            // Non potare le catture suicide
+            }
+#else
 
             // 1. CONTESTO: Attiviamo su TUTTI gli Aggressive (non solo HighTal)
             // se c'è KingDanger, altrimenti sprechiamo tempo.
@@ -3047,7 +3059,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                         forceCheckSearch = true;
                 }
             }
-
+#endif
             // SEE pruning
             if (!forceCheckSearch && !pos.see_ge(move, seeMargin))
                 continue;
