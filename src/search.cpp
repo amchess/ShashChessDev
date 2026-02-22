@@ -2946,7 +2946,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     while ((move = mp.next_move()) != Move::none())
     {
         assert(move.is_ok());
-        Piece movedPiece = pos.moved_piece(move);
+        [[maybe_unused]] Piece movedPiece = pos.moved_piece(move);  //shashin
 
         if (!pos.legal(move))
             continue;
