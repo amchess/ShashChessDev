@@ -1738,16 +1738,23 @@ Value Search::Worker::search(
         bool skipNullMove = false;
 
 #ifdef GOLD_DIGGER
-        // GOLD DIGGER (da 149match-2): Logica NMP estrema per i puzzle.
+        // GOLD DIGGER: Logica NMP estrema ma chirurgica per i puzzle (Fase 1).
         if (isStrategical)
         {
-            if (staticState.pawnsNearPromotion)
+            // Nelle posizioni strategiche saltiamo solo se vicini a promozione e a profondità medie
+            if (staticState.pawnsNearPromotion && depth < 12)
                 skipNullMove = true;
         }
         else
         {
-            if (nodeHot || (isAggressive && staticState.kingDanger && depth < 10))
+            // Ignoriamo il 'nodeHot' generico per non perdere NMP su semplici esposizioni del re.
+            // Salviamo milioni di nodi riattivando il NMP dove non c'è reale pericolo letale.
+            if (staticState.kingDanger || isSacrificial
+                || (isAggressive && staticState.pawnsNearPromotion)
+                || (dynamicDerived.isHighTal && depth < 10))
+            {
                 skipNullMove = true;
+            }
         }
 #else
         // 1. Sicurezza Tattica (DNA 149): Se la posizione è calda o siamo in Tal < 10
@@ -1880,9 +1887,10 @@ Value Search::Worker::search(
     bool allowProbCut;  // <-- DICHIARAZIONE SEPARATA PER EVITARE L'ERRORE DEL GOTO
 
 #ifdef GOLD_DIGGER
-    // GOLD DIGGER (da 149match-2): Il ProbCut taglia le linee forzate profonde.
-    // Disabilitiamolo totalmente se il radar (nodeHot) è attivo!
-    allowProbCut = !disableNMAndPC && !ss->inCheck && !nodeHot;
+    // GOLD DIGGER: Disabilitiamo il ProbCut SOLO per dinamiche tattiche attive,
+    // permettendolo se il re è solo "esposto" o se ci sono altre metriche passive di nodeHot.
+    allowProbCut =
+      !disableNMAndPC && !ss->inCheck && !staticState.kingDanger && !staticState.isSacrificial;
 #else
     allowProbCut = !disableNMAndPC && !ss->inCheck;
 #endif
