@@ -2350,26 +2350,28 @@ skipExtensionAndPruning:  // full threads search patch
 
 // --- SHASHIN LMR HYBRID TUNING ---
 #ifdef GOLD_DIGGER
-            // GOLD DIGGER (149match-2 + Radar Tattico):
+            // GOLD DIGGER: LMR Tuning Isolato (Test 1)
             if (depth > 5 && ss->ply > 1)
             {
-                if (nodeHot || (isAggressive && (givesCheck || capture)))
+                // 1. RADAR ACCESO O SACRIFICI: Nessuna pietà per la potatura
+                if (nodeHot || isSacrificial)
                 {
-                    // Massima esplorazione: se il radar è acceso o siamo in attacco forzante,
-                    // diminuiamo drasticamente la potatura (LMR) per trovare sacrifici nascosti.
-                    r -= 60;
+                    // -80 è un bonus massiccio. Restituisce quasi 1 ply intero di esplorazione
+                    // alle mosse apparentemente "cattive" (che nei puzzle sono spesso quelle giuste).
+                    r -= 80;
                 }
+                // 2. STILE TAL (Attacco): Scacchi e catture non si toccano
+                else if (isAggressive && (givesCheck || capture))
+                {
+                    r -= 60;  // Diamo respiro per trovare i colpi di grazia
+                }
+                // 3. FASE STRATEGICA: Ricerca di mosse silenziose profonde
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
                 {
-                    // Posizionale: usiamo il +40 della 149-2 (molto più sicuro del +80 del Main)
-                    // per evitare di tagliare varianti profonde nei puzzle.
-                    r += 40;
-                }
-
-                // Ricalcoliamo 'd' (profondità ridotta) solo se 'r' è cambiato
-                if (r != original_r)
-                {
-                    d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
+                    // Nel Main di Stockfish qui si aggiunge molta riduzione (+80) per correre veloci.
+                    // Nel tuo file originale era +40. Scendiamo a +20: tagliamo poco, per non
+                    // perderci i "setup" silenziosi nei puzzle posizionali difficili.
+                    r += 20;
                 }
             }
 #else
@@ -2394,14 +2396,13 @@ skipExtensionAndPruning:  // full threads search patch
                     // Falciata in puro stile Stockfish Main (+80) per correre velocissimi.
                     r += 80;
                 }
-
-                // Ricalcoliamo 'd' (profondità ridotta) solo se 'r' è cambiato
-                if (r != original_r)
-                {
-                    d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
-                }
             }
 #endif
+            // Ricalcoliamo 'd' (profondità ridotta) solo se 'r' è cambiato
+            if (r != original_r)
+            {
+                d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
+            }
 
             // Fortezze: Riduzione minima per non sbagliare i finali
             if (isFortressNode)
