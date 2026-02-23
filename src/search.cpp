@@ -1258,11 +1258,11 @@ Value Search::Worker::search(
     bool        isTactical          = localShashinManager.isTactical();
     bool        isComplex           = localShashinManager.isComplexPosition();
 #ifdef GOLD_DIGGER
-    // GOLD DIGGER: Radar focalizzato solo sui pericoli concreti, non inquina le fasi di manovra.
-    const bool gd_hot =
-      staticState.kingDanger || staticState.isSacrificial
-      || (isAggressive && staticState.stmKingExposed)
-      || (dynamicDerived.isHighTal && (staticState.kingDanger || staticState.opponentKingExposed));
+    // GOLD DIGGER: Il super-radar tattico globale
+    const bool nodeHot =
+      staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial || stmKingExposed
+      || opponentKingExposed || (dynamicDerived.isHighTal && staticState.kingDanger)
+      || (isTacticalReactive && (staticState.kingDanger || stmKingExposed || opponentKingExposed));
 #endif
     uint8_t legalMoveCount = staticState.legalMoveCount;
     //from crystal shashin end
@@ -1605,9 +1605,23 @@ Value Search::Worker::search(
         // Base razoring threshold (Standard Stockfish formula)
         Value razorThreshold = alpha - 485 - 281 * depth * depth;
 
-        // --- SHASHIN HYBRID ADJUSTMENTS ---
-        // Bilanciamento tra visione tattica e velocità pura.
-
+// --- SHASHIN HYBRID ADJUSTMENTS ---
+#ifdef GOLD_DIGGER
+        // GOLD DIGGER: Nessun freno a mano. Se il nodo scotta o siamo in Tal, calcoliamo!
+        if (isAggressive || nodeHot)
+        {
+            razorThreshold -= 50;
+        }
+        if (isFortressNode)
+        {
+            razorThreshold -= 60;
+        }
+        if (legalMoveCount > 30 && !isStrategical)
+        {
+            razorThreshold -= 20;
+        }
+#else
+        // MAIN 142
         if (isAggressive)
         {
             // Tal: Meno pruning (-50) per non perdere combinazioni d'attacco.
@@ -1624,6 +1638,7 @@ Value Search::Worker::search(
         {
             razorThreshold -= 20;
         }
+#endif
         // --- END SHASHIN ADJUSTMENTS ---
 
         if (eval < razorThreshold)
@@ -1635,6 +1650,25 @@ Value Search::Worker::search(
         // --- SHASHIN ADJUSTMENTS (TIGHTENED) ---
         int marginMultiplier = 100;  // Base Stockfish (100%)
 
+#ifdef GOLD_DIGGER
+        // GOLD DIGGER (da 149match-2): Protezione tattica drastica
+        if (isAggressive || isPetrosian)
+            marginMultiplier = 88;
+        else if (isStrategical)
+            marginMultiplier = 100;
+        else
+            marginMultiplier = 95;
+
+        // LO SCUDO: Se c'è puzza di tattica, garantiamo esplorazione (110)
+        if (!isFortressNode && nodeHot)
+        {
+            marginMultiplier = std::max(marginMultiplier, 110);
+        }
+        if (isFortressNode)
+            marginMultiplier = 60;
+        if (isStrategical && legalMoveCount > 30)
+            marginMultiplier = std::min(marginMultiplier + 5, 115);
+#else
         if (isAggressive)
         {
             // Old: ~75-85%. New: 90%.
@@ -1666,6 +1700,7 @@ Value Search::Worker::search(
         {
             marginMultiplier = std::min(marginMultiplier + 5, 115);
         }
+#endif
         // --- END SHASHIN ADJUSTMENTS ---
 
         auto futility_margin = [&](Depth d) {
@@ -1696,14 +1731,29 @@ Value Search::Worker::search(
         && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && !is_loss(beta))
     {
         // --- SHASHIN HYBRID NMP SAFETY (OPTIMIZED) ---
+#ifndef GOLD_DIGGER
         // Definiamo i casi "Hot" in cui regalare una mossa è pericoloso
         bool nodeHot = staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial;
+#endif
         bool skipNullMove = false;
 
+#ifdef GOLD_DIGGER
+        // GOLD DIGGER (da 149match-2): Logica NMP estrema per i puzzle.
+        if (isStrategical)
+        {
+            if (staticState.pawnsNearPromotion)
+                skipNullMove = true;
+        }
+        else
+        {
+            if (nodeHot || (isAggressive && staticState.kingDanger && depth < 10))
+                skipNullMove = true;
+        }
+#else
         // 1. Sicurezza Tattica (DNA 149): Se la posizione è calda o siamo in Tal < 10
         if (nodeHot || (isAggressive && staticState.kingDanger && depth < 10))
             skipNullMove = true;
-#ifndef GOLD_DIGGER
+
         // 2. Sicurezza Difensiva (DNA Petrosian):
         // Se stiamo difendendo (Petrosian) e il nostro Re è sotto pressione,
         // NON passiamo mai. Vogliamo calcolare ogni risorsa difensiva.
@@ -1752,6 +1802,21 @@ Value Search::Worker::search(
     // (*Scaler) Making IIR more aggressive scales poorly.
     if (!allNode && depth >= 6 && !ttData.move && priorReduction <= 3)
     {
+#ifdef GOLD_DIGGER
+        // GOLD DIGGER (da 149match-2): Logica brutalmente semplificata e ultra-veloce.
+        depth--;  // Riduzione standard Stockfish
+
+        // --- SHASHIN IIR ---
+        // 1. È posizionale (Strategical o Fortezza)
+        // 2. NON è un nodo "caldo" (nodeHot)
+        // 3. I re sono al sicuro.
+        if (quietKingSafe && !nodeHot && !localShashinManager.avoidStep10())
+        {
+            if (isStrategical || isFortressNode)
+                depth = std::max(depth - 1, Depth(1));
+        }
+        // ------------------------------------------
+#else
         Depth originalDepth = depth;
 
         // Apply base Stockfish reduction
@@ -1804,20 +1869,38 @@ Value Search::Worker::search(
                 depth = std::max(originalDepth - reduction, 1);
             }
         }
+#endif
     }
     //by Shashin end
     // Step 11. ProbCut
     // If we have a good enough capture (or queen promotion) and a reduced search
     // returns a value much above beta, we can (almost) safely prune the previous move.
     probCutBeta = beta + 235 - 63 * improving;
-    if (depth >= 3 && !disableNMAndPC && !ss->inCheck
+
+    bool allowProbCut;  // <-- DICHIARAZIONE SEPARATA PER EVITARE L'ERRORE DEL GOTO
+
+#ifdef GOLD_DIGGER
+    // GOLD DIGGER (da 149match-2): Il ProbCut taglia le linee forzate profonde.
+    // Disabilitiamolo totalmente se il radar (nodeHot) è attivo!
+    allowProbCut = !disableNMAndPC && !ss->inCheck && !nodeHot;
+#else
+    allowProbCut = !disableNMAndPC && !ss->inCheck;
+#endif
+
+    if (depth >= 3 && allowProbCut
         && !is_decisive(beta)  //learning
         // If value from transposition table is lower than probCutBeta, don't attempt
         // probCut there
         && !(is_valid(ttData.value) && ttData.value < probCutBeta))
     {
+#ifdef GOLD_DIGGER
+        // Nella 149match-2, nodeHot fa già il grosso del lavoro.
+        // L'unico altro filtro fisso sono le fortezze.
+        bool skipProbCut = isFortressNode;
+#else
         // Shashin adjustment: skip ProbCut in inappropriate positions
         bool skipProbCut = isFortressNode || (isStrategical && !staticState.kingDanger);
+#endif
 
         if (!skipProbCut)
         {
@@ -1825,7 +1908,15 @@ Value Search::Worker::search(
 
             MovePicker mp(pos, ttData.move, probCutBeta - ss->staticEval, &captureHistory);
             Depth      dynamicReduction = std::max((ss->staticEval - beta) / 315, -1);
-            Depth      probCutDepth     = std::clamp(depth - 5 - dynamicReduction, 0, depth);
+            Depth      baseProbCutDepth = std::clamp(depth - 5 - dynamicReduction, 0, depth);
+
+#ifdef GOLD_DIGGER
+            // GOLD DIGGER: Modificatore base aggiunto prima degli stili (+1 per tattica)
+            Depth probCutDepth = std::clamp(baseProbCutDepth + (isStrategical ? -1 : 1), 0, depth);
+#else
+            // MAIN 142
+            Depth probCutDepth = baseProbCutDepth;
+#endif
 
             // Shashin-based depth adjustments
             if (isCapablanca && depth > 8)
@@ -1884,17 +1975,32 @@ moves_loop:  // When in check, search starts here
     // Step 12. A small Probcut idea - Balanced Hybrid Safety
     probCutBeta = beta + 418;
     //from Shashin Crystal begin
+
+#ifdef GOLD_DIGGER
+    // GOLD DIGGER: Usiamo il super-radar. Se nodeHot è attivo, c'è rischio tattico.
+    // Impediamo la fiducia cieca nella TT a meno che la profondità esplorata non sia altissima.
+    const bool tacticalRiskStep12 = nodeHot;
+#else
+    // --- HYBRID PROBCUT (Safety Check - Base Main) ---
+    // Ricalcoliamo il rischio tattico includendo gli stili.
+    // È fondamentale che isTal e isPetrosian siano qui per evitare ProbCut suicidi nei match.
+    const bool tacticalRiskStep12 = staticState.kingDanger || staticState.pawnsNearPromotion
+                                 || isSacrificial || stmKingExposed || opponentKingExposed;
+#endif
+
     const bool commonProbcut = (ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 4
                             && ttData.value >= probCutBeta && !is_decisive(beta)
                             && is_valid(ttData.value) && !is_decisive(ttData.value);
 
     if (commonProbcut)
     {
-        bool tacticalRisk = staticState.kingDanger || staticState.pawnsNearPromotion
-                         || isSacrificial || stmKingExposed || opponentKingExposed;
-
-        if (!tacticalRisk || ttData.depth >= depth - 2)
+        // Applichiamo il taglio se:
+        // 1. NON c'è rischio tattico (fiducia cieca standard)
+        // 2. OPPURE c'è rischio MA la profondità TT è alta (>= depth - 2), quindi ci fidiamo.
+        if (!tacticalRiskStep12 || ttData.depth >= depth - 2)
+        {
             return probCutBeta;
+        }
     }
     //from Shashin Crystal end
 
@@ -1976,18 +2082,33 @@ moves_loop:  // When in check, search starts here
             int moveCountThreshold = (3 + depth * depth) / (2 - improving);
 
             // --- SHASHIN HYBRID TUNING (MATCH EFFICENCY + PUZZLE VISION) ---
+#ifdef GOLD_DIGGER
+            // GOLD DIGGER: Allargamento estremo per trovare mosse silenziose preparatorie.
+            if (depth > 8)
+            {
+                if (isStrategical && !nodeHot)
+                {
+                    int extraReduction = (depth > 12 && !staticState.pawnsNearPromotion) ? 2 : 1;
+                    moveCountThreshold -= extraReduction;
+                }
+                else if (nodeHot)
+                {
+                    // Se il radar annusa sangue, allarghiamo drasticamente il numero
+                    // di mosse silenziose da esplorare per non perdere i "setup" dei sacrifici.
+                    moveCountThreshold += 3;
+                }
+                else if (isAggressive || isPetrosian)
+                {
+                    moveCountThreshold += (staticState.pawnsNearPromotion ? 2 : 1);
+                }
+            }
+#else
+
             if (depth > 8)
             {
                 if (isStrategical)
-#ifdef GOLD_DIGGER
-                    moveCountThreshold -= 1;  // Pruning leggermente più stretto
-                else if (isAggressive)
-                    moveCountThreshold += 1;  // Pruning leggermente più largo
-#else
                 {
                     // CAPABLANCA: Il Turbo posizionale.
-                    // Pruning forte (-2) per correre veloci, ma SOLO se siamo profondi
-                    // e non ci sono minacce immediate da pedoni.
                     int extraReduction = (depth > 12 && !staticState.pawnsNearPromotion) ? 2 : 1;
                     moveCountThreshold -= extraReduction;
                 }
@@ -2004,9 +2125,10 @@ moves_loop:  // When in check, search starts here
                     }
                     moveCountThreshold += extraExtension;
                 }
-#endif
             }
+#endif
             // -------------------------------------------------------------
+
             // Skip quiet moves if movecount exceeds our threshold
             if (moveCount >= moveCountThreshold)
                 mp.skip_quiet_moves();
@@ -2078,15 +2200,16 @@ moves_loop:  // When in check, search starts here
         {
             Value singularBeta  = ttData.value - (53 + 75 * (ss->ttPv && !PvNode)) * depth / 60;
             Depth singularDepth = newDepth / 2;
+
+            // --- SHASHIN SNIPER EXTENSION (TRUE RADAR) ---
 #ifdef GOLD_DIGGER
-            // GOLD DIGGER: Il Cecchino. Se il radar suona e siamo profondi,
-            // estendiamo la profondità in modo spietato (/3) per forzare il calcolo dei sacrifici.
-            if (gd_hot && depth > 8)
+            // GOLD DIGGER: Sniper guidato dal super-radar.
+            // Se nodeHot è acceso, applichiamo il massimo boost di profondità (/4).
+            if (nodeHot && depth > 8)
             {
-                singularDepth += std::max(1, singularDepth / 3);
+                singularDepth += std::max(1, singularDepth / 4);
             }
 #else
-            // --- SHASHIN SNIPER EXTENSION (TRUE RADAR) ---
             // Se c'è pericolo (attacco o sacrifici nell'aria) e siamo in fase avanzata,
             // non ci accontentiamo di una ricerca di verifica superficiale.
             // Aumentiamo la profondità del 25% circa per non farci sfuggire combinazioni brutali.
@@ -2094,8 +2217,9 @@ moves_loop:  // When in check, search starts here
             {
                 singularDepth += std::max(1, singularDepth / 4);
             }
-            // ---------------------------------------------
 #endif
+            // ---------------------------------------------
+
             ss->excludedMove = move;
             value = search<NonPV>(pos, ss, singularBeta - 1, singularBeta, singularDepth, cutNode);
             ss->excludedMove = Move::none();
@@ -2176,7 +2300,7 @@ skipExtensionAndPruning:  // full threads search patch
         if ((ss + 1)->cutoffCnt > 1)
         {
             // Logica tattica: usa formula ShashChess originale (meno aggressiva)
-            if (dynamicDerived.isHighTal || isTacticalReactive || staticState.isSacrificial)
+            if (dynamicDerived.isHighTal || isTacticalReactive || isSacrificial)
             {
                 // Formula ShashChess: conservativa per preservare profondità tattica
                 r += 120 + 1024 * ((ss + 1)->cutoffCnt > 2) + 100 * ((ss + 1)->cutoffCnt > 3)
@@ -2223,24 +2347,32 @@ skipExtensionAndPruning:  // full threads search patch
 
             // Calcolo base della profondità ridotta (Standard Stockfish)
             Depth d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
+
+// --- SHASHIN LMR HYBRID TUNING ---
 #ifdef GOLD_DIGGER
-            // GOLD DIGGER LMR: Nessuna pietà.
+            // GOLD DIGGER (149match-2 + Radar Tattico):
             if (depth > 5 && ss->ply > 1)
             {
-                // Se è uno scacco e il radar suona, azzeriamo quasi la riduzione (-100).
-                if (gd_hot && givesCheck)
-                    r -= 100;
-                else if (isAggressive && capture)
+                if (nodeHot || (isAggressive && (givesCheck || capture)))
+                {
+                    // Massima esplorazione: se il radar è acceso o siamo in attacco forzante,
+                    // diminuiamo drasticamente la potatura (LMR) per trovare sacrifici nascosti.
                     r -= 60;
+                }
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
+                {
+                    // Posizionale: usiamo il +40 della 149-2 (molto più sicuro del +80 del Main)
+                    // per evitare di tagliare varianti profonde nei puzzle.
                     r += 40;
+                }
 
+                // Ricalcoliamo 'd' (profondità ridotta) solo se 'r' è cambiato
                 if (r != original_r)
+                {
                     d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
+                }
             }
 #else
-            // --- SHASHIN LMR HYBRID TUNING (CORRETTO) ---
-
             if (depth > 5 && ss->ply > 1)
             {
                 // Caso 1: TAL (Attacco Estremo)
@@ -2270,6 +2402,7 @@ skipExtensionAndPruning:  // full threads search patch
                 }
             }
 #endif
+
             // Fortezze: Riduzione minima per non sbagliare i finali
             if (isFortressNode)
             {
