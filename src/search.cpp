@@ -2093,9 +2093,10 @@ moves_loop:  // When in check, search starts here
                 }
                 else if (nodeHot)
                 {
-                    // Se il radar annusa sangue, allarghiamo drasticamente il numero
-                    // di mosse silenziose da esplorare per non perdere i "setup" dei sacrifici.
-                    moveCountThreshold += 3;
+                    // FASE 4: DIETA.
+                    // Non allarghiamo a dismisura (+3) per ogni pericolo, altrimenti esplodono i nodi.
+                    // Usiamo +3 SOLO per i sacrifici attivi, +2 per il semplice pericolo (KingDanger).
+                    moveCountThreshold += (staticState.isSacrificial ? 3 : 2);
                 }
                 else if (isAggressive || isPetrosian)
                 {
@@ -2351,21 +2352,18 @@ skipExtensionAndPruning:  // full threads search patch
 
 // --- SHASHIN LMR HYBRID TUNING ---
 #ifdef GOLD_DIGGER
-            // GOLD DIGGER Fase 3: Aggressive Unified.
-            // Torniamo alla logica unita (più solida) ma alziamo il bonus da 60 a 70.
+            // GOLD DIGGER Fase 4: Return to Base (-60).
+            // Il -70 della Fase 3 causava node bloat (142 risolte).
+            // Torniamo al -60 del record (146), ma con la struttura unificata.
             if (depth > 5 && ss->ply > 1)
             {
-                // Se c'è "sangue" (nodeHot) o aggressività, riduciamo drasticamente la potatura.
-                // -70 è più profondo del -60 della versione base (146).
                 if (nodeHot || (isAggressive && (givesCheck || capture)))
                 {
-                    r -= 70;
+                    r -= 60;  // Valore provato e solido
                 }
-                // Nelle posizioni strategiche morte, tagliamo di più (+70)
-                // per risparmiare tempo e nodi da investire nella tattica.
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
                 {
-                    r += 70;
+                    r += 60;  // Simmetria
                 }
             }
 #else
