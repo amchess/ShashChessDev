@@ -1738,23 +1738,16 @@ Value Search::Worker::search(
         bool skipNullMove = false;
 
 #ifdef GOLD_DIGGER
-        // GOLD DIGGER: Logica NMP estrema ma chirurgica per i puzzle (Fase 1).
+        // GOLD DIGGER (da 149match-2): Logica NMP estrema per i puzzle.
         if (isStrategical)
         {
-            // Nelle posizioni strategiche saltiamo solo se vicini a promozione e a profondità medie
-            if (staticState.pawnsNearPromotion && depth < 12)
+            if (staticState.pawnsNearPromotion)
                 skipNullMove = true;
         }
         else
         {
-            // Ignoriamo il 'nodeHot' generico per non perdere NMP su semplici esposizioni del re.
-            // Salviamo milioni di nodi riattivando il NMP dove non c'è reale pericolo letale.
-            if (staticState.kingDanger || isSacrificial
-                || (isAggressive && staticState.pawnsNearPromotion)
-                || (dynamicDerived.isHighTal && depth < 10))
-            {
+            if (nodeHot || (isAggressive && staticState.kingDanger && depth < 10))
                 skipNullMove = true;
-            }
         }
 #else
         // 1. Sicurezza Tattica (DNA 149): Se la posizione è calda o siamo in Tal < 10
@@ -1887,10 +1880,9 @@ Value Search::Worker::search(
     bool allowProbCut;  // <-- DICHIARAZIONE SEPARATA PER EVITARE L'ERRORE DEL GOTO
 
 #ifdef GOLD_DIGGER
-    // GOLD DIGGER: Disabilitiamo il ProbCut SOLO per dinamiche tattiche attive,
-    // permettendolo se il re è solo "esposto" o se ci sono altre metriche passive di nodeHot.
-    allowProbCut =
-      !disableNMAndPC && !ss->inCheck && !staticState.kingDanger && !staticState.isSacrificial;
+    // GOLD DIGGER (da 149match-2): Il ProbCut taglia le linee forzate profonde.
+    // Disabilitiamolo totalmente se il radar (nodeHot) è attivo!
+    allowProbCut = !disableNMAndPC && !ss->inCheck && !nodeHot;
 #else
     allowProbCut = !disableNMAndPC && !ss->inCheck;
 #endif
@@ -2358,20 +2350,23 @@ skipExtensionAndPruning:  // full threads search patch
 
 // --- SHASHIN LMR HYBRID TUNING ---
 #ifdef GOLD_DIGGER
-            // GOLD DIGGER (149match-2 + Radar Tattico):
+            // GOLD DIGGER: Fase 2 - LMR Scalato e Chirurgico
             if (depth > 5 && ss->ply > 1)
             {
-                if (nodeHot || (isAggressive && (givesCheck || capture)))
+                if (staticState.isSacrificial || dynamicDerived.isHighTal)
                 {
-                    // Massima esplorazione: se il radar è acceso o siamo in attacco forzante,
-                    // diminuiamo drasticamente la potatura (LMR) per trovare sacrifici nascosti.
-                    r -= 60;
+                    // Massima esplorazione chirurgica per sacrifici veri e dominanza tattica (Tal estremo)
+                    r -= 85;
+                }
+                else if (nodeHot || (isAggressive && (givesCheck || capture)))
+                {
+                    // Bonus moderato per nodeHot generico: calcoliamo tanto, ma senza esplodere
+                    r -= 40;
                 }
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
                 {
-                    // Posizionale: usiamo il +40 della 149-2 (molto più sicuro del +80 del Main)
-                    // per evitare di tagliare varianti profonde nei puzzle.
-                    r += 40;
+                    // Tagliamo leggermente di più le mosse noiose per finanziare la tattica
+                    r += 60;
                 }
             }
 #else
