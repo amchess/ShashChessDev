@@ -2203,11 +2203,12 @@ moves_loop:  // When in check, search starts here
 
             // --- SHASHIN SNIPER EXTENSION (TRUE RADAR) ---
 #ifdef GOLD_DIGGER
-            // GOLD DIGGER: Sniper guidato dal super-radar.
-            // Se nodeHot è acceso, applichiamo il massimo boost di profondità (/4).
+            // GOLD DIGGER Fase 3: Sniper "Cecchino".
+            // Aumentiamo l'estensione da /4 a /3. In posizioni tattiche (nodeHot),
+            // se c'è una mossa singolare, la verifichiamo molto più a fondo.
             if (nodeHot && depth > 8)
             {
-                singularDepth += std::max(1, singularDepth / 4);
+                singularDepth += std::max(1, singularDepth / 3);
             }
 #else
             // Se c'è pericolo (attacco o sacrifici nell'aria) e siamo in fase avanzata,
@@ -2350,23 +2351,21 @@ skipExtensionAndPruning:  // full threads search patch
 
 // --- SHASHIN LMR HYBRID TUNING ---
 #ifdef GOLD_DIGGER
-            // GOLD DIGGER: Fase 2 - LMR Scalato e Chirurgico
+            // GOLD DIGGER Fase 3: Aggressive Unified.
+            // Torniamo alla logica unita (più solida) ma alziamo il bonus da 60 a 70.
             if (depth > 5 && ss->ply > 1)
             {
-                if (staticState.isSacrificial || dynamicDerived.isHighTal)
+                // Se c'è "sangue" (nodeHot) o aggressività, riduciamo drasticamente la potatura.
+                // -70 è più profondo del -60 della versione base (146).
+                if (nodeHot || (isAggressive && (givesCheck || capture)))
                 {
-                    // Massima esplorazione chirurgica per sacrifici veri e dominanza tattica (Tal estremo)
-                    r -= 85;
+                    r -= 70;
                 }
-                else if (nodeHot || (isAggressive && (givesCheck || capture)))
-                {
-                    // Bonus moderato per nodeHot generico: calcoliamo tanto, ma senza esplodere
-                    r -= 40;
-                }
+                // Nelle posizioni strategiche morte, tagliamo di più (+70)
+                // per risparmiare tempo e nodi da investire nella tattica.
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
                 {
-                    // Tagliamo leggermente di più le mosse noiose per finanziare la tattica
-                    r += 60;
+                    r += 70;
                 }
             }
 #else

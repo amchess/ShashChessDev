@@ -155,14 +155,8 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
             m.value = (*captureHistory)[pc][to][type_of(capturedPiece)]
                     + 7 * int(PieceValue[capturedPiece]);
 
-            // GOLD DIGGER Fase 2: Ripristino bonus tattico mirato per le catture.
-            // Se siamo in un dominio aggressivo, le catture che danno scacco
-            // DEVONO stare in cima per evitare di essere falciate dall'LMR.
-            if (MoveConfig::isAggressive || MoveConfig::useMoveShashinLogic)
-            {
-                if (pos.check_squares(pt) & to)
-                    m.value += 10000;  // Super bonus scacco
-            }
+            // *** RIMOSSO BONUS AGGRESSIVO ***
+            // Rimosso bonus scacco/SEE. Lasciamo che MVV e CaptureHistory facciano il loro lavoro.
         }
         else if constexpr (Type == QUIETS)
         {
