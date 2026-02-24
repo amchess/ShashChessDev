@@ -1056,22 +1056,9 @@ void Search::Worker::iterative_deepening() {
 
             double highBestMoveEffort = nodesEffort >= 93340 ? 0.76 : 1.0;
 
-#ifdef GOLD_DIGGER
-            // Ricalcolo locale per Time Man Efficient
-            const auto& sState      = rootShashinState.staticState;
-            bool        rootNodeHot = sState.kingDanger || sState.pawnsNearPromotion
-                            || sState.isSacrificial || sState.stmKingExposed
-                            || sState.opponentKingExposed
-                            || (rootShashinState.dynamicDerived.isHighTal)
-                            || (sState.legalMoveCount > 42 && !isStrategical);  // Soglia 42
-
-            double tacticalFactor = rootNodeHot ? 1.05 : 1.0;  // +5% tempo
-#else
-            double tacticalFactor = 1.0;
-#endif
-
+            // NESSUN tacticalFactor (Reset puro)
             double totalTime = mainThread->tm.optimum() * fallingEval * reduction
-                             * bestMoveInstability * highBestMoveEffort * tacticalFactor;
+                             * bestMoveInstability * highBestMoveEffort;
 
             // Cap used time in case of a single legal move for a better viewer experience
             if (rootMoves.size() == 1)
@@ -1272,10 +1259,13 @@ Value Search::Worker::search(
     bool        isTactical          = localShashinManager.isTactical();
     bool        isComplex           = localShashinManager.isComplexPosition();
 #ifdef GOLD_DIGGER
-    // GOLD DIGGER Efficient: Radar tattico altamente selettivo
-    const bool nodeHot = staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial
-                      || dynamicDerived.isHighTal
-                      || (staticState.legalMoveCount > 42 && !isStrategical);  // Soglia alzata a 42
+    // GOLD DIGGER 146+ Final: Base v1 + Estensione Reactive
+    const bool nodeHot =
+      staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial
+      || dynamicDerived.isHighTal
+      || (staticState.legalMoveCount > 35 && !isStrategical)  // Base v1 (35)
+      // NUOVA: posizioni tattiche reattive anche senza pericolo re, ma con buona mobilità
+      || (isTacticalReactive && !staticState.kingDanger && staticState.legalMoveCount > 30);
 #endif
     uint8_t legalMoveCount = staticState.legalMoveCount;
     //from crystal shashin end
@@ -1664,8 +1654,19 @@ Value Search::Worker::search(
         int marginMultiplier = 100;  // Base Stockfish (100%)
 
 #ifdef GOLD_DIGGER
-        // GOLD DIGGER Efficient: Nessun bonus tattico, valore standard 100
-        marginMultiplier = 100;
+        // GOLD DIGGER v1 (Reset)
+        if (isAggressive || isPetrosian)
+            marginMultiplier = 88;
+        else if (isStrategical)
+            marginMultiplier = 100;
+        else
+            marginMultiplier = 95;
+
+        // LO SCUDO: Se c'è puzza di tattica, garantiamo esplorazione (110)
+        if (!isFortressNode && nodeHot)
+        {
+            marginMultiplier = std::max(marginMultiplier, 110);
+        }
 #else
         // MAIN 142
         if (isAggressive)
@@ -1737,8 +1738,8 @@ Value Search::Worker::search(
         }
         else
         {
-            // Profondità ridotta a 9 per risparmiare nodi
-            if (nodeHot || (isAggressive && staticState.kingDanger && depth < 9))
+            // Torniamo a depth < 10 (GoldDigger146 standard)
+            if (nodeHot || (isAggressive && staticState.kingDanger && depth < 10))
                 skipNullMove = true;
         }
 #else
@@ -2084,7 +2085,7 @@ moves_loop:  // When in check, search starts here
                 }
                 else if (nodeHot)
                 {
-                    moveCountThreshold += 2;  // Solo +2
+                    moveCountThreshold += 3;  // Invariato (Reset v1)
                 }
                 else if (isAggressive || isPetrosian)
                 {
@@ -2189,10 +2190,10 @@ moves_loop:  // When in check, search starts here
 
 // --- SHASHIN SNIPER EXTENSION (TRUE RADAR) ---
 #ifdef GOLD_DIGGER
-            // GOLD DIGGER Efficient: Boost minimo (/5)
+            // GOLD DIGGER 146+: Standard (/4)
             if (nodeHot && depth > 8)
             {
-                singularDepth += std::max(1, singularDepth / 5);
+                singularDepth += std::max(1, singularDepth / 4);
             }
 #else
             // MAIN 142
@@ -2340,7 +2341,7 @@ skipExtensionAndPruning:  // full threads search patch
             {
                 if (nodeHot || (isAggressive && (givesCheck || capture)))
                 {
-                    r -= 50;  // Riduzione leggera
+                    r -= 60;  // Reset a -60 (Valore v1)
                 }
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
                 {
@@ -2402,14 +2403,14 @@ skipExtensionAndPruning:  // full threads search patch
             if (value > alpha)
             {
 #ifdef GOLD_DIGGER
-                int threshold = nodeHot ? 45 : 50;
+                int threshold = 50;  // Reset a 50 fisso
 #else
                 int threshold = 50;
 #endif
                 const bool doDeeperSearch    = d < newDepth && value > bestValue + threshold;
                 const bool doShallowerSearch = value < bestValue + 9;
 
-                // Standard Stockfish re-search logic (Crystal Logic rimossa per stabilità)
+                // Standard Stockfish re-search logic
                 newDepth += doDeeperSearch - doShallowerSearch;
                 if (newDepth > d)
                     value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, newDepth, !cutNode);
@@ -2927,8 +2928,8 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     if (isAggressive || dynamicDerived.isHighTal)
     {
 #ifdef GOLD_DIGGER
-        // GOLD DIGGER Efficient: Valori quasi standard per stabilità
-        seeMargin = staticState.kingDanger ? -100 : -80;
+        // GOLD DIGGER 146+: Tal Magic Restore (-110/-90)
+        seeMargin = staticState.kingDanger ? -110 : -90;
 #else
         // MAIN 142 Logic
         seeMargin = staticState.kingDanger ? -110 : -90;
