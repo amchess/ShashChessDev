@@ -1057,21 +1057,22 @@ void Search::Worker::iterative_deepening() {
             double highBestMoveEffort = nodesEffort >= 93340 ? 0.76 : 1.0;
 
 #ifdef GOLD_DIGGER
-            // Ricalcolo locale per Time Management
-            const auto& sState = rootShashinState.staticState;
-            bool        rootNodeHot =
-              sState.kingDanger || sState.pawnsNearPromotion || sState.isSacrificial
-              || sState.stmKingExposed || sState.opponentKingExposed
-              || (rootShashinState.dynamicDerived.isHighTal)
-              || (sState.legalMoveCount > 38 && !isStrategical);  // Sync con soglia 38
+            // Ricalcolo locale per Time Man Efficient
+            const auto& sState      = rootShashinState.staticState;
+            bool        rootNodeHot = sState.kingDanger || sState.pawnsNearPromotion
+                            || sState.isSacrificial || sState.stmKingExposed
+                            || sState.opponentKingExposed
+                            || (rootShashinState.dynamicDerived.isHighTal)
+                            || (sState.legalMoveCount > 42 && !isStrategical);  // Soglia 42
 
-            double tacticalFactor = rootNodeHot ? 1.12 : 1.0;  // +12% tempo
+            double tacticalFactor = rootNodeHot ? 1.05 : 1.0;  // +5% tempo
 #else
             double tacticalFactor = 1.0;
 #endif
 
             double totalTime = mainThread->tm.optimum() * fallingEval * reduction
                              * bestMoveInstability * highBestMoveEffort * tacticalFactor;
+
             // Cap used time in case of a single legal move for a better viewer experience
             if (rootMoves.size() == 1)
                 totalTime = std::min(502.0, totalTime);
@@ -1271,12 +1272,10 @@ Value Search::Worker::search(
     bool        isTactical          = localShashinManager.isTactical();
     bool        isComplex           = localShashinManager.isComplexPosition();
 #ifdef GOLD_DIGGER
-    // GOLD DIGGER Light: Radar tattico bilanciato
-    const bool nodeHot =
-      staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial || stmKingExposed
-      || opponentKingExposed || (dynamicDerived.isHighTal)  // HighTal sempre attivo
-      || (isTacticalReactive && (staticState.kingDanger || stmKingExposed || opponentKingExposed))
-      || (staticState.legalMoveCount > 38 && !isStrategical);  // Soglia aumentata a 38
+    // GOLD DIGGER Efficient: Radar tattico altamente selettivo
+    const bool nodeHot = staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial
+                      || dynamicDerived.isHighTal
+                      || (staticState.legalMoveCount > 42 && !isStrategical);  // Soglia alzata a 42
 #endif
     uint8_t legalMoveCount = staticState.legalMoveCount;
     //from crystal shashin end
@@ -1621,10 +1620,10 @@ Value Search::Worker::search(
 
 // --- SHASHIN HYBRID ADJUSTMENTS ---
 #ifdef GOLD_DIGGER
-        // GOLD DIGGER Light
+        // GOLD DIGGER: Nessun freno a mano. Se il nodo scotta o siamo in Tal, calcoliamo!
         if (isAggressive || nodeHot)
         {
-            razorThreshold -= 60;  // Aumentato da -50 a -60
+            razorThreshold -= 50;
         }
         if (isFortressNode)
         {
@@ -1632,7 +1631,7 @@ Value Search::Worker::search(
         }
         if (legalMoveCount > 30 && !isStrategical)
         {
-            razorThreshold -= 20;  // Invariato
+            razorThreshold -= 20;
         }
 #else
         // MAIN 142
@@ -1665,13 +1664,8 @@ Value Search::Worker::search(
         int marginMultiplier = 100;  // Base Stockfish (100%)
 
 #ifdef GOLD_DIGGER
-        // GOLD DIGGER Light
-        if (isAggressive || isPetrosian || nodeHot)
-            marginMultiplier = 105;  // Valore unificato e bilanciato
-        else if (isStrategical)
-            marginMultiplier = 100;
-        else
-            marginMultiplier = 100;  // Leggermente più permissivo del 95 base
+        // GOLD DIGGER Efficient: Nessun bonus tattico, valore standard 100
+        marginMultiplier = 100;
 #else
         // MAIN 142
         if (isAggressive)
@@ -1743,7 +1737,8 @@ Value Search::Worker::search(
         }
         else
         {
-            if (nodeHot || (isAggressive && staticState.kingDanger && depth < 11))  // 10 -> 11
+            // Profondità ridotta a 9 per risparmiare nodi
+            if (nodeHot || (isAggressive && staticState.kingDanger && depth < 9))
                 skipNullMove = true;
         }
 #else
@@ -1877,10 +1872,8 @@ Value Search::Worker::search(
     bool allowProbCut;  // <-- DICHIARAZIONE SEPARATA PER EVITARE L'ERRORE DEL GOTO
 
 #ifdef GOLD_DIGGER
-    // GOLD DIGGER Light: Disabilita SOLO su nodeHot.
     allowProbCut = !disableNMAndPC && !ss->inCheck && !nodeHot;
 #else
-    // MAIN 142
     allowProbCut = !disableNMAndPC && !ss->inCheck;
 #endif
 
@@ -2091,7 +2084,7 @@ moves_loop:  // When in check, search starts here
                 }
                 else if (nodeHot)
                 {
-                    moveCountThreshold += 4;  // Aumentato da +3 a +4
+                    moveCountThreshold += 2;  // Solo +2
                 }
                 else if (isAggressive || isPetrosian)
                 {
@@ -2196,11 +2189,10 @@ moves_loop:  // When in check, search starts here
 
 // --- SHASHIN SNIPER EXTENSION (TRUE RADAR) ---
 #ifdef GOLD_DIGGER
-            // GOLD DIGGER: Sniper guidato dal super-radar.
-            // Se nodeHot è acceso, applichiamo il massimo boost di profondità (/4).
+            // GOLD DIGGER Efficient: Boost minimo (/5)
             if (nodeHot && depth > 8)
             {
-                singularDepth += std::max(1, singularDepth / 4);
+                singularDepth += std::max(1, singularDepth / 5);
             }
 #else
             // MAIN 142
@@ -2343,12 +2335,12 @@ skipExtensionAndPruning:  // full threads search patch
 
 // --- SHASHIN LMR HYBRID TUNING ---
 #ifdef GOLD_DIGGER
-            // GOLD DIGGER Light
+            // GOLD DIGGER Efficient
             if (depth > 5 && ss->ply > 1)
             {
                 if (nodeHot || (isAggressive && (givesCheck || capture)))
                 {
-                    r -= 80;  // Aumentato da -60 a -80 (più aggressivo ma gestibile)
+                    r -= 50;  // Riduzione leggera
                 }
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
                 {
@@ -2405,16 +2397,16 @@ skipExtensionAndPruning:  // full threads search patch
             ss->reduction = newDepth - d;
             value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
             ss->reduction = 0;
+
             // Do a full-depth search when reduced LMR search fails high
             if (value > alpha)
             {
 #ifdef GOLD_DIGGER
-                int threshold = nodeHot ? 30 : 50;  // Soglia ridotta a 30 per nodi caldi
+                int threshold = nodeHot ? 45 : 50;
 #else
                 int threshold = 50;
 #endif
-                const bool doDeeperSearch = d < newDepth && value > bestValue + threshold;
-
+                const bool doDeeperSearch    = d < newDepth && value > bestValue + threshold;
                 const bool doShallowerSearch = value < bestValue + 9;
 
                 // Standard Stockfish re-search logic (Crystal Logic rimossa per stabilità)
@@ -2934,16 +2926,16 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     int seeMargin = -80;  // Standard Stockfish
     if (isAggressive || dynamicDerived.isHighTal)
     {
-// TAL: Visione Tattica Estesa
 #ifdef GOLD_DIGGER
-        seeMargin = staticState.kingDanger ? -130 : -100;  // Light: valore intermedio
+        // GOLD DIGGER Efficient: Valori quasi standard per stabilità
+        seeMargin = staticState.kingDanger ? -100 : -80;
 #else
+        // MAIN 142 Logic
         seeMargin = staticState.kingDanger ? -110 : -90;
 #endif
     }
     else if (isStrategical)
     {
-        // PETROSIAN: Taglio netto per sfruttare l'NPS alto.
         seeMargin = -50;
     }
     else if (MoveConfig::isFortress)
@@ -3155,19 +3147,13 @@ Depth Search::Worker::reduction(
 
     // --- SHASHIN STYLE LOGIC (SYMMETRICAL & TARGETED) ---
 
-// 1. TAL (Aggressive - Middle Tal):
-#ifdef GOLD_DIGGER
-    if (isAggressive)
-        reductionScale = (reductionScale * 95) / 100;  // era 97 (v1) o 92 (v2)
-    else if (isStrategical)
-        reductionScale = (reductionScale * 105) / 100;  // era 103 (v1) o 108 (v2)
-#else
+    // 1. TAL (Aggressive - Middle Tal):
     // La fase critica della lotta. Riduciamo la riduzione (-5%) per aumentare la profondità.
     // Nota: High Tal non è incluso, ed è giusto così: se stiamo già vincendo nettamente,
     // non serve rallentare la ricerca, basta l'efficienza standard.
     if (isAggressive)
         reductionScale = (reductionScale * 97) / 100;
-#endif
+
     // 2. PETROSIAN (Strategical - Capablanca):
     // La fase di manovra/consolidamento.
     // Torniamo a 103% per massima stabilità nei match lunghi.
