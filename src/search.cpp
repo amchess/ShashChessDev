@@ -1691,40 +1691,46 @@ Value Search::Worker::search(
         bool skipNullMove = false;
 
 #ifdef GOLD_DIGGER
-        // --- FASE 1 RAFFINATA: Tactical Heat Index ---
-        // Calcoliamo un indice di "calore" tattico.
-        // Se supera la soglia (4), NMP è troppo rischioso e viene saltato.
+        // FASE 1 RAFFINATA v3 (Paranoid Heat)
+        // Obiettivo: Eguagliare la Brutale (142) sui casi critici,
+        // ma usare l'intelligenza Heat per i casi "grigi".
 
-        int tacticalHeat = 0;
+        const int HEAT_THRESHOLD = 4;
+        int       tacticalHeat   = 0;
 
+        // 1. KILLERS (Trigger Immediati):
+        // Se c'è pericolo reale o sacrificio, NON contiamo punti. SALTANO SUBITO.
+        // Assegniamo un valore superiore alla soglia per forzare il blocco NMP.
         if (staticState.kingDanger)
-            tacticalHeat += 3;  // Pericolo Re: Critico
+            tacticalHeat += 10;
         if (isSacrificial)
-            tacticalHeat += 3;  // Sacrificio: Critico
-        if (dynamicDerived.isHighTal)
-            tacticalHeat += 2;  // Stile Tal: Alto
-        if (isAggressive)
-            tacticalHeat += 1;  // Aggressivo generico: Medio
-        if (staticState.pawnsNearPromotion)
-            tacticalHeat += 2;  // Promozione: Alto
+            tacticalHeat += 10;
 
-        // Bonus mobilità: tante mosse legali spesso indicano complicazioni
+        // 2. FATTORI DI STILE (Accumulo):
+        // Qui usiamo la logica intelligente del tuo amico.
+        // Servono per catturare posizioni "Tal" che non sono ancora esplose.
+        if (dynamicDerived.isHighTal)
+            tacticalHeat += 2;
+        if (isAggressive)
+            tacticalHeat += 2;
+        if (staticState.pawnsNearPromotion)
+            tacticalHeat += 2;
+
+        // 3. FATTORI DI SUPPORTO
         if (staticState.legalMoveCount > 30)
             tacticalHeat += 1;
-
-        // Bonus materiale: se abbiamo pezzi pesanti, l'attacco è più probabile
-        // (Assumendo scala interna standard dove ~2000 è un buon materiale offensivo)
         if (pos.non_pawn_material(us) > 2000)
             tacticalHeat += 1;
 
-        // --- SOGLIA DI ATTIVAZIONE ---
-        if (tacticalHeat >= 4)
-            skipNullMove = true;
+        // 4. PROFONDITÀ (Il tocco di classe):
+        // Più andiamo a fondo, più diventiamo sospettosi del Null Move.
+        if (depth > 8)
+            tacticalHeat += 1;
+        if (depth > 12)
+            tacticalHeat += 1;
 
-        // --- OVERRIDE DI PROFONDITÀ ---
-        // Se stiamo cercando molto in profondità in una posizione aggressiva,
-        // vogliamo la massima precisione possibile.
-        if (depth > 12 && (isAggressive || isSacrificial))
+        // Decisione
+        if (tacticalHeat >= HEAT_THRESHOLD)
             skipNullMove = true;
 
 #else
