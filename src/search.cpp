@@ -1683,29 +1683,60 @@ Value Search::Worker::search(
             return (2 * beta + eval) / 3;
         }
     }
-
     // Step 9. Null move search with verification search
     if (cutNode && !disableNMAndPC && ss->staticEval >= beta - 18 * depth + 350 && !excludedMove
         && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && !is_loss(beta))
     {
         // --- SHASHIN HYBRID NMP SAFETY (OPTIMIZED) ---
-        // Definiamo i casi "Hot" in cui regalare una mossa è pericoloso
         bool skipNullMove = false;
+
 #ifdef GOLD_DIGGER
-        // FASE 1: Disabilita NMP se c'è odore di tattica o pericolo.
-        // NMP è devastante per i problemi di zugzwang.
-        if (isAggressive || isSacrificial || dynamicDerived.isHighTal || staticState.kingDanger)
+        // --- FASE 1 RAFFINATA: Tactical Heat Index ---
+        // Calcoliamo un indice di "calore" tattico.
+        // Se supera la soglia (4), NMP è troppo rischioso e viene saltato.
+
+        int tacticalHeat = 0;
+
+        if (staticState.kingDanger)
+            tacticalHeat += 3;  // Pericolo Re: Critico
+        if (isSacrificial)
+            tacticalHeat += 3;  // Sacrificio: Critico
+        if (dynamicDerived.isHighTal)
+            tacticalHeat += 2;  // Stile Tal: Alto
+        if (isAggressive)
+            tacticalHeat += 1;  // Aggressivo generico: Medio
+        if (staticState.pawnsNearPromotion)
+            tacticalHeat += 2;  // Promozione: Alto
+
+        // Bonus mobilità: tante mosse legali spesso indicano complicazioni
+        if (staticState.legalMoveCount > 30)
+            tacticalHeat += 1;
+
+        // Bonus materiale: se abbiamo pezzi pesanti, l'attacco è più probabile
+        // (Assumendo scala interna standard dove ~2000 è un buon materiale offensivo)
+        if (pos.non_pawn_material(us) > 2000)
+            tacticalHeat += 1;
+
+        // --- SOGLIA DI ATTIVAZIONE ---
+        if (tacticalHeat >= 4)
             skipNullMove = true;
+
+        // --- OVERRIDE DI PROFONDITÀ ---
+        // Se stiamo cercando molto in profondità in una posizione aggressiva,
+        // vogliamo la massima precisione possibile.
+        if (depth > 12 && (isAggressive || isSacrificial))
+            skipNullMove = true;
+
 #else
+        // LOGICA ORIGINALE SHASHCHESS (MAIN 142)
+        // Definiamo i casi "Hot" per la logica standard
         bool nodeHot = staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial;
 
-        // 1. Sicurezza Tattica (DNA 149): Se la posizione è calda o siamo in Tal < 10
+        // 1. Sicurezza Tattica
         if (nodeHot || (isAggressive && staticState.kingDanger && depth < 10))
             skipNullMove = true;
 
-        // 2. Sicurezza Difensiva (DNA Petrosian):
-        // Se stiamo difendendo (Petrosian) e il nostro Re è sotto pressione,
-        // NON passiamo mai. Vogliamo calcolare ogni risorsa difensiva.
+        // 2. Sicurezza Difensiva
         if (isPetrosian && staticState.stmKingDanger)
             skipNullMove = true;
 #endif
