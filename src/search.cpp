@@ -1690,7 +1690,6 @@ Value Search::Worker::search(
     {
         // --- SHASHIN HYBRID NMP SAFETY (OPTIMIZED) ---
         // Definiamo i casi "Hot" in cui regalare una mossa è pericoloso
-        bool nodeHot = staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial;
         bool skipNullMove = false;
 #ifdef GOLD_DIGGER
         // FASE 1: Disabilita NMP se c'è odore di tattica o pericolo.
@@ -1698,6 +1697,8 @@ Value Search::Worker::search(
         if (isAggressive || isSacrificial || dynamicDerived.isHighTal || staticState.kingDanger)
             skipNullMove = true;
 #else
+        bool nodeHot = staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial;
+
         // 1. Sicurezza Tattica (DNA 149): Se la posizione è calda o siamo in Tal < 10
         if (nodeHot || (isAggressive && staticState.kingDanger && depth < 10))
             skipNullMove = true;
