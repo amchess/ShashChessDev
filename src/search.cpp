@@ -2171,6 +2171,18 @@ skipExtensionAndPruning:  // full threads search patch
         // Shashin style based adjustements
         if (!fullSearch)
         {
+#ifdef GOLD_DIGGER
+            // FASE 2 (LIGHT - 145+ TUNING): Il "Bisturi".
+            // Riduciamo la riduzione solo leggermente (-128 = 0.125 plies)
+            // e SOLO nelle posizioni aggressive/Tal.
+            // Non tocchiamo lo strategico per non rischiare regressioni.
+
+            if (isAggressive || isSacrificial || dynamicDerived.isHighTal)
+            {
+                r -= 128;
+            }
+#else
+            // LOGICA ORIGINALE SHASHCHESS (MAIN 142)
             // Tactical and sacrificial positions: less reduction to preserve depth
             if ((isTactical || isSacrificial) && depth > 8)
             {
@@ -2181,6 +2193,7 @@ skipExtensionAndPruning:  // full threads search patch
             {
                 r += 256;  // Added reduction by 0.25 plies
             }
+#endif
         }
 
         r += 714;  // Base reduction offset to compensate for other tweaks
