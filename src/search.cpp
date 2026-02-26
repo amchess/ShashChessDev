@@ -1258,7 +1258,7 @@ Value Search::Worker::search(
     bool        isTactical          = localShashinManager.isTactical();
     bool        isComplex           = localShashinManager.isComplexPosition();
     uint8_t     legalMoveCount      = staticState.legalMoveCount;
-    (void) legalMoveCount;
+    (void)legalMoveCount;
     //from crystal shashin end
     if (!rootNode)
     {
@@ -2186,23 +2186,6 @@ skipExtensionAndPruning:  // full threads search patch
         // Shashin style based adjustements
         if (!fullSearch)
         {
-#ifdef GOLD_DIGGER
-            // FASE 4: Il Vero Micro-Boost LMR.
-            // La base originale è -256 (che ci ha dato le 153 soluzioni).
-            // Aggiungiamo un micro-boost di -32 per le posizioni aggressive/tattiche,
-            // portando l'estensione a -288. Questo scava appena un po' più a fondo
-            // senza rischiare la "Search Explosion".
-
-            if ((isAggressive || isSacrificial || dynamicDerived.isHighTal) && depth > 8)
-            {
-                r -= 288;
-            }
-            // Manteniamo la penalità strategica originale per bilanciare la velocità e i nodi
-            else if (isStrategical && !ss->inCheck && depth > 6)
-            {
-                r += 256;
-            }
-#else
             // Tactical and sacrificial positions: less reduction to preserve depth
             if ((isTactical || isSacrificial) && depth > 8)
             {
@@ -2213,7 +2196,6 @@ skipExtensionAndPruning:  // full threads search patch
             {
                 r += 256;  // Added reduction by 0.25 plies
             }
-#endif
         }
 
         r += 714;  // Base reduction offset to compensate for other tweaks
