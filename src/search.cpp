@@ -1258,6 +1258,7 @@ Value Search::Worker::search(
     bool        isTactical          = localShashinManager.isTactical();
     bool        isComplex           = localShashinManager.isComplexPosition();
     uint8_t     legalMoveCount      = staticState.legalMoveCount;
+    (void)legalMoveCount;
     //from crystal shashin end
     if (!rootNode)
     {
@@ -1597,7 +1598,13 @@ Value Search::Worker::search(
     {
         // Base razoring threshold (Standard Stockfish formula)
         Value razorThreshold = alpha - 485 - 281 * depth * depth;
-
+#ifdef GOLD_DIGGER
+        // FASE 3 MODERATA: Diamo margine (150) ai sacrifici per non potarli troppo presto.
+        if (isAggressive || isSacrificial)
+            razorThreshold -= 150;
+        else if (isStrategical)
+            razorThreshold -= 50;
+#else
         // --- SHASHIN HYBRID ADJUSTMENTS ---
         // Bilanciamento tra visione tattica e velocità pura.
 
@@ -1618,13 +1625,21 @@ Value Search::Worker::search(
             razorThreshold -= 20;
         }
         // --- END SHASHIN ADJUSTMENTS ---
-
+#endif
         if (eval < razorThreshold)
             return qsearch<NonPV>(pos, ss, alpha, beta);
     }
     // Step 8. Futility pruning: child node
     // The depth condition is important for mate finding.
     {
+#ifdef GOLD_DIGGER
+        // FASE 3 MODERATA: Aumentiamo il margine del 50% (150) per esplorare mosse dubbie
+        int marginMultiplier = 100;
+        if (isAggressive || isSacrificial)
+            marginMultiplier = 150;
+        else if (isStrategical)
+            marginMultiplier = 120;
+#else
         // --- SHASHIN ADJUSTMENTS (TIGHTENED) ---
         int marginMultiplier = 100;  // Base Stockfish (100%)
 
@@ -1660,7 +1675,7 @@ Value Search::Worker::search(
             marginMultiplier = std::min(marginMultiplier + 5, 115);
         }
         // --- END SHASHIN ADJUSTMENTS ---
-
+#endif
         auto futility_margin = [&](Depth d) {
             Value futilityMult = 76 - 23 * !ss->ttHit;
 
@@ -1853,16 +1868,7 @@ Value Search::Worker::search(
         && !(is_valid(ttData.value) && ttData.value < probCutBeta))
     {
         // Shashin adjustment: skip ProbCut in inappropriate positions
-#ifdef GOLD_DIGGER
-        // FASE 3 (PROBCUT): Il test "Wide & Quiet".
-        // Disabilitiamo il ProbCut se c'è anche solo un accenno di tattica.
-        // Vogliamo assicurarci che il motore veda le mosse silenziose decisive.
-        bool skipProbCut = isAggressive || isSacrificial || dynamicDerived.isHighTal
-                        || staticState.kingDanger || staticState.pawnsNearPromotion;
-#else
-        // LOGICA ORIGINALE SHASHCHESS
         bool skipProbCut = isFortressNode || (isStrategical && !staticState.kingDanger);
-#endif
 
         if (!skipProbCut)
         {
