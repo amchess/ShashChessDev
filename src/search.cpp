@@ -1258,7 +1258,7 @@ Value Search::Worker::search(
     bool        isTactical          = localShashinManager.isTactical();
     bool        isComplex           = localShashinManager.isComplexPosition();
     uint8_t     legalMoveCount      = staticState.legalMoveCount;
-    (void)legalMoveCount;
+    (void) legalMoveCount;
     //from crystal shashin end
     if (!rootNode)
     {
