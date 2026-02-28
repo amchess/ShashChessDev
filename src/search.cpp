@@ -882,22 +882,12 @@ void Search::Worker::iterative_deepening() {
             // 1. Base Stockfish solida (include meanSquaredScore per stabilità nei match)
             delta = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 9000;
 
-            // 2. Modulazione Shashin (Fine-tuned)
-            if (isStrategical)
+            // 2. Modulazione Shashin (Match-Winner Tuning)
+            // Solo TAL (Aggressive) beneficia di una finestra più larga per vedere tattiche nascoste.
+            // Petrosian e Capablanca usano il default (stabilità massima nelle "pepite").
+            if (isAggressive || isHighTal)
             {
-                // Nelle posizioni strategiche, ci aspettiamo meno oscillazioni.
-                // Stringiamo leggermente (90%) per guadagnare efficienza.
-                delta = std::max(6, (delta * 9) / 10);
-
-                // Se è una fortezza, stringiamo ancora di più
-                if (MoveConfig::isFortress)
-                    delta = std::max(5, delta - 2);
-            }
-            else if (isAggressive || isHighTal)
-            {
-                // Tattico puro: finestra allargata del 12.5% (compromesso stabilità/tattica)
-                // Riduce i re-search inutili rispetto al 25% precedente.
-                delta = (delta * 9) / 8;
+                delta = (delta * 9) / 8;  // 12.5% expansion
             }
 
             // Sicurezza a basse profondità
@@ -2257,36 +2247,32 @@ skipExtensionAndPruning:  // full threads search patch
         // Step 17. Late moves reduction / extension (LMR)
         if (depth >= 2 && moveCount > std::max(sibs, 1) && doLMRStep)
         {
-            // Salviamo r originale per verificare se cambiarlo
-            int original_r = r;
+            int   original_r = r;
+            Depth d          = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
 
-            // Calcolo base della profondità ridotta (Standard Stockfish)
-            Depth d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
-
-            // --- SHASHIN LMR HYBRID TUNING (CORRETTO) ---
+            // --- SHASHIN MATCH-WINNER TUNING ---
             if (depth > 5 && ss->ply > 1)
             {
-                // Caso 1: TAL (Attacco Estremo)
+                // 1. TAL (Aggressive - Attack): Visione profonda per il colpo del KO.
                 if (isAggressive && (givesCheck || capture))
                 {
-                    r -= 60;  // Profondità extra per trovare il colpo del KO
+                    r -= 60;
                 }
-                // Caso 2: PETROSIAN (Difesa e Profilassi)
-                else if (isPetrosian && !capture)
+                // 2. PETROSIAN (Defensive - Tactics): Precisione assoluta.
+                // Se siamo in difesa (Petrosian) e la mossa non è una cattura,
+                // riduciamo il taglio per non perdere la linea di salvezza.
+                else if (isPetrosian && !capture && !givesCheck)
                 {
-                    // La difesa richiede una precisione millimetrica.
-                    // Non tagliamo, anzi diamo un po' di respiro.
-                    r -= 40;
+                    r -= 30;  // Protezione tattica difensiva
                 }
-                // Caso 3: CAPABLANCA (Strategico Puro)
+                // 3. CAPABLANCA (Strategic - Maneuver): Efficienza brutale.
+                // Solo se è VERAMENTE strategico (no king danger, no pawn storms).
+                // Qui applichiamo il taglio pesante per vincere i finali contro SF18.
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
                 {
-                    // IL MOTORE DEL MATCH: Posizione chiusa/noiosa.
-                    // Falciata in puro stile Stockfish Main (+80) per correre velocissimi.
-                    r += 80;
+                    r += 85;
                 }
 
-                // Ricalcoliamo 'd' (profondità ridotta) solo se 'r' è cambiato
                 if (r != original_r)
                 {
                     d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
@@ -3043,20 +3029,20 @@ Depth Search::Worker::reduction(
   bool i, Depth d, int mn, int delta, bool isStrategical, bool isAggressive) const {
     int reductionScale = reductions[d] * reductions[mn];
 
-    // --- SHASHIN STYLE LOGIC (SYMMETRICAL & TARGETED) ---
+    // --- SHASHIN STYLE TUNING ---
 
-    // 1. TAL (Aggressive - Middle Tal):
-    // La fase critica della lotta. Riduciamo la riduzione (-5%) per aumentare la profondità.
-    // Nota: High Tal non è incluso, ed è giusto così: se stiamo già vincendo nettamente,
-    // non serve rallentare la ricerca, basta l'efficienza standard.
+    // 1. TAL (Aggressive): 98%
+    // Mantiene la velocità della Prerelease ma con un occhio di riguardo alla tattica.
     if (isAggressive)
-        reductionScale = (reductionScale * 97) / 100;
+        reductionScale = (reductionScale * 98) / 100;
 
-    // 2. PETROSIAN (Strategical - Capablanca):
-    // La fase di manovra/consolidamento.
-    // Torniamo a 103% per massima stabilità nei match lunghi.
+    // 2. CAPABLANCA (Strategical Puro): 107%
+    // Il segreto per battere SF18 nei match posizionali. Tagliare di più per andare più a fondo.
     else if (isStrategical)
-        reductionScale = (reductionScale * 103) / 100;
+        reductionScale = (reductionScale * 107) / 100;
+
+    // 3. PETROSIAN (Implicit): 100% (Standard)
+    // Non modifichiamo reductionScale. La difesa richiede equilibrio.
 
     // -----------------------------------------
 
