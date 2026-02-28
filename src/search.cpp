@@ -2262,14 +2262,14 @@ skipExtensionAndPruning:  // full threads search patch
                 // riduciamo il taglio per non perdere la linea di salvezza.
                 else if (isPetrosian && !capture && !givesCheck)
                 {
-                    r -= 30;  // Protezione tattica difensiva
+                    r -= 50;  // Protezione tattica difensiva
                 }
                 // 3. CAPABLANCA (Strategic - Maneuver): Efficienza brutale.
                 // Solo se è VERAMENTE strategico (no king danger, no pawn storms).
                 // Qui applichiamo il taglio pesante per vincere i finali contro SF18.
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
                 {
-                    r += 85;
+                    r += 60;
                 }
 
                 if (r != original_r)
@@ -3027,7 +3027,22 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 Depth Search::Worker::reduction(
   bool i, Depth d, int mn, int delta, bool isStrategical, bool isAggressive) const {
     int reductionScale = reductions[d] * reductions[mn];
+#ifdef GOLD_DIGGER
+    // --- SHASHIN STYLE LOGIC (SYMMETRICAL & TARGETED) ---
 
+    // 1. TAL (Aggressive - Middle Tal):
+    // La fase critica della lotta. Riduciamo la riduzione (-5%) per aumentare la profondità.
+    // Nota: High Tal non è incluso, ed è giusto così: se stiamo già vincendo nettamente,
+    // non serve rallentare la ricerca, basta l'efficienza standard.
+    if (isAggressive)
+        reductionScale = (reductionScale * 97) / 100;
+
+    // 2. PETROSIAN (Strategical - Capablanca):
+    // La fase di manovra/consolidamento.
+    // Torniamo a 103% per massima stabilità nei match lunghi.
+    else if (isStrategical)
+        reductionScale = (reductionScale * 103) / 100;
+#else
     // --- SHASHIN STYLE TUNING ---
 
     // 1. TAL (Aggressive): 98%
@@ -3035,16 +3050,17 @@ Depth Search::Worker::reduction(
     if (isAggressive)
         reductionScale = (reductionScale * 98) / 100;
 
-    // 2. CAPABLANCA (Strategical Puro): 107%
+    // 2. CAPABLANCA (Strategical Puro): 105%
     // Il segreto per battere SF18 nei match posizionali. Tagliare di più per andare più a fondo.
     else if (isStrategical)
-        reductionScale = (reductionScale * 107) / 100;
+        reductionScale = (reductionScale * 105) / 100;
 
-    // 3. PETROSIAN (Implicit): 100% (Standard)
-    // Non modifichiamo reductionScale. La difesa richiede equilibrio.
-
+    // 3. PETROSIAN (Defensive): 99%
+    // Leggero aiuto (1% in meno di riduzione) per calcolare meglio le difese.
+    else if (shashinManager->isPetrosian())
+        reductionScale = (reductionScale * 99) / 100;
     // -----------------------------------------
-
+#endif
     //mcts begin
     if (rootDelta != 0)
         return reductionScale - delta * 608 / rootDelta + !i * reductionScale * 238 / 512 + 1182;
