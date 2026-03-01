@@ -764,7 +764,6 @@ void Search::Worker::iterative_deepening() {
 
     const RootShashinState& rootShashinState = localShashinManager.getState();
     const auto&             dynamicDerived   = rootShashinState.dynamicDerived;
-    bool                    isStrategical    = localShashinManager.isStrategical();
     bool                    isAggressive     = localShashinManager.isAggressive();
     bool                    isHighTal        = dynamicDerived.isHighTal;
 
