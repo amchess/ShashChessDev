@@ -882,7 +882,7 @@ void Search::Worker::iterative_deepening() {
             delta = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 9000;
 
 #ifdef GOLD_DIGGER
-            if (isStrategical)
+            if (localShashinManager.isStrategical())
             {
                 // Nelle posizioni strategiche, ci aspettiamo meno oscillazioni.
                 // Stringiamo leggermente (90%) per guadagnare efficienza.
