@@ -1,5 +1,5 @@
 # ShashChess, a UCI chess playing engine derived from Stockfish
-# Copyright (C) 2004-2026 Andrea Manzo, F. Ferraguti, K.Kiniama and ShashChess developers
+# Copyright (C) 2004-2026 ShashChess developers
 #
 # ShashChess is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by

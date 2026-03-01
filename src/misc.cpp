@@ -1,6 +1,6 @@
 /*
   ShashChess, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2026 Andrea Manzo, F. Ferraguti, K.Kiniama and ShashChess developers (see AUTHORS file)
+  Copyright (C) 2004-2026 ShashChess developers (see AUTHORS file)
 
   ShashChess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -167,9 +167,8 @@ std::string engine_version_info() {
 
 std::string engine_info(bool to_uci) {
     return engine_version_info() + (to_uci ? "\nid author " : " by ")
-         + "A. Manzo, F. Ferraguti, K. Kiniama and the Stockfish developers (see AUTHORS file)";
+         + "the ShashChess developers (see AUTHORS file)";
 }
-
 
 // Returns a string trying to describe the compiler we use
 std::string compiler_info() {
