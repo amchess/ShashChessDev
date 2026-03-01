@@ -764,6 +764,7 @@ void Search::Worker::iterative_deepening() {
 
     const RootShashinState& rootShashinState = localShashinManager.getState();
     const auto&             dynamicDerived   = rootShashinState.dynamicDerived;
+    bool                    isStrategical    = localShashinManager.isStrategical();
     bool                    isAggressive     = localShashinManager.isAggressive();
     bool                    isHighTal        = dynamicDerived.isHighTal;
 
@@ -881,6 +882,24 @@ void Search::Worker::iterative_deepening() {
             // 1. Base Stockfish solida (include meanSquaredScore per stabilità nei match)
             delta = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 9000;
 
+#ifdef GOLD_DIGGER
+            if (isStrategical)
+            {
+                // Nelle posizioni strategiche, ci aspettiamo meno oscillazioni.
+                // Stringiamo leggermente (90%) per guadagnare efficienza.
+                delta = std::max(6, (delta * 9) / 10);
+
+                // Se è una fortezza, stringiamo ancora di più
+                if (MoveConfig::isFortress)
+                    delta = std::max(5, delta - 2);
+            }
+            else if (isAggressive || isHighTal)
+            {
+                // Tattico puro: finestra allargata del 12.5% (compromesso stabilità/tattica)
+                // Riduce i re-search inutili rispetto al 25% precedente.
+                delta = (delta * 9) / 8;
+            }
+#else
             // 2. Modulazione Shashin (Match-Winner Tuning)
             // Solo TAL (Aggressive) beneficia di una finestra più larga per vedere tattiche nascoste.
             // Petrosian e Capablanca usano il default (stabilità massima nelle "pepite").
@@ -888,6 +907,8 @@ void Search::Worker::iterative_deepening() {
             {
                 delta = (delta * 9) / 8;  // 12.5% expansion
             }
+#endif
+
 
             // Sicurezza a basse profondità
             if (rootDepth < 10)
@@ -2023,7 +2044,12 @@ moves_loop:  // When in check, search starts here
                     // CAPABLANCA: Il Turbo posizionale.
                     // Pruning forte (-2) per correre veloci, ma SOLO se siamo profondi
                     // e non ci sono minacce immediate da pedoni.
-                    int extraReduction = (depth > 12 && !staticState.pawnsNearPromotion) ? 2 : 1;
+                    int extraReduction;
+#ifdef GOLD_DIGGER
+                    extraReduction = (depth > 12 && !staticState.pawnsNearPromotion) ? 2 : 1;
+#else
+                    extraReduction = 1;
+#endif
                     moveCountThreshold -= extraReduction;
                 }
                 else if (isAggressive || isPetrosian)
@@ -2255,8 +2281,20 @@ skipExtensionAndPruning:  // full threads search patch
                 // 1. TAL (Aggressive - Attack): Visione profonda per il colpo del KO.
                 if (isAggressive && (givesCheck || capture))
                 {
-                    r -= 60;
+#ifdef GOLD_DIGGER
+                    r -= 60;  // Profondità extra per trovare il colpo del KO
+#else
+                    r -= 50;
+#endif
                 }
+#ifdef GOLD_DIGGER
+                else if (isPetrosian && !capture)
+                {
+                    // La difesa richiede una precisione millimetrica.
+                    // Non tagliamo, anzi diamo un po' di respiro.
+                    r -= 40;
+                }
+#else
                 // 2. PETROSIAN (Defensive - Tactics): Precisione assoluta.
                 // Se siamo in difesa (Petrosian) e la mossa non è una cattura,
                 // riduciamo il taglio per non perdere la linea di salvezza.
@@ -2264,14 +2302,20 @@ skipExtensionAndPruning:  // full threads search patch
                 {
                     r -= 50;  // Protezione tattica difensiva
                 }
-                // 3. CAPABLANCA (Strategic - Maneuver): Efficienza brutale.
-                // Solo se è VERAMENTE strategico (no king danger, no pawn storms).
-                // Qui applichiamo il taglio pesante per vincere i finali contro SF18.
+#endif
+                // 3. CAPABLANCA (Strategic - Maneuver)
                 else if (isStrategical && !capture && !givesCheck && depth > 8)
                 {
-                    r += 60;
+#ifdef GOLD_DIGGER
+                    // IL MOTORE DEL MATCH: Posizione chiusa/noiosa.
+                    // Falciata in puro stile Stockfish Main (+80) per correre velocissimi.
+                    r += 80;
+#else
+                    r += 45;
+#endif
                 }
 
+                // Ricalcoliamo 'd' (profondità ridotta) solo se 'r' è cambiato
                 if (r != original_r)
                 {
                     d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
@@ -3050,10 +3094,10 @@ Depth Search::Worker::reduction(
     if (isAggressive)
         reductionScale = (reductionScale * 98) / 100;
 
-    // 2. CAPABLANCA (Strategical Puro): 105%
+    // 2. CAPABLANCA (Strategical Puro): 104%
     // Il segreto per battere SF18 nei match posizionali. Tagliare di più per andare più a fondo.
     else if (isStrategical)
-        reductionScale = (reductionScale * 105) / 100;
+        reductionScale = (reductionScale * 104) / 100;
 
     // 3. PETROSIAN (Defensive): 99%
     // Leggero aiuto (1% in meno di riduzione) per calcolare meglio le difese.
