@@ -1,8 +1,8 @@
 # Introduction
 
-![Alexander Logo](logo/Alexander.bmp)
+![ShashChess Logo](logo/ShashChess.bmp)
 
-Alexander is a free UCI chess engine derived from Stockfish family chess engines.
+ShashChess is a free UCI chess engine derived from Stockfish family chess engines.
 For the evaluation function, we utilize the collaboration between Leela Chess Zero and Stockfish, for which we express our sincere gratitude.
 The goal is to apply Alexander Shashin theory exposed on the following book :
 https://www.amazon.com/Best-Play-Method-Discovering-Strongest/dp/1936277468
@@ -32,7 +32,7 @@ itself or as part of some bigger software package), or using it as the starting 
 
 project of your own.
 
-The only real limitation is that whenever you distribute Alexander in some way, you must always
+The only real limitation is that whenever you distribute ShashChess in some way, you must always
 
 include the full source code, or a pointer to where the source code can be found. If you make any
 
@@ -42,7 +42,7 @@ For full details, read the copy of the GPL found in the file named _Copying.txt_
 
 ## Files
 
-This distribution of AlexanderPro consists of the following files:
+This distribution of ShashChessPro consists of the following files:
 
 - Readme.md, the file you are currently reading.
 - Copying.txt, a text file containing the GNU General Public License.
@@ -102,7 +102,7 @@ Usually not on the configuration window.
 
 ### UCI_Chess960 (checkbox)
 
-Whether or not Alexander should play using Chess 960 mode. Usually not on the configuration
+Whether or not ShashChess should play using Chess 960 mode. Usually not on the configuration
 window.
 
 ### Move overhead 
@@ -114,54 +114,6 @@ In ms, the default value seems to be the best on Linux systems, but must be incr
 
 _Default 84, min 10, max 1000_
  "Time usage percent": how much the engine thinks on a move. Many engines seem to move faster and the engine is behind in time clock. With lower values it plays faster, with higher values slower - of course always within the time control.
-
-### Handicap mode
-
-#### UCI_LimitStrength
-
-Activate the handicap mode and the related following options: in this case, the evaluation function is always the classical one.
-
-#### UCI_Elo (CB only for chessbase products users)
-
-_Default 2850, min 1350, max 2850_
-UCI-protocol compliant version of Strength parameter.
-A very refined handicap mode based on the four famous sovietic chess school levels:
-Internally the UCI_Elo value will be converted to a Strength value according to the following table:
-
-- _beginner: elo < 2000_
-- _intermediate: 2000 <= elo < 2200_
-- _advanced: 2200 <= elo < 2400_
-- _expert: elo >= 2400_
-
-Every school corresponds to a different evaluation function, more and more refined.
-The UCI_Elo feature is controlled by the chess GUI, and usually doesn't appear in the configuration
-window.
-
-#### Handicapped Depth
-The engine stop calculating when it joins the handicapped depth, based on the following table:
-
-Elo range     | Handicapped Depth |
-| ----------- | ----------------- |
-| [0,1999]    | [1,6]             |
-| [2000,2199] | [7,9]             |
-| [2200,2399] | [10,12]           |
-| [2400,3190] | [13,20]           |
-
-#### Simulate human blunders
-If enabled, the engine not only simulates the thought process of a player of a certain level but also the mistakes he can make. These mistakes become more frequent the lower the player's Elo rating. This is the handicap mode implemented by Stockfish, but when combined with the previous options that simulate a player's thinking system, it truly approximates a "human avatar".
-
-#### Avatar File
-A file in .avt format with a player profile. You can edit this file containing the weights of Stockfish's classic evaluation terms, from 0 to 100, but with a private tool, we can generate these values to simulate a real player.
-The private tool first analyzes the player's games and then generates his player card and avatar.
-In this way, Alexander turns into the player's alter ego, simulating not only his playing strength but also his style:
-no frustration for the OTB player who will not always lose. Once in a while, he will win, and most importantly, he will have an ideal sparring partner to improve.
-The data sheet and our private NLG sw (Virtual trainer) will also allow him to understand his own mistakes verbally, simulating a live instructor!
-Examples:
-
-[Player card](examples/PlayerCard.xlsx)
-
-[Avatar](examples/Avatar.avt)
-
 
 ### Sygyzy End Game table bases
 
@@ -194,7 +146,7 @@ as wins or losses. This is useful for ICCF correspondence games.
 #### SygyzyProbeLimit
 
 _Integer, Default: 6, Min: 0, Max: 6_
-How many pieces need to be on the board before Alexander begins probing (even at the root).
+How many pieces need to be on the board before ShashChess begins probing (even at the root).
 Current default, obviously, is for 6-man.
 
 ### Advanced Chess Analyzer
@@ -326,6 +278,20 @@ N.B.
 
 Because of disk access, to be effective, the learning must be made at no bullet time controls (less than 5 minutes/game).
 
+**Note on Architecture Support for Reinforcement Learning**  
+The reinforcement learning feature (experience file) is supported on 64-bit little-endian architectures. The following 64-bit non-little-endian architectures are relatively rare and specialized:
+- **IBM z/Architecture** (mainframe systems)
+- **POWER** (PowerPC 64-bit, used in IBM servers)
+- **SPARC** (historically used in enterprise servers)
+
+These big-endian architectures are not currently supported. The experience file format uses native little-endian byte ordering, which is compatible with:
+- x86-64 (Intel/AMD processors)
+- ARM64 (Apple Silicon, modern smartphones and tablets)
+- RISC-V (in little-endian mode)
+- All other mainstream 64-bit little-endian platforms
+
+If you're using one of the specialized big-endian architectures, you may need to convert the experience files or disable the reinforcement learning feature.
+
 ### Read only learning
 
 _Boolean, Default: False_ 
@@ -389,6 +355,48 @@ Strategical algorithm (for quiescent positions)
 
 Defense position/algorithm (the "reversed colors" Tal)
 
+### GoldDigger Mode – The Ultimate Tactical Solver
+
+The **GoldDigger** variant of Alexander is a specialized compilation designed for one purpose: **maximum tactical depth**. By applying a set of aggressive modifications to the search algorithm, GoldDigger explores significantly deeper variations in critical positions, making it an ideal tool for solving complex tactical puzzles, analyzing sharp openings, or studying sacrificial combinations.
+
+#### How it works
+
+GoldDigger modifies key heuristics of the search to prioritize depth over breadth:
+
+- **Null Move Pruning** is drastically reduced or disabled in positions with even a hint of tactical potential (king danger, sacrifices, high mobility).
+- **Late Move Reductions (LMR)** are softened, allowing the engine to search deeper into quiet moves that might hide decisive tactics.
+- **Pruning heuristics** like Razoring, Futility, and ProbCut are made more permissive, ensuring that speculative moves are not discarded too early.
+- **Move ordering** is biased toward checks, captures, and moves to safe squares, helping the engine find the "gold" faster.
+
+The result is an engine that **solves 206 out of 325 tactical positions** in our benchmark suite, compared to 183 for Stockfish 18 and 200 for the standard Alexander. However, this comes at a slight cost in match play (−3 Elo vs. Stockfish 18 over 300 games). GoldDigger is therefore not recommended for pure match play, but it is the perfect companion for analysis, puzzle solving, and correspondence chess.
+
+#### When to use GoldDigger
+
+| Use Case                          | Recommendation                  |
+|-----------------------------------|---------------------------------|
+| Match play (engine vs. engine)    | Use the standard Alexander build |
+| Analysis of sharp, tactical positions | GoldDigger shines here          |
+| Solving chess puzzles             | GoldDigger is the best choice   |
+| Correspondence chess              | GoldDigger can help find deep resources |
+| Opening preparation               | GoldDigger may uncover hidden novelties |
+
+#### Performance Summary
+
+| Metric                          | Standard Alexander | GoldDigger Alexander |
+|---------------------------------|-------------------|----------------------|
+| Solved positions (out of 325)   | 200               | **206**              |
+| Match result vs. Stockfish 18   | +14 Elo (52.0%)   | −3 Elo (49.5%)       |
+| Average time per position (ms)  | 3218              | 2913                 |
+| Nodes searched (millions)       | 3.49              | 2.99                 |
+| Nodes per second                | 1,084,800         | 1,027,626            |
+
+#### Compiling GoldDigger
+
+To build the GoldDigger variant, simply add the `GOLD_DIGGER` macro during compilation:
+
+```bash
+make build ARCH=x86-64-modern EXTRACXXFLAGS="-DGOLD_DIGGER"
+
 ## Acknowledgments
 
 - Kozlov Sergey Aleksandrovitsch for his very interesting patch and code on Sugar engine
@@ -400,7 +408,7 @@ Defense position/algorithm (the "reversed colors" Tal)
 
 Stockfish community
 
-## Alexander team
+## ShashChess team
 - engine owner and main developer: ICCF IM Andrea Manzo (https://www.iccf.com/player?id=241224)
 - IM Yohan Benitah for his professional chess understanding and help in testing against neural networks 
 - official tester: ICCF CCE and CCM Maurizio Platino (https://www.iccf.com/player?id=241094)
@@ -413,7 +421,57 @@ Stockfish community
 
 Sorry If I forgot someone.
 
-<h1 align="center">Stockfish</h1>
+# ShashChess vs Stockfish Evaluation Trace Comparison
+
+## Detailed Structure Analysis
+
+| Section | Component | ShashChess Implementation | Stockfish Implementation | Human-Player Focus |
+|---------|-----------|---------------------------|--------------------------|-------------------|
+| **1. Core Evaluation** | Basic NNUE Evaluation | Enhanced with additional analysis layers | Standard NNUE evaluation | **ShashChess adds explanatory notes about technical accuracy** |
+| | Value Conversion | Always converts to White's perspective for consistency | Converts to White's perspective | **Explicitly states perspective for clarity** |
+| **2. WDL & Probability** | Win Probability | Detailed calculation with Shashin zones | Not implemented | **Critical for human decision-making** |
+| | WDL Model | Full Win/Draw/Loss percentages | Not implemented | **Helps humans assess practical chances** |
+| | Shashin Zones | 12 distinct positional classifications | Not implemented | **Classifies position type for strategic planning** |
+| **3. Piece Analysis** | Piece Activity | Horizontal ranking (worst to best) | Not implemented | **Identifies poorly placed pieces (Makogonov Principle)** |
+| | Activity Metrics | Multiple factors: attacks, center control, king proximity | Not implemented | **Helps humans understand piece quality** |
+| | Worst Unit Identification | Explicitly marks least active pieces | Not implemented | **Direct guidance for improvement** |
+| **4. Move Analysis** | Legal Moves Ordering | By win probability + evaluation | Not implemented | **Shows best practical moves first** |
+| | Move Information | Centipawn + win percentage for each move | Not implemented | **Quantifies move quality in human terms** |
+| | Static Activity Focus | Current position analysis | Not implemented | **Immediate actionable information** |
+| **5. Output Structure** | Section Headers | Clear thematic sections ("SHASHIN STATIC ANALYSIS") | Basic evaluation output | **Organized for easy human consumption** |
+| | Explanatory Notes | Technical accuracy disclaimers | Minimal explanations | **Helps non-engineers understand output** |
+| | Visual Formatting | Horizontal lists, clear markings | Traditional vertical format | **Easier to scan and comprehend** |
+
+## Key Human-Oriented Features in ShashChess
+
+### 1. **Strategic Position Classification**
+- **Shashin Zones**: 12 distinct classifications from "High Petrosian" to "High Tal"
+- **Benefit**: Players instantly understand position type and appropriate strategic plans
+
+### 2. **Piece Improvement Guidance**
+- **Makogonov Principle**: Identifies worst-placed pieces needing activation
+- **Benefit**: Directs human attention to specific pieces that need improvement
+
+### 3. **Practical Move Selection**
+- **Win Probability Ordering**: Moves sorted by practical winning chances
+- **Benefit**: Shows which moves actually improve real-game results
+
+### 4. **Probability-Based Decision Making**
+- **WDL Model**: Converts abstract evaluations to win/draw/loss percentages
+- **Benefit**: Players understand real-game implications of positions
+
+## Technical Comparison Summary
+
+| Aspect | ShashChess | Stockfish |
+|--------|------------|-----------|
+| **Analysis Depth** | Multi-layered human-oriented analysis | Single-layer technical evaluation |
+| **Output Focus** | Educational and practical guidance | Engine diagnostic and development |
+| **Information Type** | Strategic insights + quantitative data | Pure quantitative evaluation |
+| **User Experience** | Organized, explanatory, actionable | Minimal, technical, raw data |
+
+**ShashChess Advantage**: Transforms engine analysis from technical data into actionable chess intelligence that directly supports human learning and decision-making.
+
+<h1 align="center">Stockfish NNUE</h1>
 
 ## Overview
 
@@ -427,8 +485,9 @@ Cute Chess, eboard, Arena, Sigma Chess, Shredder, Chess Partner or Fritz) in ord
 to be used comfortably. Read the documentation for your GUI of choice for information
 about how to use Stockfish with it.
 
-The Stockfish engine features the classical evaluation based on handcrafted terms. 
-The classical evaluation runs efficiently on almost all CPU architectures.
+The Stockfish engine features the NNUE evaluation based on efficiently
+updateable neural networks. The NNUE evaluation benefits from the vector
+intrinsics available on most CPUs (sse2, avx2, neon, or similar).
 
 
 ## Files
@@ -441,6 +500,20 @@ This distribution of Stockfish consists of the following files:
 
   * src, a subdirectory containing the full source code, including a Makefile
     that can be used to compile Stockfish on Unix-like systems.
+
+  * a file with the .nnue extension, storing the neural network for the NNUE 
+    evaluation. Binary distributions will have this file embedded.
+
+Note: to use the NNUE evaluation, the additional data file with neural network parameters
+needs to be available. Normally, this file is already embedded in the binary or it can be downloaded.
+The filename for the default (recommended) net can be found as the default
+value of the `EvalFile` UCI option, with the format `nn-[SHA256 first 12 digits].nnue`
+(for instance, `nn-c157e0a5755b.nnue`). This file can be downloaded from
+```
+https://tests.stockfishchess.org/api/nn/[filename]
+```
+replacing `[filename]` as needed.
+
 
 ## UCI options
 
@@ -459,6 +532,12 @@ Currently, Stockfish has the following UCI options:
   * #### MultiPV
     Output the N best lines (principal variations, PVs) when searching.
     Leave at 1 for best performance.
+
+  * #### EvalFile
+    The name of the file of the NNUE evaluation parameters. Depending on the GUI the
+    filename might have to include the full path to the folder/directory that contains the file.
+    Other locations, such as the directory that contains the binary and the working directory,
+    are also searched.
 
   * #### UCI_AnalyseMode
     An option handled by your GUI.
@@ -529,50 +608,26 @@ Currently, Stockfish has the following UCI options:
   * #### Debug Log File
     Write all communication to and from the engine into a text file.
 
-## A note on classical evaluation
+## A note on the NNUE evaluation
 
-It assigns a value to a position that is used in alpha-beta (PVS) search
-to find the best move. The classical evaluation computes this value as a function
-of various chess concepts, handcrafted by experts, tested and tuned using fishtest.
+The NNUE evaluation computes this value with a neural network based on basic
+inputs (e.g. piece positions only). The network is optimized and trained
+on the evaluations of millions of positions at moderate search depth.
 
-# Trace (eval command) infos
+The NNUE evaluation was first introduced in shogi, and ported to Stockfish afterward.
+It can be evaluated efficiently on CPUs, and exploits the fact that only parts
+of the neural network need to be updated after a typical chess move.
+[The nodchip repository](https://github.com/nodchip/Stockfish) provides additional
+tools to train and develop the NNUE networks.
 
-## Metrics Table
+On CPUs supporting modern vector instructions (avx2 and similar), the NNUE evaluation
+results in stronger playing strength, even if the nodes per second computed by the engine
+is somewhat lower (roughly 60% of nps is typical).
 
-| Section | Element / Sub-Element | Utility for Beginner (The "What") | Utility for Intermediate (The "Why") | Utility for Advanced (The "How") | Utility for Expert (The "How and Beyond") |
-|---------|----------------------|-----------------------------------|--------------------------------------|----------------------------------|------------------------------------------|
-| **1. General Information** | | | | | |
-| | Final evaluation | Look at the score: + is advantage for White, - for Black. The percentage tells you who is more likely to win. | Understand the magnitude of the advantage. A score of +1.00 is like having an extra pawn. Use the percentage to understand how difficult it is to convert the advantage. | Analyze the stability of the evaluation. If it changes a lot, the position is tactical and uncertain. If stable, the advantage is strategic and solid. | Relate the evaluation to the engine's WDL (Win-Draw-Loss) model to understand conversion probabilities with perfect play. |
-| | Shashin Zone | Tells you what "type" of position it is: Tal (attack), Petrosian (defense), Capablanca (strategy/endgame). | Use the classification to orient your general plan. If it's "Tal", look for tactical opportunities. If "Petrosian", improve safety. | Adapt move choices to the style required by the zone. In a "Capablanca" position, prioritize long-term plans and structures. | Integrate Shashin classification with other metrics (e.g., Density, Center) for holistic understanding and to anticipate phase transitions. |
-| | Game Phase | Indicates if you're in Opening, Middlegame, or Endgame. | Understand how piece values and plans change. King safety is vital in middlegame, king activity is crucial in endgame. | Use game phase to interpret the terms table scores (MG vs EG) and understand which advantages are long-term. | Analyze the numerical phase value to predict the exact transition point and prepare the position for the next phase. |
-| **2. Summary Table** | | | | | |
-| | Terms Table (MG/EG/Total) | Look at the "Total" column to see who has advantage and in which category (e.g., "White wins due to Mobility"). | Compare MG (middlegame) and EG (endgame) values. A "Pawns" advantage might be more important in EG, while "Threats" is crucial in MG. | Analyze individual values to identify the precise source of advantage/disadvantage and build a plan to accentuate or neutralize it. | Look for significant discrepancies between terms. High "Mobility" but low "King Safety" indicates dynamic but risky advantage. |
-| **3. Material Analysis** | | | | | |
-| | Bishop Pair | Tells you if you have the "bishop pair", which is usually an advantage. | Understand that the bishop pair is strong in open positions. Try to open the game if you have it, or keep it closed if your opponent has it. | Quantify the bishop pair advantage from the summary table and plan how to use it to control key diagonals. | Evaluate the strength of the pair relative to pawn structure. If pawns are blocked on the wrong color, the advantage may be null or negative. |
-| | Material Imbalances | Shows non-standard exchanges (e.g., Rook vs. Bishop+Knight) and tells you who benefits. | Learn the characteristics of common imbalances. A Queen is often stronger than two Rooks in complex positions, but weaker in simple endgames. | Base your strategy on the imbalance. If you have minor pieces against a Rook, try to create outposts and exploit their flexibility. | Analyze the imbalance based on piece coordination. The numerical value is only a guide; the pieces' ability to work together is decisive. |
-| **4. Pawn Structure** | | | | | |
-| | Islands, doubled, isolated, etc. | Identify weaknesses in your pawns and your opponent's. Fewer weaknesses are better. | Understand that every weakness is a potential target. An isolated pawn can be attacked, a backward pawn can be blocked. | Formulate a long-term plan based on weaknesses. If opponent has an isolated pawn, concentrate your pieces to attack it. | Evaluate weaknesses dynamically. A doubled pawn can be a weakness, but can also control important squares or open a file. |
-| | Weak squares | Indicates squares in your position not defended by pawns that the opponent could use. | Understand that a weak square is a "hole" in your position, an invitation for enemy pieces to settle there (outpost). | Develop a plan to control opponent's weak squares with your pieces, or to cover yours with defensive maneuvers. | Use the concept of "weak square complex" (e.g., all light squares) to strategically dominate the opponent. |
-| **5. Passed Pawns** | | | | | |
-| | Position and classification | Tells you if you have a "passed pawn", a pawn that cannot be stopped by opponent's pawns. It's a very strong threat. | Distinguish between a strong passed pawn (supported) and a weak one (blocked, easy to attack). Understand the importance of the promotion "race". | Evaluate the real threat of the pawn based on its distance from promotion and opponent king's control of the promotion square. | Use the passed pawn not only as a promotion threat, but also to divert opponent's pieces and create weaknesses elsewhere on the board. |
-| **6. Line Control** | | | | | |
-| | Open files and diagonals | Suggests where to place your heavy pieces (Rooks, Queen) and Bishops to be more effective. | Apply the principle: occupy open files with Rooks to penetrate enemy territory. Use open diagonals for Bishops. | Coordinate your pieces to simultaneously control multiple lines, creating unsustainable pressure and multiple threats. | Evaluate line control relative to entry points. An open file is useless if all entry squares are controlled by the opponent. |
-| **7. Dvoretsky's Rule** | | | | | |
-| | Opposite-colored bishop endgames | Warns you that you're in an opposite-colored bishop endgame, which often ends in a draw even with an extra pawn. | Understand the drawing tendencies, but also attacking possibilities if other pieces remain. The side with initiative can create threats the other bishop cannot parry. | Apply Dvoretsky's rules: if you're winning, create a passed pawn; if you're losing, build a fortress and block opponent's pawns. | Analyze pawn positions relative to bishop colors. Pawns blocked on the same color as your bishop are weak and limit the piece. |
-| **8. Packing Density** | | | | | |
-| | Density calculation and Shashin analysis | Indicates if the position is "dense" (crowded) or "sparse" (open). | In dense positions, Knights are often superior to Bishops. In sparse positions, Bishops and Rooks dominate. | Use density to decide which pieces to exchange. In a dense position, try to trade your opponent's "bad" bishop. | Link density to Shashin Zone. A "dense" and "Tal" position suggests an attack with sacrifices to open lines. |
-| **9. Center Analysis** | | | | | |
-| | Center type | Tells you if the center is Open, Closed, Static, mobile or Dynamic. This determines the general plan. | Learn typical plans: in closed centers, attack on the wings. In open centers, piece play and king safety are fundamental. | Choose moves that fit the center type. In a dynamic center, priority is initiative and precise calculation of variations. | Plan center transformation. Try to open a closed center to your advantage or block a dynamic center if under pressure. |
-| **10. Makogonov Ranking** | | | | | |
-| | Unit ranking and Piece to improve | Shows your "worst" or least active piece. Try to find it a better square. | Apply the principle of "improving the worst-placed piece". Often, activating a passive piece improves the entire position. | Use this ranking as a concrete guide for your next 2-3 moves, focusing on activating the identified piece. | Consider the ranking prophylactically: identify opponent's worst piece and plan how to prevent its improvement. |
-| **11. Mobility by Areas** | | | | | |
-| | Distribution and Kasparov's Principle | Shows which part of the board your pieces have more freedom of movement (queenside, center, kingside). | Apply Kasparov's principle: attack where you have more mobility. If your pieces are more active on the kingside, that's where you should create threats. | Use mobility analysis to decide where to make pawn breaks, opening lines for your most active pieces. | Analyze the "delta" of mobility. A slight advantage is not enough; look for areas with strong mobility imbalance to launch a decisive attack. |
-| **12. Space Analysis** | | | | | |
-| | Space per area and Area control | Tells you if you have more "space" than your opponent. Having more space is an advantage because your pieces move more easily. | Understand that a space advantage limits opponent's options. Try to "suffocate" their pieces and prevent coordination. | Transform space advantage into an attack. Use extra space to reorganize your pieces and create pressure points on the enemy's weak side. | Manage the risk of overextension. A large space advantage can also create weaknesses that an experienced opponent can exploit with counterplay. |
-| **13. Expansion Factor** | | | | | |
-| | Center of gravity and Expansion delta | Measures how far your pieces have advanced into enemy territory. The more advanced, the more aggressive you are. | Link expansion to initiative. Whoever has the more advanced "center of gravity" usually dictates the game's pace. | Use this metric in "Capablanca" (strategic) positions to evaluate who is making territorial progress. If behind, consolidate; if ahead, keep pushing. | Evaluate the stability of your center of gravity. Overly advanced pieces without adequate support can become targets and turn into weaknesses. |
-| **14. Ordered Legal Moves** | | | | | |
-| | Complete list and Activity score | The first move in the list is what the engine considers best. | Look at the first 2-3 moves. If their scores are very similar, you have more than one good option. If one move is clearly superior, it's almost certainly best. | Examine the entire list to find interesting "candidate" moves the engine doesn't rank first but might better fit your style or a long-term plan. | Analyze move ordering to understand engine heuristics. A tactical move (capture, check) will always be on top, but a quiet move with a good score is strategically very significant. |
+Note that the NNUE evaluation depends on the Stockfish binary and the network parameter
+file (see EvalFile). Not every parameter file is compatible with a given Stockfish binary.
+The default value of the EvalFile UCI option is the name of a network that is guaranteed
+to be compatible with that binary.
 
 ## What to expect from Syzygybases?
 
@@ -637,6 +692,7 @@ targets with corresponding descriptions.
 ```
     cd src
     make help
+    make net
     make build ARCH=x86-64-modern
 ```
 
@@ -684,20 +740,20 @@ first, where the basics of Stockfish development are explained.
 
 ## Terms of use
 
-Alexander is free and distributed under the
-[**GNU General Public License version 3**][license-link] (GPL v3). Essentially,
-this means you are free to do almost exactly what you want with the program,
-including distributing it among your friends, making it available for download
-from your website, selling it (either by itself or as part of some bigger
-software package), or using it as the starting point for a software project of
-your own.
+Stockfish is free, and distributed under the **GNU General Public License version 3**
+(GPL v3). Essentially, this means that you are free to do almost exactly
+what you want with the program, including distributing it among your
+friends, making it available for download from your web site, selling
+it (either by itself or as part of some bigger software package), or
+using it as the starting point for a software project of your own.
 
-The only real limitation is that whenever you distribute Brainlearn in some way,
-you MUST always include the license and the full source code (or a pointer to
-where the source code can be found) to generate the exact binary you are
-distributing. If you make any changes to the source code, these changes must
-also be made available under GPL v3.
+The only real limitation is that whenever you distribute Stockfish in
+some way, you must always include the full source code, or a pointer
+to where the source code can be found. If you make any changes to the
+source code, these changes must also be made available under the GPL.
 
+For full details, read the copy of the GPL v3 found in the file named
+*Copying.txt*.
 ## Acknowledgements
 
 Stockfish uses neural networks trained on [data provided by the Leela Chess Zero
