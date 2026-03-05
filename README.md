@@ -374,7 +374,7 @@ The result is an engine that **solves 206 out of 325 tactical positions** in our
 
 | Use Case                          | Recommendation                  |
 |-----------------------------------|---------------------------------|
-| Match play (engine vs. engine)    | Use the standard Alexander build |
+| Match play (engine vs. engine)    | Use the standard ShashChess build |
 | Analysis of sharp, tactical positions | GoldDigger shines here          |
 | Solving chess puzzles             | GoldDigger is the best choice   |
 | Correspondence chess              | GoldDigger can help find deep resources |
@@ -382,7 +382,7 @@ The result is an engine that **solves 206 out of 325 tactical positions** in our
 
 #### Performance Summary
 
-| Metric                          | Standard Alexander | GoldDigger Alexander |
+| Metric                          | Standard ShashChess | GoldDigger ShashChess |
 |---------------------------------|-------------------|----------------------|
 | Solved positions (out of 325)   | 200               | **206**              |
 | Match result vs. Stockfish 18   | +14 Elo (52.0%)   | −3 Elo (49.5%)       |
@@ -396,6 +396,7 @@ To build the GoldDigger variant, simply add the `GOLD_DIGGER` macro during compi
 
 ```bash
 make build ARCH=x86-64-modern EXTRACXXFLAGS="-DGOLD_DIGGER"
+```
 
 ## Acknowledgments
 
