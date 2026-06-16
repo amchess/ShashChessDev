@@ -34,6 +34,7 @@
 #include "types.h"
 #include "uci.h"
 #include "nnue/nnue_accumulator.h"
+#include "wdl/win_probability.h"
 
 namespace ShashChess {
 
@@ -304,46 +305,24 @@ std::string analyze_legal_moves(const Position& pos, const Eval::NNUE::Networks&
 
     Color side_to_move = pos.side_to_move();
 
-    // -------------------------------------------------------------------------
-    // FIX CRASH & OTTIMIZZAZIONE
-    // -------------------------------------------------------------------------
-    // 1. Allocazione su HEAP: Le strutture NNUE sono troppo grandi per lo stack
-    //    nelle nuove patch. Usiamo make_unique per allocarle nella memoria dinamica.
-    // 2. Allocazione ESTERNA: Allocchiamo una volta sola fuori dal ciclo for
-    //    e riutilizziamo i buffer per tutte le mosse per non rallentare l'analisi.
     auto acc_stack = std::make_unique<Eval::NNUE::AccumulatorStack>();
     auto caches    = std::make_unique<Eval::NNUE::AccumulatorCaches>(networks);
-    // -------------------------------------------------------------------------
 
     // Genera tutte le mosse legali
     for (const auto& move : MoveList<LEGAL>(pos))
     {
-        // Usa una copia della posizione
         StateListPtr states(new std::deque<StateInfo>(1));
         Position     posCopy;
         posCopy.set(pos.fen(), pos.is_chess960(), &states->back());
 
-        // Esegui la mossa sulla copia
         StateInfo st;
         posCopy.do_move(move, st);
 
-        // Valuta la posizione risultante.
-        // Passiamo i puntatori dereferenziati (*acc_stack, *caches) perché
-        // evaluate si aspetta i riferimenti agli oggetti, non i unique_ptr.
-        Value v = Eval::evaluate(networks, posCopy, *acc_stack, *caches, VALUE_ZERO);
-
-        // La valutazione 'v' è dal punto di vista di chi deve muovere ORA (l'avversario).
-        // La invertiamo per avere il valore dal punto di vista di chi ha appena mosso.
+        Value v              = Eval::evaluate(networks, posCopy, *acc_stack, *caches, VALUE_ZERO);
         Value eval_for_mover = -v;
+        Value v_white        = posCopy.side_to_move() == WHITE ? v : -v;
 
-        // Converti al punto di vista del bianco per il calcolo WDL (Win/Draw/Loss)
-        // WDLModel lavora sempre e solo dal punto di vista del bianco.
-        Value v_white = posCopy.side_to_move() == WHITE ? v : -v;
-
-        // Calcola la win probability (sempre prospettiva White)
         uint8_t win_prob_white = WDLModel::get_win_probability(v_white, posCopy);
-
-        // Calcola la win probability per il giocatore che sta muovendo
         uint8_t win_prob_for_mover;
         if (side_to_move == WHITE)
         {
@@ -351,25 +330,19 @@ std::string analyze_legal_moves(const Position& pos, const Eval::NNUE::Networks&
         }
         else
         {
-            // Se muove il nero, la sua probabilità di vittoria è l'opposto di quella del bianco
             win_prob_for_mover = 100 - win_prob_white;
         }
 
-        // Aggiungi alla lista
         moves.emplace_back(UCIEngine::move(move, pos.is_chess960()), eval_for_mover,
                            win_prob_for_mover);
     }
 
-    // Ordina le mosse:
-    // 1. Prima per Win Probability (decrescente)
-    // 2. A parità di Win Prob, per valutazione in centipawn (decrescente)
     std::sort(moves.begin(), moves.end(), [](const auto& a, const auto& b) {
         if (std::get<2>(a) != std::get<2>(b))
             return std::get<2>(a) > std::get<2>(b);  // win probability più alta vince
         return std::get<1>(a) > std::get<1>(b);      // eval più alta vince
     });
 
-    // Costruisci la stringa di output
     std::stringstream ss;
     ss << "Legal moves ordered by static activity (best first): ";
     for (size_t i = 0; i < moves.size(); ++i)
@@ -381,10 +354,95 @@ std::string analyze_legal_moves(const Position& pos, const Eval::NNUE::Networks&
         Value       eval     = std::get<1>(moves[i]);
         uint8_t     win_prob = std::get<2>(moves[i]);
 
-        // Formatta l'output: "e2e4(+0.35 cp, 52%)"
         ss << move_str << "(" << std::showpos << std::fixed << std::setprecision(1)
            << 0.01 * UCIEngine::to_cp(eval, pos) << " cp, " << static_cast<int>(win_prob) << "%)";
     }
+
+    return ss.str();
+}
+
+// Genera una sintesi strategica calibrata per i tre livelli Elo del dataset di tesi
+std::string generate_strategic_synthesis(uint8_t              winProbWhite,
+                                         const WDLModel::WDL& wdl,
+                                         const std::string&   shashinZone,
+                                         Value                v_white,
+                                         const Position&      pos,
+                                         int                  pos_delta_act) {
+    std::stringstream ss;
+    const int         wp = static_cast<int>(winProbWhite);
+    const int         cp = UCIEngine::to_cp(v_white, pos);
+    const int         dw = static_cast<int>(wdl.win);
+    const int         dd = static_cast<int>(wdl.draw);
+    const int         dl = static_cast<int>(wdl.loss);
+
+    ss << "=======================================================================\n";
+    ss << "STRATEGIC SYNTHESIS — ShashHermes Ground Truth Format\n";
+    ss << "=======================================================================\n";
+    ss << "Evaluation  : " << (cp >= 0 ? "+" : "") << std::fixed << std::setprecision(2)
+       << 0.01 * cp << " cp | WP White=" << wp << "% | WDL=" << dw << "/" << dd << "/" << dl
+       << "%\n";
+    ss << "Shashin Zone: " << shashinZone << "\n\n";
+
+    // Analisi Carattere Posizione
+    ss << "Position Character:\n";
+    ss << "  Drawability   : "
+       << (dd > 60   ? "VERY HIGH. Fortress risk."
+           : dd > 40 ? "MODERATE. Balanced."
+                     : "LOW. Decisive.")
+       << "\n";
+    ss << "  Volatility    : "
+       << (std::abs(dw - dl) > 50 ? "LOW stability."
+                                  : "HIGH variance. Critical tactical calculations.")
+       << "\n";
+
+    // Direttive Strategiche
+    ss << "\nStrategic Directives:\n";
+    if (wp >= 65)
+        ss << "  [PRESS] Improve the worst piece. Target vulnerabilities. Open active channels.\n";
+    else if (wp >= 45)
+        ss << "  [BALANCE] Keep piece coordination tight. Prevent tactical outposts.\n";
+    else
+        ss << "  [COUNTERPLAY] Imbalance the game. Complicate variations. Avoid massive trades.\n";
+
+    // Generazione del Blocco Dataset ChatML per QLoRA Fine-Tuning
+    ss << "\n--- SHASHHERMES TRAINING SNIPPET ---\n";
+    ss << "TRACCIA SHASHCHESS: [" << wp << "% | Zone=" << shashinZone << " | WDL=" << dw << "/"
+       << dd << "/" << dl << "]\n";
+
+    ss << "\nFor Elo 1400-1999 (Beginner):\n";
+    if (wp >= 60)
+        ss
+          << "  \"White holds the initiative. Focus on pushing piece activity and avoiding unnecessary pawn weaknesses.\"\n";
+    else if (wp >= 40)
+        ss
+          << "  \"The board is statically balanced. Maintain proper piece protection and secure the king.\"\n";
+    else
+        ss
+          << "  \"Black is exerting pressure. Search for dynamic counterplay and active defensive resources.\"\n";
+
+    ss << "\nFor Elo 2000-2199 (Intermediate):\n";
+    if (wp >= 60)
+        ss
+          << "  \"" << shashinZone << " (" << wp
+          << "% WP). Active bucket detects structural advantage beyond material. Prioritize fixing the worst unit.\"\n";
+    else if (wp >= 40)
+        ss << "  \"" << shashinZone << " (" << wp << "% WP). High draw probability (" << dd
+           << "%). Strategic play revolves around center control and outpost denial.\"\n";
+    else
+        ss
+          << "  \"" << shashinZone << " (" << wp
+          << "% WP). Structural compression detected. Complicate the topology before spatial paralysis sets in.\"\n";
+
+    ss << "\nFor Elo 2200+ (Advanced/Expert):\n";
+    ss
+      << "  \"NNUE WP=" << wp << "% | " << shashinZone << " | WDL=" << dw << "/" << dd << "/" << dl
+      << "%. "
+      << "Neural structural correction: " << std::showpos << pos_delta_act << std::noshowpos
+      << "% WP deviation from PSQT material. "
+      << "Consult the NNUE Mechanistic Trace layer output for precise Shapley attributions, filter channel activations, and defensive fixation blindspots.\"\n";
+
+    ss << "--- END SHASHHERMES TRAINING SNIPPET ---\n";
+    ss << "=======================================================================\n";
 
     return ss.str();
 }
@@ -426,7 +484,7 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Networks& networks, boo
         // Determina la zona di Shashin per il bianco
         std::string shashinZone = get_shashin_zone(winProbWhite, WHITE);
 
-        // Mostra la trace NNUE in centipawn
+        // Mostra la trace NNUE
         ss << std::showpoint << std::noshowpos << std::fixed << std::setprecision(2);
         ss << '\n' << NNUE::trace(pos, networks, *caches) << '\n';
 
@@ -442,6 +500,23 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Networks& networks, boo
         // Analisi delle mosse legali
         ss << "--- LEGAL MOVES ANALYSIS ---\n";
         ss << analyze_legal_moves(pos, networks) << "\n";
+
+        // --- INIZIO INTEGRAZIONE SHASHHERMES DATA GENERATOR ---
+        // Estraiamo al volo il pos_delta_act per passarlo nativamente allo snippet Elo 2200+
+        auto accumulators_syn = std::make_unique<Eval::NNUE::AccumulatorStack>();
+        auto caches_syn       = std::make_unique<Eval::NNUE::AccumulatorCaches>(networks);
+        auto t_syn = networks.big.trace_evaluate(pos, *accumulators_syn, caches_syn->big);
+
+        int wp_mat_syn = WDLModel::get_win_probability(t_syn.psqt[t_syn.correctBucket], pos);
+        int wp_tot_syn = WDLModel::get_win_probability(
+          t_syn.psqt[t_syn.correctBucket] + t_syn.positional[t_syn.correctBucket], pos);
+        int structural_delta = wp_tot_syn - wp_mat_syn;
+
+        ss << "--- STRATEGIC SYNTHESIS ---\n";
+        ss << generate_strategic_synthesis(winProbWhite, wdl, shashinZone, v_white, pos,
+                                           structural_delta)
+           << "\n";
+        // --- FINE INTEGRAZIONE SHASHHERMES DATA GENERATOR ---
 
         ss << "================================\n";
         ss << "Final Static Activity Evaluation: " << 0.01 * UCIEngine::to_cp(v_white, pos)
