@@ -1,0 +1,346 @@
+{
+ "id": "ShashChess 41.2",
+ "options": {
+  "Debug Log File": {
+   "type": "string",
+   "default": "<empty>",
+   "var": []
+  },
+  "NumaPolicy": {
+   "type": "string",
+   "default": "auto",
+   "var": []
+  },
+  "Threads": {
+   "type": "spin",
+   "default": "1",
+   "min": "1",
+   "max": "1024",
+   "var": []
+  },
+  "Hash": {
+   "type": "spin",
+   "default": "16",
+   "min": "1",
+   "max": "33554432",
+   "var": []
+  },
+  "Clear Hash": {
+   "type": "button",
+   "var": []
+  },
+  "Ponder": {
+   "type": "check",
+   "default": "false",
+   "var": []
+  },
+  "MultiPV": {
+   "type": "spin",
+   "default": "1",
+   "min": "1",
+   "max": "256",
+   "var": []
+  },
+  "Anti Dancing Analysis": {
+   "type": "check",
+   "default": "false",
+   "var": []
+  },
+  "Move Overhead": {
+   "type": "spin",
+   "default": "10",
+   "min": "0",
+   "max": "5000",
+   "var": []
+  },
+  "Minimum Thinking Time": {
+   "type": "spin",
+   "default": "100",
+   "min": "0",
+   "max": "5000",
+   "var": []
+  },
+  "Slow Mover": {
+   "type": "spin",
+   "default": "100",
+   "min": "10",
+   "max": "1000",
+   "var": []
+  },
+  "nodestime": {
+   "type": "spin",
+   "default": "0",
+   "min": "0",
+   "max": "10000",
+   "var": []
+  },
+  "UCI_Chess960": {
+   "type": "check",
+   "default": "false",
+   "var": []
+  },
+  "UCI_ShowWDL": {
+   "type": "check",
+   "default": "true",
+   "var": []
+  },
+  "CTG/BIN Book 1 File": {
+   "type": "string",
+   "default": "<empty>",
+   "var": []
+  },
+  "Book 1 Width": {
+   "type": "spin",
+   "default": "1",
+   "min": "1",
+   "max": "20",
+   "var": []
+  },
+  "Book 1 Depth": {
+   "type": "spin",
+   "default": "255",
+   "min": "1",
+   "max": "255",
+   "var": []
+  },
+  "(CTG) Book 1 Only Green": {
+   "type": "check",
+   "default": "true",
+   "var": []
+  },
+  "CTG/BIN Book 2 File": {
+   "type": "string",
+   "default": "<empty>",
+   "var": []
+  },
+  "Book 2 Width": {
+   "type": "spin",
+   "default": "1",
+   "min": "1",
+   "max": "20",
+   "var": []
+  },
+  "Book 2 Depth": {
+   "type": "spin",
+   "default": "255",
+   "min": "1",
+   "max": "255",
+   "var": []
+  },
+  "(CTG) Book 2 Only Green": {
+   "type": "check",
+   "default": "true",
+   "var": []
+  },
+  "SyzygyPath": {
+   "type": "string",
+   "default": "<empty>",
+   "var": []
+  },
+  "SyzygyProbeDepth": {
+   "type": "spin",
+   "default": "1",
+   "min": "1",
+   "max": "100",
+   "var": []
+  },
+  "Syzygy50MoveRule": {
+   "type": "check",
+   "default": "true",
+   "var": []
+  },
+  "SyzygyProbeLimit": {
+   "type": "spin",
+   "default": "7",
+   "min": "0",
+   "max": "7",
+   "var": []
+  },
+  "EvalFile": {
+   "type": "string",
+   "default": "nn-c288c895ea92.nnue",
+   "var": []
+  },
+  "EvalFileSmall": {
+   "type": "string",
+   "default": "nn-37f18f62d772.nnue",
+   "var": []
+  },
+  "Full depth threads": {
+   "type": "spin",
+   "default": "0",
+   "min": "0",
+   "max": "1024",
+   "var": []
+  },
+  "Persisted learning": {
+   "type": "combo",
+   "default": "Off",
+   "var": [
+    "Off",
+    "Standard",
+    "Self"
+   ]
+  },
+  "Read only learning": {
+   "type": "check",
+   "default": "false",
+   "var": []
+  },
+  "Experience Book": {
+   "type": "check",
+   "default": "false",
+   "var": []
+  },
+  "Experience Book Max Moves": {
+   "type": "spin",
+   "default": "100",
+   "min": "1",
+   "max": "100",
+   "var": []
+  },
+  "Experience Book Min Depth": {
+   "type": "spin",
+   "default": "4",
+   "min": "1",
+   "max": "255",
+   "var": []
+  },
+  "MCTS by Shashin": {
+   "type": "check",
+   "default": "false",
+   "var": []
+  },
+  "MCTSThreads": {
+   "type": "spin",
+   "default": "1",
+   "min": "1",
+   "max": "512",
+   "var": []
+  },
+  "MCTS Multi Strategy": {
+   "type": "spin",
+   "default": "20",
+   "min": "0",
+   "max": "100",
+   "var": []
+  },
+  "MCTS Multi MinVisits": {
+   "type": "spin",
+   "default": "5",
+   "min": "0",
+   "max": "1000",
+   "var": []
+  },
+  "MCTS Explore": {
+   "type": "check",
+   "default": "false",
+   "var": []
+  },
+  "LiveBook Proxy Url": {
+   "type": "string",
+   "default": "<empty>",
+   "var": []
+  },
+  "LiveBook Lichess Games": {
+   "type": "check",
+   "default": "false",
+   "var": []
+  },
+  "LiveBook Lichess Masters": {
+   "type": "check",
+   "default": "false",
+   "var": []
+  },
+  "LiveBook Lichess Player": {
+   "type": "string",
+   "default": "<empty>",
+   "var": []
+  },
+  "LiveBook Lichess Player Color": {
+   "type": "combo",
+   "default": "White",
+   "var": [
+    "Both",
+    "White",
+    "Black"
+   ]
+  },
+  "LiveBook ChessDB": {
+   "type": "check",
+   "default": "false",
+   "var": []
+  },
+  "LiveBook Depth": {
+   "type": "spin",
+   "default": "255",
+   "min": "1",
+   "max": "255",
+   "var": []
+  },
+  "ChessDB Tablebase": {
+   "type": "check",
+   "default": "false",
+   "var": []
+  },
+  "Lichess Tablebase": {
+   "type": "check",
+   "default": "false",
+   "var": []
+  },
+  "ChessDB Contribute": {
+   "type": "check",
+   "default": "false",
+   "var": []
+  },
+  "Variety": {
+   "type": "combo",
+   "default": "Off",
+   "var": [
+    "Off",
+    "Standard",
+    "Psychological"
+   ]
+  },
+  "Concurrent Experience": {
+   "type": "check",
+   "default": "false",
+   "var": []
+  },
+  "High Tal": {
+   "type": "check",
+   "default": "false",
+   "var": []
+  },
+  "Middle Tal": {
+   "type": "check",
+   "default": "false",
+   "var": []
+  },
+  "Low Tal": {
+   "type": "check",
+   "default": "false",
+   "var": []
+  },
+  "Capablanca": {
+   "type": "check",
+   "default": "false",
+   "var": []
+  },
+  "Low Petrosian": {
+   "type": "check",
+   "default": "false",
+   "var": []
+  },
+  "Middle Petrosian": {
+   "type": "check",
+   "default": "false",
+   "var": []
+  },
+  "High Petrosian": {
+   "type": "check",
+   "default": "false",
+   "var": []
+  }
+ }
+}

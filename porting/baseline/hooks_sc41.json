@@ -1,0 +1,396 @@
+[
+ {
+  "file": "misc.cpp",
+  "tag": "golddigger",
+  "begin": 160,
+  "end": 162,
+  "hash": "9507b58b9277",
+  "lines": 1,
+  "head": "ss << \" GoldDigger\";",
+  "body": [
+   "ss << \" GoldDigger\";"
+  ],
+  "before": [
+   "#endif",
+   "}",
+   "// --- NOME PERSONALIZZATO PER GOLD DIGGER ---"
+  ],
+  "after": [
+   "// -------------------------------------------",
+   "return ss.str();",
+   "}"
+  ]
+ },
+ {
+  "file": "search.cpp",
+  "tag": "golddigger",
+  "begin": 885,
+  "end": 910,
+  "hash": "0865e99f9c40",
+  "lines": 23,
+  "head": "if (localShashinManager.isStrategical())",
+  "body": [
+   "if (localShashinManager.isStrategical())",
+   "{",
+   "// Nelle posizioni strategiche, ci aspettiamo meno oscillazioni.",
+   "// Stringiamo leggermente (90%) per guadagnare efficienza.",
+   "delta = std::max(6, (delta * 9) / 10);",
+   "// Se è una fortezza, stringiamo ancora di più",
+   "if (MoveConfig::isFortress)",
+   "delta = std::max(5, delta - 2);",
+   "}",
+   "else if (isAggressive || isHighTal)",
+   "{",
+   "// Tattico puro: finestra allargata del 12.5% (compromesso stabilità/tattica)",
+   "// Riduce i re-search inutili rispetto al 25% precedente.",
+   "delta = (delta * 9) / 8;",
+   "}",
+   "#else",
+   "// 2. Modulazione Shashin (Match-Winner Tuning)",
+   "// Solo TAL (Aggressive) beneficia di una finestra più larga per vedere tattiche nascoste.",
+   "// Petrosian e Capablanca usano il default (stabilità massima nelle \"pepite\").",
+   "if (isAggressive || isHighTal)",
+   "{",
+   "delta = (delta * 9) / 8; // 12.5% expansion",
+   "}"
+  ],
+  "before": [
+   "// --- FIX ASPIRATION WINDOW (Hybrid Tattica) ---",
+   "// 1. Base Stockfish solida (include meanSquaredScore per stabilità nei match)",
+   "delta = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 9000;"
+  ],
+  "after": [
+   "// Sicurezza a basse profondità",
+   "if (rootDepth < 10)",
+   "delta = std::min(delta, 15);"
+  ]
+ },
+ {
+  "file": "search.cpp",
+  "tag": "golddigger",
+  "begin": 1628,
+  "end": 1655,
+  "hash": "dc609d1485cc",
+  "lines": 25,
+  "head": "// FASE 3 MODERATA: Diamo margine (150) ai sacrifici per non potarli troppo pres",
+  "body": [
+   "// FASE 3 MODERATA: Diamo margine (150) ai sacrifici per non potarli troppo presto.",
+   "if (isAggressive || isSacrificial)",
+   "razorThreshold -= 150;",
+   "else if (isStrategical)",
+   "razorThreshold -= 50;",
+   "#else",
+   "// --- SHASHIN HYBRID ADJUSTMENTS ---",
+   "// Bilanciamento tra visione tattica e velocità pura.",
+   "if (isAggressive)",
+   "{",
+   "// Tal: Meno pruning (-50) per non perdere combinazioni d'attacco.",
+   "razorThreshold -= 50;",
+   "}",
+   "// Fortezze: Sicurezza extra, non rischiare nulla.",
+   "if (isFortressNode)",
+   "{",
+   "razorThreshold -= 60;",
+   "}",
+   "// Bonus mobilità (Solo se non siamo in modalità difensiva/strategica)",
+   "// Aiuta a trovare risorse in posizioni dinamiche.",
+   "if (legalMoveCount > 30 && !isStrategical)",
+   "{",
+   "razorThreshold -= 20;",
+   "}",
+   "// --- END SHASHIN ADJUSTMENTS ---"
+  ],
+  "before": [
+   "{",
+   "// Base razoring threshold (Standard Stockfish formula)",
+   "Value razorThreshold = alpha - 485 - 281 * depth * depth;"
+  ],
+  "after": [
+   "if (eval < razorThreshold)",
+   "return qsearch<NonPV>(pos, ss, alpha, beta);",
+   "}"
+  ]
+ },
+ {
+  "file": "search.cpp",
+  "tag": "golddigger",
+  "begin": 1662,
+  "end": 1705,
+  "hash": "5f98199e1170",
+  "lines": 38,
+  "head": "// FASE 3 MODERATA: Aumentiamo il margine del 50% (150) per esplorare mosse dubb",
+  "body": [
+   "// FASE 3 MODERATA: Aumentiamo il margine del 50% (150) per esplorare mosse dubbie",
+   "int marginMultiplier = 100;",
+   "if (isAggressive || isSacrificial)",
+   "marginMultiplier = 150;",
+   "else if (isStrategical)",
+   "marginMultiplier = 120;",
+   "#else",
+   "// --- SHASHIN ADJUSTMENTS (TIGHTENED) ---",
+   "int marginMultiplier = 100; // Base Stockfish (100%)",
+   "if (isAggressive)",
+   "{",
+   "// Old: ~75-85%. New: 90%.",
+   "// Riduciamo il margine (cerchiamo di più) ma senza esagerare.",
+   "marginMultiplier = 90;",
+   "}",
+   "else if (isStrategical)",
+   "{",
+   "marginMultiplier = 100;",
+   "}",
+   "// King Danger: fattore critico",
+   "if (staticState.kingDanger)",
+   "{",
+   "// Old: cap a 70. New: cap a 85.",
+   "// Non disabilitare il pruning troppo aggressivamente.",
+   "marginMultiplier = std::min(marginMultiplier, 85);",
+   "}",
+   "// Fortress: Eccezione necessaria",
+   "// Le fortezze richiedono precisione assoluta, manteniamo 60.",
+   "if (isFortressNode)",
+   "{",
+   "marginMultiplier = 60;",
+   "}",
+   "// Adjustment per mobilità (semplificato e sicuro)",
+   "if (isStrategical && legalMoveCount > 30)",
+   "{",
+   "marginMultiplier = std::min(marginMultiplier + 5, 115);",
+   "}",
+   "// --- END SHASHIN ADJUSTMENTS ---"
+  ],
+  "before": [
+   "// Step 8. Futility pruning: child node",
+   "// The depth condition is important for mate finding.",
+   "{"
+  ],
+  "after": [
+   "auto futility_margin = [&](Depth d) {",
+   "Value futilityMult = 76 - 23 * !ss->ttHit;",
+   "// Applichiamo il moltiplicatore alla base"
+  ]
+ },
+ {
+  "file": "search.cpp",
+  "tag": "golddigger",
+  "begin": 1735,
+  "end": 1790,
+  "hash": "b63b709cd9a7",
+  "lines": 45,
+  "head": "// FASE 1 RAFFINATA v3 (Paranoid Heat)",
+  "body": [
+   "// FASE 1 RAFFINATA v3 (Paranoid Heat)",
+   "// Obiettivo: Eguagliare la Brutale (142) sui casi critici,",
+   "// ma usare l'intelligenza Heat per i casi \"grigi\".",
+   "const int HEAT_THRESHOLD = 4;",
+   "int tacticalHeat = 0;",
+   "// 1. KILLERS (Trigger Immediati):",
+   "// Se c'è pericolo reale o sacrificio, NON contiamo punti. SALTANO SUBITO.",
+   "// Assegniamo un valore superiore alla soglia per forzare il blocco NMP.",
+   "if (staticState.kingDanger)",
+   "tacticalHeat += 10;",
+   "if (isSacrificial)",
+   "tacticalHeat += 10;",
+   "// 2. FATTORI DI STILE (Accumulo):",
+   "// Qui usiamo la logica intelligente del tuo amico.",
+   "// Servono per catturare posizioni \"Tal\" che non sono ancora esplose.",
+   "if (dynamicDerived.isHighTal)",
+   "tacticalHeat += 2;",
+   "if (isAggressive)",
+   "tacticalHeat += 2;",
+   "if (staticState.pawnsNearPromotion)",
+   "tacticalHeat += 2;",
+   "// 3. FATTORI DI SUPPORTO",
+   "if (staticState.legalMoveCount > 30)",
+   "tacticalHeat += 1;",
+   "if (pos.non_pawn_material(us) > 2000)",
+   "tacticalHeat += 1;",
+   "// 4. PROFONDITÀ (Il tocco di classe):",
+   "// Più andiamo a fondo, più diventiamo sospettosi del Null Move.",
+   "if (depth > 8)",
+   "tacticalHeat += 1;",
+   "if (depth > 12)",
+   "tacticalHeat += 1;",
+   "// Decisione",
+   "if (tacticalHeat >= HEAT_THRESHOLD)",
+   "skipNullMove = true;",
+   "#else",
+   "// LOGICA ORIGINALE SHASHCHESS (MAIN 142)",
+   "// Definiamo i casi \"Hot\" per la logica standard",
+   "bool nodeHot = staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial;",
+   "// 1. Sicurezza Tattica",
+   "if (nodeHot || (isAggressive && staticState.kingDanger && depth < 10))",
+   "skipNullMove = true;",
+   "// 2. Sicurezza Difensiva",
+   "if (isPetrosian && staticState.stmKingDanger)",
+   "skipNullMove = true;"
+  ],
+  "before": [
+   "{",
+   "// --- SHASHIN HYBRID NMP SAFETY (OPTIMIZED) ---",
+   "bool skipNullMove = false;"
+  ],
+  "after": [
+   "// ---------------------------------------------",
+   "if (!skipNullMove)",
+   "{"
+  ]
+ },
+ {
+  "file": "search.cpp",
+  "tag": "golddigger",
+  "begin": 2065,
+  "end": 2069,
+  "hash": "5ed995aaa0ea",
+  "lines": 3,
+  "head": "extraReduction = (depth > 12 && !staticState.pawnsNearPromotion) ? 2 : 1;",
+  "body": [
+   "extraReduction = (depth > 12 && !staticState.pawnsNearPromotion) ? 2 : 1;",
+   "#else",
+   "extraReduction = 1;"
+  ],
+  "before": [
+   "// Pruning forte (-2) per correre veloci, ma SOLO se siamo profondi",
+   "// e non ci sono minacce immediate da pedoni.",
+   "int extraReduction;"
+  ],
+  "after": [
+   "moveCountThreshold -= extraReduction;",
+   "}",
+   "else if (isAggressive || isPetrosian)"
+  ]
+ },
+ {
+  "file": "search.cpp",
+  "tag": "golddigger",
+  "begin": 2301,
+  "end": 2305,
+  "hash": "2cde7e41954e",
+  "lines": 3,
+  "head": "r -= 60; // Profondità extra per trovare il colpo del KO",
+  "body": [
+   "r -= 60; // Profondità extra per trovare il colpo del KO",
+   "#else",
+   "r -= 50;"
+  ],
+  "before": [
+   "// 1. TAL (Aggressive - Attack): Visione profonda per il colpo del KO.",
+   "if (isAggressive && (givesCheck || capture))",
+   "{"
+  ],
+  "after": [
+   "}",
+   "// 3. CAPABLANCA (Strategic - Maneuver)",
+   "else if (isStrategical && !capture && !givesCheck && depth > 8)"
+  ]
+ },
+ {
+  "file": "search.cpp",
+  "tag": "golddigger",
+  "begin": 2307,
+  "end": 2322,
+  "hash": "399f5ed3d5f7",
+  "lines": 14,
+  "head": "else if (isPetrosian && !capture)",
+  "body": [
+   "else if (isPetrosian && !capture)",
+   "{",
+   "// La difesa richiede una precisione millimetrica.",
+   "// Non tagliamo, anzi diamo un po' di respiro.",
+   "r -= 40;",
+   "}",
+   "#else",
+   "// 2. PETROSIAN (Defensive - Tactics): Precisione assoluta.",
+   "// Se siamo in difesa (Petrosian) e la mossa non è una cattura,",
+   "// riduciamo il taglio per non perdere la linea di salvezza.",
+   "else if (isPetrosian && !capture && !givesCheck)",
+   "{",
+   "r -= 50; // Protezione tattica difensiva",
+   "}"
+  ],
+  "before": [
+   "if (isAggressive && (givesCheck || capture))",
+   "{",
+   "}"
+  ],
+  "after": [
+   "// 3. CAPABLANCA (Strategic - Maneuver)",
+   "else if (isStrategical && !capture && !givesCheck && depth > 8)",
+   "{"
+  ]
+ },
+ {
+  "file": "search.cpp",
+  "tag": "golddigger",
+  "begin": 2326,
+  "end": 2332,
+  "hash": "9b42dc204150",
+  "lines": 5,
+  "head": "// IL MOTORE DEL MATCH: Posizione chiusa/noiosa.",
+  "body": [
+   "// IL MOTORE DEL MATCH: Posizione chiusa/noiosa.",
+   "// Falciata in puro stile Stockfish Main (+80) per correre velocissimi.",
+   "r += 80;",
+   "#else",
+   "r += 45;"
+  ],
+  "before": [
+   "// 3. CAPABLANCA (Strategic - Maneuver)",
+   "else if (isStrategical && !capture && !givesCheck && depth > 8)",
+   "{"
+  ],
+  "after": [
+   "}",
+   "// Ricalcoliamo 'd' (profondità ridotta) solo se 'r' è cambiato",
+   "if (r != original_r)"
+  ]
+ },
+ {
+  "file": "search.cpp",
+  "tag": "golddigger",
+  "begin": 3105,
+  "end": 3138,
+  "hash": "93693542c1a9",
+  "lines": 27,
+  "head": "// --- SHASHIN STYLE LOGIC (SYMMETRICAL & TARGETED) ---",
+  "body": [
+   "// --- SHASHIN STYLE LOGIC (SYMMETRICAL & TARGETED) ---",
+   "// 1. TAL (Aggressive - Middle Tal):",
+   "// La fase critica della lotta. Riduciamo la riduzione (-5%) per aumentare la profondità.",
+   "// Nota: High Tal non è incluso, ed è giusto così: se stiamo già vincendo nettamente,",
+   "// non serve rallentare la ricerca, basta l'efficienza standard.",
+   "if (isAggressive)",
+   "reductionScale = (reductionScale * 97) / 100;",
+   "// 2. PETROSIAN (Strategical - Capablanca):",
+   "// La fase di manovra/consolidamento.",
+   "// Torniamo a 103% per massima stabilità nei match lunghi.",
+   "else if (isStrategical)",
+   "reductionScale = (reductionScale * 103) / 100;",
+   "#else",
+   "// --- SHASHIN STYLE TUNING ---",
+   "// 1. TAL (Aggressive): 98%",
+   "// Mantiene la velocità della Prerelease ma con un occhio di riguardo alla tattica.",
+   "if (isAggressive)",
+   "reductionScale = (reductionScale * 98) / 100;",
+   "// 2. CAPABLANCA (Strategical Puro): 104%",
+   "// Il segreto per battere SF18 nei match posizionali. Tagliare di più per andare più a fondo.",
+   "else if (isStrategical)",
+   "reductionScale = (reductionScale * 104) / 100;",
+   "// 3. PETROSIAN (Defensive): 99%",
+   "// Leggero aiuto (1% in meno di riduzione) per calcolare meglio le difese.",
+   "else if (shashinManager->isPetrosian())",
+   "reductionScale = (reductionScale * 99) / 100;",
+   "// -----------------------------------------"
+  ],
+  "before": [
+   "Depth Search::Worker::reduction(",
+   "bool i, Depth d, int mn, int delta, bool isStrategical, bool isAggressive) const {",
+   "int reductionScale = reductions[d] * reductions[mn];"
+  ],
+  "after": [
+   "//mcts begin",
+   "if (rootDelta != 0)",
+   "return reductionScale - delta * 608 / rootDelta + !i * reductionScale * 238 / 512 + 1182;"
+  ]
+ }
+]
