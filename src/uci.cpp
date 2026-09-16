@@ -1,6 +1,7 @@
 /*
   ShashChess, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2026 ShashChess developers (see AUTHORS file)
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2018-2026 The ShashChess developers (see AUTHORS file)
 
   ShashChess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -38,12 +39,12 @@
 #include "search.h"
 #include "types.h"
 #include "ucioption.h"
-//From ShashChess begin
+// [SC:shashchess] begin
 
 #include "learn/learn.h"
 #include "book/book.h"
 #include "mcts/montecarlo.h"
-//From ShashChess end
+// [SC:shashchess] end
 namespace ShashChess {
 constexpr auto BenchmarkCommand = "speedtest";
 
@@ -90,11 +91,11 @@ void UCIEngine::init_search_update_listeners() {
 }
 
 void UCIEngine::loop() {
-    //learning begin
+    // [SC:learning] begin
     Position     pos;
     StateListPtr states(new std::deque<StateInfo>(1));
     pos.set(StartFEN, false, &states->back());
-    //learning end
+    // [SC:learning] end
     std::string token, cmd;
 
     for (int i = 1; i < cli.argc; ++i)
@@ -115,7 +116,7 @@ void UCIEngine::loop() {
         {  //learning
             engine.stop();
 
-            //learning begin
+            // [SC:learning] begin
             if (token == "quit" && LD.is_enabled() && !LD.is_paused())
             {
                 //Wait for the current search operation (if any) to stop
@@ -133,7 +134,7 @@ void UCIEngine::loop() {
                     LD.persist(engine.get_options());
                 }
             }
-            //learning end
+            // [SC:learning] end
         }
         // The GUI sends 'ponderhit' to tell that the user has played the expected move.
         // So, 'ponderhit' is sent if pondering was done on the same move that the user
@@ -165,7 +166,7 @@ void UCIEngine::loop() {
             pos.set(engine.fen(), engine.get_options()["UCI_Chess960"], &states->back());
         }  //Experience Book
         else if (token == "ucinewgame")
-        //learning begin
+        // [SC:learning] begin
         {
             if (LD.is_enabled())
             {
@@ -184,7 +185,7 @@ void UCIEngine::loop() {
             }
             engine.search_clear();
         }
-        //learning end
+        // [SC:learning] end
         else if (token == "isready")
             sync_cout << "readyok" << sync_endl;
 
@@ -200,14 +201,14 @@ void UCIEngine::loop() {
             sync_cout << engine.visualize() << sync_endl;
         else if (token == "eval")
             engine.trace_eval();
-        //book and exp begin
+        // [SC:learning-expbook] begin
         else if (token == "book")
             engine.show_moves_bookMan(pos);
         else if (token == "showexp")
             LD.show_exp(pos);
         else if (token == "quickresetexp")
             LD.quick_reset_exp();
-        //book and exp end
+        // [SC:learning-expbook] end
         else if (token == "compiler")
             sync_cout << compiler_info() << sync_endl;
         else if (token == "export_net")
@@ -338,7 +339,7 @@ void UCIEngine::bench(std::istream& args) {
             position(is);
         else if (token == "ucinewgame")
         {
-            //learning begin
+            // [SC:learning] begin
             if (LD.is_enabled())
             {
                 if (LD.learning_mode() == LearningMode::Self && !LD.is_paused())
@@ -347,7 +348,7 @@ void UCIEngine::bench(std::istream& args) {
                 }
                 setStartPoint();
             }
-            //learning end
+            // [SC:learning] end
             engine.search_clear();  // search_clear may take a while
             elapsed = now();
         }
@@ -578,12 +579,12 @@ std::string UCIEngine::format_score(const Score& s) {
 
     return s.visit(format);
 }
-//from learning begin
+// [SC:learning] begin
 int UCIEngine::getNormalizeToPawnValue(Position& pos) {
     auto [a, b] = WDLModel::win_rate_params(pos);
     return a;
 }
-//from learning end
+// [SC:learning] end
 
 // Turns a Value to an integer centipawn number,
 // without treatment of mate and similar special scores.

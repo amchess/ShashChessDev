@@ -1,0 +1,85 @@
+# .github/workflows/port-gates.yml - cancelli automatici del porting ShashChess 42.
+# ShashChessDev e' privato: i minuti di GitHub Actions si pagano. Il workflow e' snello:
+# una sola macchina Linux, solo sui rami di porting e sulle PR verso main, e ogni push
+# annulla l'esecuzione precedente ancora in corso.
+name: port-gates
+
+on:
+  push:
+    branches: ['port/**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: port-gates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0              # servono il ramo vendor e i tag vendor/*
+
+      - name: Ramo vendor
+        run: git fetch origin 'refs/heads/vendor/*:refs/remotes/origin/vendor/*' 'refs/tags/vendor/*:refs/tags/vendor/*' || true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cancello 1 - marchio, marcatori, API
+        run: |
+          python tools/sc_rebrand.py check --root .
+          python tools/normalize_hooks.py --root src --check
+          python tools/api_scan.py --root src
+
+      - name: Cancello 2 - una sola copia del modello WDL, uguale a SF19
+        run: |
+          git show vendor/sf_19:src/uci.cpp > /tmp/uci_sf19.cpp
+          python tools/wdl_calibration.py --sf19 /tmp/uci_sf19.cpp extract --sc src
+
+      - name: Dipendenze di compilazione (livebook)
+        run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev
+
+      - name: Compilazione
+        run: |
+          cd src
+          make -j4 build ARCH=x86-64-avx2 COMP=gcc
+          ./shashchess bench 2>&1 | tail -4
+
+      - name: Cancello 3 - invarianti (chiavi Zobrist, perft, opzioni UCI)
+        run: |
+          python tools/engine_parity.py keys --a porting/baseline/keys_sc41.tsv --b src/shashchess --epd porting/baseline/positions_ci.epd
+          python tools/engine_parity.py perft --a src/shashchess --depth 5
+          python tools/engine_parity.py options --a porting/baseline/options_sc41.json --b src/shashchess
+
+      - name: Cancello 4 - regioni ShashChess (nessuna persa)
+        run: |
+          python tools/hook_audit.py inventory --root src --out /tmp/hooks_now.json
+          python tools/hook_audit.py compare porting/baseline/hooks_sc41.json /tmp/hooks_now.json
+
+      - name: Cancello 5 - zone spiegate dalla win probability
+        run: |
+          python tools/dump_zones.py --engine src/shashchess --epd porting/baseline/positions_ci.epd --out /tmp/zones_now.tsv
+          python tools/zones_diff.py porting/baseline/zones_sc41.tsv /tmp/zones_now.tsv --fail-on-drift --examples 20
+
+      - name: Cancello 6 - capacita' risolutiva (smoke test a nodi fissi)
+        run: |
+          head -60 tests/Tests2026/325.epd > /tmp/ci60.epd
+          pip install --quiet chess
+          python tools/epd_suite.py run --engine src/shashchess --epd /tmp/ci60.epd \
+            --nodes 2000000 --threads 1 --hash 256 --out /tmp/epd60_now.tsv
+          python tools/epd_suite.py compare porting/baseline/epd60_sc41_nodes.tsv /tmp/epd60_now.tsv \
+            --fail-on-loss --tolerance 2
+
+      - name: Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: port-gates-report
+          path: /tmp/*.tsv
+          retention-days: 14

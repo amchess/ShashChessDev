@@ -1,6 +1,7 @@
 /*
   ShashChess, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2025 ShashChess developers (see AUTHORS file)
+  Copyright (C) 2004-2025 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2018-2025 The ShashChess developers (see AUTHORS file)
 
   ShashChess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -24,11 +25,11 @@ MCTS: Intelligently activate or avoid it.
 Local assessments: Penalize or reward based on king's security, tactical complexity, etc.
 */
 #include "search.h"
-//variety begin
+// [SC:variety] begin
 #include <random>
 #include <chrono>
 #include <cstdint>
-//variety end
+// [SC:variety] end
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -63,7 +64,7 @@ Local assessments: Penalize or reward based on king's security, tactical complex
 #include "wdl/win_probability.h"  //livebook +shashin theory
 #include "learn/learn.h"          //learning
 #include "mcts/montecarlo.h"      //Montecarlo
-//Livebook begin
+// [SC:livebook] begin
 #include "livebook/BaseLivebook.h"
 #include "livebook/LichessEndgame.h"
 #include "livebook/LichessMaster.h"
@@ -72,14 +73,14 @@ Local assessments: Penalize or reward based on king's security, tactical complex
 #include "livebook/LichessGames.h"
 #include "livebook/Proxy.h"
 #include "livebook/ChessDBContributor.h"
-//Livebook end
+// [SC:livebook] end
 namespace ShashChess {
 using namespace ShashChess::Shashin;  //shashin
-// learning begin
+// [SC:learning] begin
 bool                                    useLearning          = true;
 bool                                    enabledLearningProbe = false;
 thread_local std::vector<QLearningMove> qLearningTrajectory;
-// learning end
+// [SC:learning] end
 
 namespace TB = Tablebases;
 
@@ -187,12 +188,12 @@ bool is_shuffling(Move move, Stack* const ss, const Position& pos) {
 }  // namespace
 
 
-// livebook begin
+// [SC:livebook] begin
 #ifdef USE_LIVEBOOK
-//livebook depth begin
+// [SC:livebook] begin
 int livebook_depth_count = 0;
 int max_book_depth       = 255;
-//livebook depth end
+// [SC:livebook] end
 
 std::vector<Livebook::BaseLivebook*> opening_livebooks, endgame_livebooks;
 
@@ -322,10 +323,10 @@ void Search::set_proxy_diversity(const bool proxy_diversity) {
     update_livebooks();
 }
 #endif
-// livebook end
+// [SC:livebook] end
 
 
-//variety begin
+// [SC:variety] begin
 void Search::set_variety(const std::string& varietyOption) {
     if (varietyOption == "Off")
     {
@@ -340,8 +341,8 @@ void Search::set_variety(const std::string& varietyOption) {
         variety = 2;
     };
 };
-//variety end
-//for learning begin
+// [SC:variety] end
+// [SC:learning] begin
 inline bool is_game_decided(const Position& pos, Value lastScore) {
     static constexpr const Value DecidedGameEvalThreeshold = PawnValue * 5;
     static constexpr const int   DecidedGameMaxPly         = 150;
@@ -361,7 +362,7 @@ inline bool is_game_decided(const Position& pos, Value lastScore) {
     //Assume game is not decided!
     return false;
 }
-//for learning end
+// [SC:learning] end
 
 Search::Worker::Worker(SharedState&                    sharedState,
                        std::unique_ptr<ISearchManager> sm,
@@ -370,10 +371,10 @@ Search::Worker::Worker(SharedState&                    sharedState,
                        size_t                          numaTotalThreads,
                        NumaReplicatedAccessToken       token) :
     // Unpack the SharedState struct into member variables
-    //mcts begin
+    // [SC:mcts] begin
     threadIdx(threadId),
     sharedHistory(sharedState.sharedHistories.at(token.get_numa_index())),
-    //mcts end
+    // [SC:mcts] end
     numaThreadIdx(numaThreadId),
     numaTotal(numaTotalThreads),
     numaAccessToken(token),
@@ -384,16 +385,16 @@ Search::Worker::Worker(SharedState&                    sharedState,
     tt(sharedState.tt),
     networks(sharedState.networks),
     refreshTable(networks[token]),
-    //Shashin begin
+    // [SC:shashin] begin
     shashinManager(std::make_unique<ShashinManager>()),
     shConfig(sharedState.shashinConfig) {
-    //Shashin end
+    // [SC:shashin] end
     clear();
 }
-//from shashin begin
+// [SC:shashin] begin
 Search::Worker::~Worker() = default;
 ShashinManager& Worker::getShashinManager() { return *shashinManager; }
-//fom Shashin end
+// [SC:shashin] end
 
 void Search::Worker::ensure_network_replicated() {
     // Access once to force lazy initialization.
@@ -419,10 +420,10 @@ void Search::Worker::start_searching() {
     main_manager()->tm.init(limits, rootPos.side_to_move(), rootPos.game_ply(), options,
                             main_manager()->originalTimeAdjust);
     tt.new_search();
-    // learning begin
+    // [SC:learning] begin
     enabledLearningProbe = false;
     useLearning          = true;
-    // learning end
+    // [SC:learning] end
 
     set_variety(options["Variety"]);  // variety
 
@@ -435,7 +436,7 @@ void Search::Worker::start_searching() {
           {0, {rootPos.checkers() ? -VALUE_MATE : VALUE_DRAW, rootPos}});
     }
     else
-    // Books management begin
+    // [SC:book] begin
     {
 
         bool think = true;
@@ -444,7 +445,7 @@ void Search::Worker::start_searching() {
         {
             //Probe the configured books
             bookMove = bookMan.probe(rootPos, options);
-            //Probe experience book begin
+            // [SC:learning-expbook] begin
             if (bookMove == Move::none() && (bool) options["Experience Book"]
                 && rootPos.game_ply() / 2 < (int) options["Experience Book Max Moves"])
             {
@@ -484,7 +485,7 @@ void Search::Worker::start_searching() {
                     }
                 }
             }
-            //Probe experience book end
+            // [SC:learning-expbook] end
             if (bookMove != Move::none()
                 && std::find(rootMoves.begin(), rootMoves.end(), bookMove) != rootMoves.end())
             {
@@ -496,7 +497,7 @@ void Search::Worker::start_searching() {
                                          bookMove));
             }
         }
-// Live Book begin
+// [SC:livebook] begin
 #ifdef USE_LIVEBOOK
         if (think && !bookMove)
         {
@@ -583,9 +584,9 @@ void Search::Worker::start_searching() {
             }
         }
 #endif
-        // Live Book end
+        // [SC:livebook] end
 
-        //from Book and live book management begin
+        // [SC:livebook] begin
         if (!bookMove && think)
         {
             //Initialize `mctsThreads` threads only once before any thread have begun searching
@@ -596,9 +597,9 @@ void Search::Worker::start_searching() {
             threads.start_searching();  // start non-main threads
             iterative_deepening();      // main thread start searching
         }
-        //from Book and live book management end
+        // [SC:livebook] end
     }
-    // Books management end
+    // [SC:book] end
 
     // When we reach the maximum depth, we can arrive here without a raise of
     // threads.stop. However, if we are pondering or in an infinite search,
@@ -632,7 +633,7 @@ void Search::Worker::start_searching() {
     main_manager()->bestPreviousAverageScore = bestThread->rootMoves[0].averageScore;
 
 
-    // learning begin
+    // [SC:learning] begin
     if (!bookMove)
     {
         if (bestThread->completedDepth > 4 && LD.is_enabled() && !LD.is_paused())  // from learning
@@ -669,7 +670,7 @@ void Search::Worker::start_searching() {
             useLearning = false;
         }
     }
-    // learning end
+    // [SC:learning] end
 
     // Send again PV info if we have a new best thread
     if (bestThread != this)
@@ -685,7 +686,7 @@ void Search::Worker::start_searching() {
 
     auto bestmove = UCIEngine::move(bestThread->rootMoves[0].pv[0], rootPos.is_chess960());
     main_manager()->updates.onBestmove(bestmove, ponder);
-    // from learning begin
+    // [SC:learning] begin
     // Save learning data if game is already decided
     if (!bookMove)
     {
@@ -709,16 +710,16 @@ void Search::Worker::start_searching() {
         }
     }
 
-    // from learning end
+    // [SC:learning] end
 
-    // livebook begin
+    // [SC:livebook] begin
 #ifdef USE_LIVEBOOK
     if (_chess_db_contribute)
     {
         contributor.contribute(rootPos, bestThread->rootMoves[0].pv[0]);
     }
 #endif
-    // livebook end
+    // [SC:livebook] end
 }
 
 // Main iterative deepening loop. It calls search()
@@ -789,7 +790,7 @@ void Search::Worker::iterative_deepening() {
             mainHistory[c][i] =
               (mainHistory[c][i] - mainHistoryDefault) * 3 / 4 + mainHistoryDefault;
 
-    // from mcts begin
+    // [SC:mcts] begin
     // Initialize optimism for MCTS
     optimism[WHITE] = optimism[BLACK] =
       VALUE_ZERO;  //Must initialize optimism before calling static_value(). Not sure if 'VALUE_ZERO' is the right value
@@ -842,7 +843,7 @@ void Search::Worker::iterative_deepening() {
                   << sync_endl;
 #endif
     }
-    // from mcts end
+    // [SC:mcts] end
 
     // Iterative deepening loop until requested to stop or the target depth is reached
     while (++rootDepth < MAX_PLY && !threads.stop
@@ -1176,11 +1177,11 @@ Value Search::Worker::search(
     constexpr bool rootNode = nodeType == Root;
     const bool     allNode  = !(PvNode || cutNode);
 
-    //from Shashih begin
+    // [SC:shashin] begin
     auto&                   localShashinManager = *this->shashinManager;
     const RootShashinState& rootShashinState    = localShashinManager.getState();  //for ShashChess
     bool                    isFortressNode      = localShashinManager.isFortress(rootPos);
-    //from Shashih end
+    // [SC:shashin] end
 
     // Dive into quiescence search when the depth reaches zero
     if (depth <= 0)
@@ -1230,21 +1231,21 @@ Value Search::Worker::search(
                      probCutBeta = VALUE_NONE;  // from learning
     bool givesCheck, improving = false, priorCapture, opponentWorsening = false,
                      expTTHit = false;  //shashin +learning
-    //from Shashin-Crystal begin
+    // [SC:shashin-crystal] begin
     bool gameCycle, capture, ttCapture;
-    //from shashin crystal end
+    // [SC:shashin-crystal] end
     int          priorReduction;
     Piece        movedPiece;
     bool         ourMove = !(ss->ply & 1);  // from Shashin Crystal
     SearchedList capturesSearched;
     SearchedList quietsSearched;
-    // from learning begin
+    // [SC:learning] begin
     bool updatedLearning = false;
     // flags to preserve node types
     bool disableNMAndPC = false;
     bool expectedPVNode = false;
     int  sibs           = 0;
-    // from learning end
+    // [SC:learning] end
     // Step 1. Initialize node
     ss->inCheck   = pos.checkers();
     priorCapture  = pos.captured_piece();
@@ -1252,16 +1253,16 @@ Value Search::Worker::search(
     ss->moveCount = 0;
     bestValue     = -VALUE_INFINITE;
     maxValue      = VALUE_INFINITE;
-    // from Crystal-shashin begin
+    // [SC:shashin-crystal] begin
     gameCycle = false;
 
     ss->secondaryLine = false;
     ss->mainLine      = false;
-    // from Crystal-shashin end
-    // Full Threads patch begin
+    // [SC:shashin-crystal] end
+    // [SC:fullthreads] begin
     if (fullSearch)
         improving = true;
-    // Full Threads patch end
+    // [SC:fullthreads] end
     // Check for the available remaining time
     if (is_mainthread())
         main_manager()->check_time(*this);
@@ -1269,7 +1270,7 @@ Value Search::Worker::search(
     // Used to send selDepth info to GUI (selDepth counts from 1, ply from 0)
     if (PvNode && selDepth < ss->ply + 1)
         selDepth = ss->ply + 1;
-    //from crystal shashin begin
+    // [SC:shashin-crystal] begin
     const auto& dynamicDerived      = rootShashinState.dynamicDerived;
     const auto& staticState         = rootShashinState.staticState;
     bool        isStrategical       = localShashinManager.isStrategical();
@@ -1286,10 +1287,10 @@ Value Search::Worker::search(
     bool        isComplex           = localShashinManager.isComplexPosition();
     uint8_t     legalMoveCount      = staticState.legalMoveCount;
     (void) legalMoveCount;
-    //from crystal shashin end
+    // [SC:shashin-crystal] end
     if (!rootNode)
     {
-        // from Crystal-Shashin begin
+        // [SC:shashin-crystal] begin
         bool allowCycleDetection =
           (isStrategical && isComplex)
           || (localShashinManager.isTacticalDefensive() && localShashinManager.isLowActivity());
@@ -1301,7 +1302,7 @@ Value Search::Worker::search(
                 gameCycle = true;
             }
         }
-        // from Crystal-Shashin end
+        // [SC:shashin-crystal] end
         // Step 2. Check for aborted search and immediate draw
         if (threads.stop.load(std::memory_order_relaxed) || pos.is_draw(ss->ply)
             || ss->ply >= MAX_PLY)
@@ -1363,7 +1364,7 @@ Value Search::Worker::search(
     }
     else
     {
-        //learning begin
+        // [SC:learning] begin
         unadjustedStaticEval = evaluate(pos);
         if (!LD.is_enabled() || !expTTHit || !updatedLearning)
         {
@@ -1403,7 +1404,7 @@ Value Search::Worker::search(
         // for us than at the last ply.
         improving = ss->staticEval > (ss - 2)->staticEval;
     }
-    // from learning end
+    // [SC:learning] end
     opponentWorsening = ss->staticEval > -(ss - 1)->staticEval;
 
     // Hindsight adjustment of reductions based on static evaluation difference.
@@ -1452,7 +1453,7 @@ Value Search::Worker::search(
                 return ttData.value;
         }
     }
-    // from learning begin
+    // [SC:learning] begin
     // Step 4Bis. Global Learning Table lookup
     expTTHit        = false;
     updatedLearning = false;
@@ -1545,7 +1546,7 @@ Value Search::Worker::search(
             }
         }
     }
-    // from learning end
+    // [SC:learning] end
 
     // Step 5. Tablebases probe
     if (!rootNode && !excludedMove && tbConfig.cardinality)
@@ -1613,10 +1614,10 @@ Value Search::Worker::search(
             && ((ss - 1)->currentMove).type_of() != PROMOTION)
             sharedHistory.pawn_entry(pos)[pos.piece_on(prevSq)][prevSq] << evalDiff * 13;
     }
-    // full threads patch begin
+    // [SC:fullthreads] begin
     if (fullSearch)
         goto moves_loop;  // full threads patch
-    // full threads patch end
+    // [SC:fullthreads] end
 
     // Step 7. Razoring
     // If eval is really low, skip search entirely and return the qsearch value.
@@ -1883,7 +1884,7 @@ Value Search::Worker::search(
             }
         }
     }
-    //by Shashin end
+    // [SC:shashin] end
     // Step 11. ProbCut
     // If we have a good enough capture (or queen promotion) and a reduced search
     // returns a value much above beta, we can (almost) safely prune the previous move.
@@ -1961,7 +1962,7 @@ moves_loop:  // When in check, search starts here
 
     // Step 12. A small Probcut idea - Balanced Hybrid Safety
     probCutBeta = beta + 418;
-    //from Shashin Crystal begin
+    // [SC:shashin-crystal] begin
     const bool commonProbcut = (ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 4
                             && ttData.value >= probCutBeta && !is_decisive(beta)
                             && is_valid(ttData.value) && !is_decisive(ttData.value);
@@ -1974,7 +1975,7 @@ moves_loop:  // When in check, search starts here
         if (!tacticalRisk || ttData.depth >= depth - 2)
             return probCutBeta;
     }
-    //from Shashin Crystal end
+    // [SC:shashin-crystal] end
 
     const PieceToHistory* contHist[] = {
       (ss - 1)->continuationHistory, (ss - 2)->continuationHistory, (ss - 3)->continuationHistory,
@@ -2038,12 +2039,12 @@ moves_loop:  // When in check, search starts here
         if (ss->ttPv)
             r += 946;
 
-        // full threads patch begin
+        // [SC:fullthreads] begin
         if (fullSearch)
         {
             goto skipExtensionAndPruning;
         }
-        // full threads patch end
+        // [SC:fullthreads] end
 
 
         // Step 14. Pruning at shallow depths.
@@ -2243,7 +2244,7 @@ skipExtensionAndPruning:  // full threads search patch
             r += 1119;
 
         // Increase reduction if next ply has a lot of fail high
-        //by shashin begin
+        // [SC:shashin] begin
         if ((ss + 1)->cutoffCnt > 1)
         {
             // Logica tattica: usa formula ShashChess originale (meno aggressiva)
@@ -2266,7 +2267,7 @@ skipExtensionAndPruning:  // full threads search patch
                    + 1024 * allNode;
             }
         }
-        //by shashin end
+        // [SC:shashin] end
         // For first picked move (ttMove) reduce reduction
         if (move == ttData.move)
             r -= 2151;
@@ -2494,7 +2495,7 @@ skipExtensionAndPruning:  // full threads search patch
                     break;
                 }
 
-                //from crystal-shashin begin
+                // [SC:shashin-crystal] begin
                 // Reduce other moves if we have found at least one score improvement
                 if (depth > 2 && depth < 14 && !is_decisive(value))
                 {
@@ -2533,7 +2534,7 @@ skipExtensionAndPruning:  // full threads search patch
 
                     depth -= reduction;
                 }
-                //from crystal-shashin end
+                // [SC:shashin-crystal] end
 
                 assert(depth > 0);
                 alpha = value;  // Update alpha! Always alpha < beta
@@ -2718,7 +2719,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     ttData.value = ttHit ? value_from_tt(ttData.value, ss->ply, pos.rule50_count()) : VALUE_NONE;
     pvHit        = ttHit && ttData.is_pv;
 
-    // Crystal-Shashin QSearch optimization begin (Early Exit logic)
+    // [SC:shashin-crystal] begin (Early Exit logic)
     const auto& staticState    = rootShashinState.staticState;
     const auto& dynamicDerived = rootShashinState.dynamicDerived;
 
@@ -2750,9 +2751,9 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             }
         }
     }
-    // Crystal-Shashin QSearch optimization end
+    // [SC:shashin-crystal] end
 
-    // Step 3 bis learning begin
+    // [SC:learning] begin
     expTTHit        = false;
     updatedLearning = false;
 
@@ -2803,7 +2804,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             }
         }
     }
-    // Step 3 bis learning end
+    // [SC:learning] end
 
     // Step 4. Static evaluation of the position
     Value unadjustedStaticEval = VALUE_NONE;
@@ -3039,7 +3040,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         }
     }
 
-    // variety begin
+    // [SC:variety] begin
     if (std::abs(bestValue) == VALUE_INFINITE)
     {
         variety = 0;
@@ -3061,7 +3062,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             bestValue += increment;
         }
     }
-    // end variety
+    // [SC:variety] end
 
     // Step 9. Check for mate
     if (ss->inCheck && bestValue == -VALUE_INFINITE)
@@ -3136,12 +3137,12 @@ Depth Search::Worker::reduction(
         reductionScale = (reductionScale * 99) / 100;
     // -----------------------------------------
 #endif
-    //mcts begin
+    // [SC:mcts] begin
     if (rootDelta != 0)
         return reductionScale - delta * 608 / rootDelta + !i * reductionScale * 238 / 512 + 1182;
     else  // avoid divide by zero error
         return reductionScale - delta * 608 + !i * reductionScale * 238 / 512 + 1182;
-    //mcts end
+    // [SC:mcts] end
 }
 
 // elapsed() returns the time elapsed since the search started. If the
@@ -3315,7 +3316,7 @@ void update_quiet_histories(
 // no skill
 
 
-// mcts begin
+// [SC:mcts] begin
 //  minimax_value() is a wrapper around the search() and qsearch() functions
 //  used to compute the minimax evaluation of a position at the given depth,
 //  from the point of view of the side to move. It does not compute PV nor
@@ -3409,7 +3410,7 @@ Value Search::Worker::minimax_value(
     */
     return value;
 }
-// mcts end
+// [SC:mcts] end
 
 
 // Used to print debug info and, more importantly, to detect
@@ -3619,14 +3620,14 @@ void SearchManager::pv(Search::Worker&           worker,
         if (is_decisive(v) && std::abs(v) < VALUE_MATE_IN_MAX_PLY
             && ((!rootMoves[i].scoreLowerbound && !rootMoves[i].scoreUpperbound) || isExact))
             syzygy_extend_pv(worker.options, worker.limits, pos, rootMoves[i], v);
-        //from shashin begin
+        // [SC:shashin] begin
         // Update the root Shashin state only for the main (first) PV line.
         if (updateShashin && (i == 0) && d > worker.lastShashinUpdatedDepth)
         {
             worker.getShashinManager().updateRootShashinState(v, pos, d, worker.rootDepth);
             worker.lastShashinUpdatedDepth = d;
         }
-        //from shashin end
+        // [SC:shashin] end
         std::string pv;
         for (Move m : rootMoves[i].pv)
             pv += UCIEngine::move(m, pos.is_chess960()) + " ";
@@ -3689,7 +3690,7 @@ bool RootMove::extract_ponder_from_tt(const TranspositionTable& tt, Position& po
 }
 
 
-// learning begin
+// [SC:learning] begin
 void putQLearningTrajectoryIntoLearningTable() {
     const double learning_rate = 0.5;
     const double gamma         = 0.99;
@@ -3721,8 +3722,8 @@ void setStartPoint() {
     LD.resume();
     qLearningTrajectory.clear();
 }
-// learning end
-// shashin begin
+// [SC:learning] end
+// [SC:shashin] begin
 Value ShashinManager::static_value(const Eval::NNUE::Networks&    networks,
                                    Eval::NNUE::AccumulatorStack&  accumulators,
                                    Eval::NNUE::AccumulatorCaches& refreshTable,
@@ -3765,5 +3766,5 @@ Value ShashinManager::static_value(const Eval::NNUE::Networks&    networks,
 
     return bestValue;
 }
-//shashin end
+// [SC:shashin] end
 }  // namespace ShashChess

@@ -1,6 +1,7 @@
 /*
-  ShashChess, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2026 The ShashChess developers (see AUTHORS file)
+  ShashChess, a UCI chess playing engine derived from Stockfish
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2018-2026 The ShashChess developers (see AUTHORS file)
 
   ShashChess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -77,7 +78,6 @@ struct AccumulatorCaches {
             // To initialize a refresh entry, we set all its bitboards empty,
             // so we put the biases in the accumulation, without any weights on top
             void clear(const std::array<BiasType, Size>& biases) {
-
                 accumulation = biases;
                 std::memset(reinterpret_cast<std::byte*>(this) + offsetof(Entry, psqtAccumulation),
                             0, sizeof(Entry) - offsetof(Entry, psqtAccumulation));
@@ -142,13 +142,13 @@ struct AccumulatorState {
         accumulatorBig.computed.fill(false);
         accumulatorSmall.computed.fill(false);
     }
+
     typename FeatureSet::DiffType& reset() noexcept {
         accumulatorBig.computed.fill(false);
         accumulatorSmall.computed.fill(false);
         return diff;
     }
 };
-
 
 class AccumulatorStack {
    public:

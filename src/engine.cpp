@@ -1,6 +1,7 @@
 /*
   ShashChess, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2026 The ShashChess developers (see AUTHORS file)
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2018-2026 The ShashChess developers (see AUTHORS file)
 
   ShashChess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -272,7 +273,7 @@ Engine::Engine(std::optional<std::string> path) :
 
     options.add("Concurrent Experience", Option(false));
 
-    // Shashin personalities begin
+    // [SC:shashin-personalities] begin
     options.add("High Tal",
                 Option(false, [this](const Option&) noexcept -> std::optional<std::string> {
                     resize_threads();
@@ -308,7 +309,7 @@ Engine::Engine(std::optional<std::string> path) :
                     resize_threads();
                     return std::nullopt;
                 }));
-    // Shashin personalities end
+    // [SC:shashin-personalities] end
     load_networks();
     resize_threads();
 }
@@ -371,7 +372,7 @@ void Engine::set_position(const std::string& fen, const std::vector<std::string>
 
         if (m == Move::none())
             break;
-        //learning begin
+        // [SC:learning] begin
         if (LD.is_enabled() && LD.learning_mode() != LearningMode::Self && !LD.is_paused())
         {
             PersistedLearningMove persistedLearningMove;
@@ -383,7 +384,7 @@ void Engine::set_position(const std::string& fen, const std::vector<std::string>
             persistedLearningMove.learningMove.performance = WDLModel::get_win_probability(0, pos);
             LD.add_new_learning(persistedLearningMove.key, persistedLearningMove.learningMove);
         }
-        //learning end
+        // [SC:learning] end
         states->emplace_back();
         pos.do_move(m, states->back());
     }
@@ -417,7 +418,7 @@ void Engine::set_numa_config_from_option(const std::string& o) {
 
 void Engine::resize_threads() {
     threads.wait_for_search_finished();
-    //from shashin begin
+    // [SC:shashin] begin
     ShashinConfig shCfg;
     shCfg.highTal         = options["High Tal"];
     shCfg.middleTal       = options["Middle Tal"];
@@ -429,7 +430,7 @@ void Engine::resize_threads() {
     threads.set(numaContext.get_numa_config(),
                 {bookMan, options, threads, tt, sharedHists, networks, shCfg},
                 updateContext);  //book management
-    //from shashin end
+    // [SC:shashin] end
     // Reallocate the hash with the new threadpool size
     set_tt_size(options["Hash"]);
     threads.ensure_network_replicated();

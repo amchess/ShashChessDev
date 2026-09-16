@@ -1,6 +1,7 @@
 /*
-  ShashChess, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2026 The ShashChess developers (see AUTHORS file)
+  ShashChess, a UCI chess playing engine derived from Stockfish
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2018-2026 The ShashChess developers (see AUTHORS file)
 
   ShashChess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -169,7 +170,6 @@ inline void write_little_endian(std::ostream& stream, const IntType* values, std
             write_little_endian<IntType>(stream, values[i]);
 }
 
-
 // Read N signed integers from the stream s, putting them in the array out.
 // The stream is assumed to be compressed using the signed LEB128 format.
 // See https://en.wikipedia.org/wiki/LEB128 for a description of the compression scheme.
@@ -218,6 +218,7 @@ inline void read_leb_128(std::istream& stream, Arrays&... outs) {
     auto                           bytes_left = read_little_endian<std::uint32_t>(stream);
     std::array<std::uint8_t, 8192> buf;
     std::uint32_t                  buf_pos = buf.size();
+
     (read_leb_128_detail(stream, outs, bytes_left, buf, buf_pos), ...);
 
     assert(bytes_left == 0);

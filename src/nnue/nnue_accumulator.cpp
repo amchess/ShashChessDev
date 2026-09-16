@@ -1,6 +1,7 @@
 /*
-  ShashChess, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2026 The ShashChess developers (see AUTHORS file)
+  ShashChess, a UCI chess playing engine derived from Stockfish
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2018-2026 The ShashChess developers (see AUTHORS file)
 
   ShashChess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -635,6 +636,7 @@ Bitboard get_changed_pieces(const std::array<Piece, SQUARE_NB>& oldPieces,
 #if defined(USE_AVX512) || defined(USE_AVX2)
     static_assert(sizeof(Piece) == 1);
     Bitboard sameBB = 0;
+
     for (int i = 0; i < 64; i += 32)
     {
         const __m256i old_v = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(&oldPieces[i]));
@@ -658,6 +660,7 @@ Bitboard get_changed_pieces(const std::array<Piece, SQUARE_NB>& oldPieces,
     return ~vget_lane_u64(vreinterpret_u64_u8(sameBB), 0);
 #else
     Bitboard changed = 0;
+
     for (Square sq = SQUARE_ZERO; sq < SQUARE_NB; ++sq)
         changed |= static_cast<Bitboard>(oldPieces[sq] != newPieces[sq]) << sq;
 

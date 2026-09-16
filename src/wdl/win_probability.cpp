@@ -1,3 +1,22 @@
+/*
+  ShashChess, a UCI chess playing engine derived from Stockfish
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2018-2026 The ShashChess developers (see AUTHORS file)
+
+  ShashChess is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  ShashChess is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
 #include "win_probability.h"
 #include <cmath>
 #include <sstream>
@@ -18,7 +37,7 @@ inline size_t index(const ShashChess::Value v, const int m) {
     return (v + 4000) * 62 + m - 17;
 }
 
-//for Shashin theory and learning begin
+// [SC:shashin] begin
 // Calculate the "a" and "b" parameters of the WDL model for a given material
 WinRateParams win_rate_params(int materialClamp) {
     double           m    = materialClamp / 58.0;
@@ -31,7 +50,7 @@ WinRateParams win_rate_params(int materialClamp) {
 
     return {a, b};
 }
-//for Shashin theory and learning end
+// [SC:shashin] end
 
 WinRateParams win_rate_params(const Position& pos) {
 

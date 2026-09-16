@@ -1,6 +1,7 @@
 /*
-  ShashChess, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2026 The ShashChess developers (see AUTHORS file)
+  ShashChess, a UCI chess playing engine derived from Stockfish
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2018-2026 The ShashChess developers (see AUTHORS file)
 
   ShashChess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -36,6 +37,7 @@ IndexType HalfKAv2_hm::make_index(Color perspective, Square s, Piece pc, Square 
 }
 
 // Get a list of indices for active features
+
 void HalfKAv2_hm::append_active_indices(Color perspective, const Position& pos, IndexList& active) {
     Square   ksq = pos.square<KING>(perspective);
     Bitboard bb  = pos.pieces();
@@ -60,7 +62,6 @@ void HalfKAv2_hm::append_changed_indices(
     if (diff.add_sq != SQ_NONE)
         added.push_back(make_index(perspective, diff.add_sq, diff.add_pc, ksq));
 }
-
 
 bool HalfKAv2_hm::requires_refresh(const DiffType& diff, Color perspective) {
     return diff.pc == make_piece(perspective, KING);

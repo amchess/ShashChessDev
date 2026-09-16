@@ -1,6 +1,7 @@
 /*
   ShashChess, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2026 ShashChess developers (see AUTHORS file)
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2018-2026 The ShashChess developers (see AUTHORS file)
 
   ShashChess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -36,7 +37,7 @@
 #include <string_view>
 #include <type_traits>
 #include <vector>
-//ShashChess specific begin
+// [SC:shashchess] begin
 #include "types.h"
 #include <iostream>
 #ifndef _WIN32
@@ -51,7 +52,7 @@
     #endif
     #include <windows.h>
 #endif
-//ShashChess specific end
+// [SC:shashchess] end
 
 #define stringify2(x) #x
 #define stringify(x) stringify2(x)
@@ -407,12 +408,12 @@ struct CommandLine {
 
     int    argc;
     char** argv;
-    //from learning begin
+    // [SC:learning] begin
     std::string        binaryDirectory;   // path of the executable directory
     std::string        workingDirectory;  // path of the working directory
     static std::string get_working_directory();
     static std::string get_binary_directory(std::string argv0, std::string workingDirectory);
-    //from learning end
+    // [SC:learning] end
 };
 
 namespace Utility {
@@ -440,7 +441,7 @@ void move_to_front(std::vector<T>& vec, Predicate pred) {
 
 //ShashChess omissis: in types.h
 
-//begin from learning
+// [SC:learning] begin
 #define EMPTY "<empty>"
 
 class Util {
@@ -469,7 +470,7 @@ class Util {
 
     static std::string format_string(const char* const fmt, ...);
 };
-//end from learning
+// [SC:learning] end
 
 }  // namespace ShashChess
 template<std::size_t N>

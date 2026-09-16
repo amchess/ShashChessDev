@@ -1,6 +1,7 @@
 /*
   ShashChess, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2026 ShashChess developers (see AUTHORS file)
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2018-2026 The ShashChess developers (see AUTHORS file)
 
   ShashChess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -115,7 +116,7 @@ std::array<Move, 8192> cuckooMove;
 
 // Initializes at startup the various arrays used to compute hash keys
 void Position::init() {
-    //learning begin
+    // [SC:learning] begin
     Zobrist::psq[1][0]   = 591679071752537765U;
     Zobrist::psq[1][1]   = 11781298203991720739U;
     Zobrist::psq[1][2]   = 17774509420834274491U;
@@ -913,7 +914,7 @@ void Position::init() {
     Zobrist::castling[15] = 7849635286513694150U;
     Zobrist::side         = 11598212307497933772U;
     Zobrist::noPawns      = 11773087935368354602U;
-    //learning end
+    // [SC:learning] end
 
     // Prepare the cuckoo tables
     cuckoo.fill(0);

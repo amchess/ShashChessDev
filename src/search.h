@@ -1,6 +1,7 @@
 /*
   ShashChess, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2026 ShashChess developers (see AUTHORS file)
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2018-2026 The ShashChess developers (see AUTHORS file)
 
   ShashChess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -42,13 +43,13 @@
 #include "syzygy/tbprobe.h"
 #include "timeman.h"
 #include "types.h"
-//from Shashin begin
+// [SC:shashin] begin
 #include "shashin/shashin_position.h"
 #include "evaluate.h"
 #include "book/book_manager.h"
 #include <memory>
 #include "shashin/shashin_manager.h"
-//from Shashin end
+// [SC:shashin] end
 
 
 namespace ShashChess {
@@ -85,10 +86,10 @@ struct Stack {
     bool                        ttHit;
     int                         cutoffCnt;
     int                         reduction;
-    //from Shashin Crystal begin
+    // [SC:shashin-crystal] begin
     bool secondaryLine = false;
     bool mainLine      = false;
-    //from Shashin Crystal end
+    // [SC:shashin-crystal] end
 };
 
 
@@ -147,7 +148,7 @@ struct LimitsType {
 // The UCI stores the uci options, thread pool, and transposition table.
 // This struct is used to easily forward data to the Search::Worker class.
 struct SharedState {
-    //from Polyfish begin
+    // [SC:book] begin
     SharedState(BookManager&                                              bm,
                 const OptionsMap&                                         optionsMap,
                 ThreadPool&                                               threadPool,
@@ -164,7 +165,7 @@ struct SharedState {
         shashinConfig(shCfg) {}  //shashin
 
     BookManager& bookMan;
-    //from Polyfish end
+    // [SC:book] end
     const OptionsMap&                                         options;
     ThreadPool&                                               threads;
     TranspositionTable&                                       tt;
@@ -282,10 +283,10 @@ class Worker {
     bool is_mainthread() const { return threadIdx == 0; }
 
     void ensure_network_replicated();
-    //from Montecarlo begin
+    // [SC:mcts] begin
     Value minimax_value(Position& pos, Search::Stack* ss, Depth depth);
     Value minimax_value(Position& pos, Search::Stack* ss, Depth depth, Value alpha, Value beta);
-    //from Montecarlo end
+    // [SC:mcts] end
 
     // Public because they need to be updatable by the stats
     ButterflyHistory mainHistory;
@@ -362,9 +363,9 @@ class Worker {
 
     Tablebases::Config tbConfig;
 
-    //From PolyFish begin
+    // [SC:book] begin
     BookManager& bookMan;
-    //From PolyFish end
+    // [SC:book] end
     const OptionsMap&                                         options;
     ThreadPool&                                               threads;
     TranspositionTable&                                       tt;
@@ -373,11 +374,11 @@ class Worker {
     // Used by NNUE
     Eval::NNUE::AccumulatorStack  accumulatorStack;
     Eval::NNUE::AccumulatorCaches refreshTable;
-    //Shashin begin
+    // [SC:shashin] begin
     std::unique_ptr<ShashinManager>  shashinManager;
     const ShashChess::ShashinConfig& shConfig;
     friend class ShashChess::ThreadPool;
-    //Shashin end
+    // [SC:shashin] end
     friend class SearchManager;
 };
 
@@ -385,7 +386,7 @@ struct ConthistBonus {
     int index;
     int weight;
 };
-//livebook begin
+// [SC:livebook] begin
 #ifdef USE_LIVEBOOK
 void set_livebook_depth(int book_depth);
 void set_proxy_url(const std::string& proxy_url);
@@ -406,15 +407,15 @@ void set_proxy_diversity(bool proxy_diversity);
 
 
 #endif
-//livebook end
+// [SC:livebook] end
 
 void set_variety(const std::string& varietyOption);  //variety
 }  // namespace Search
-//from Livebook begin
+// [SC:livebook] begin
 #ifdef USE_LIVEBOOK
 size_t cURL_WriteFunc(void* contents, size_t size, size_t nmemb, std::string* s);
 #endif
-//from Livebook end
+// [SC:livebook] end
 }  // namespace ShashChess
 
 #endif  // #ifndef SEARCH_H_INCLUDED

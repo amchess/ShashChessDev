@@ -1,6 +1,7 @@
 /*
   ShashChess, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2026 ShashChess developers (see AUTHORS file)
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2018-2026 The ShashChess developers (see AUTHORS file)
 
   ShashChess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -57,10 +58,10 @@ void TimeManagement::init(Search::LimitsType& limits,
     useNodesTime = npmsec != 0;
 
     if (limits.time[us] == 0)
-    //minThinkigTime begin
+    // [SC:uci-timing] begin
     { return; }
     TimePoint minThinkingTime = TimePoint(options["Minimum Thinking Time"]);
-    //minThinkigTime end
+    // [SC:uci-timing] end
     TimePoint moveOverhead = TimePoint(options["Move Overhead"]);
     TimePoint slowMover    = TimePoint(options["Slow Mover"]);  //for SlowMover
 
@@ -102,11 +103,11 @@ void TimeManagement::init(Search::LimitsType& limits,
                limits.time[us]
                  + (limits.inc[us] * (centiMTG - 100) - moveOverhead * (200 + centiMTG)) / 100);
 
-    //from SlowMover begin
+    // [SC:uci-timing] begin
     // A user may scale time usage by setting UCI option "Slow Mover"
     // Default is 100 and changing this value will probably lose elo.
     timeLeft = slowMover * timeLeft / 100;
-    //from SlowMover end
+    // [SC:uci-timing] end
 
     // x basetime (+ z increment)
     // If there is a healthy increment, timeLeft can exceed the actual available

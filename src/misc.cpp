@@ -1,6 +1,7 @@
 /*
   ShashChess, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2026 ShashChess developers (see AUTHORS file)
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2018-2026 The ShashChess developers (see AUTHORS file)
 
   ShashChess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -32,10 +33,10 @@
 #include <mutex>
 #include <sstream>
 //not used string_view: improved from Stockfish
-//from ShashChess begin
+// [SC:shashchess] begin
 #include <algorithm>
 #include <stdarg.h>
-//from ShashChess end
+// [SC:shashchess] end
 
 #include "types.h"
 
@@ -487,14 +488,14 @@ bool is_whitespace(std::string_view s) {
     return std::all_of(s.begin(), s.end(), [](char c) { return std::isspace(c); });
 }
 
-//from learning begin
+// [SC:learning] begin
 CommandLine::CommandLine(int _argc, char** _argv) :
     argc(_argc),
     argv(_argv) {
     workingDirectory = CommandLine::get_working_directory();
     binaryDirectory  = CommandLine::get_binary_directory(argv[0], workingDirectory);
     Util::init(this);
-    //from learning end
+    // [SC:learning] end
 }
 
 std::string CommandLine::get_binary_directory(std::string argv0, std::string workingDirectory) {
@@ -512,7 +513,7 @@ std::string CommandLine::get_binary_directory(std::string argv0, std::string wor
 #else
     pathSeparator = "/";
 #endif
-    //from learning end
+    // [SC:learning] end
     // Extract the binary directory path from argv0
     auto   binaryDirectory = argv0;
     size_t pos             = binaryDirectory.find_last_of("\\/");
@@ -522,13 +523,13 @@ std::string CommandLine::get_binary_directory(std::string argv0, std::string wor
         binaryDirectory.resize(pos + 1);
 
     // Pattern replacement: "./" at the start of path is replaced by the working directory
-    //from learning begin
+    // [SC:learning] begin
     if (binaryDirectory.find("." + pathSeparator) == 0)
     {
         binaryDirectory.replace(0, 1, workingDirectory);
     }
     binaryDirectory = Util::fix_path(binaryDirectory);
-    //from learning end
+    // [SC:learning] end
     return binaryDirectory;
 }
 
@@ -536,17 +537,17 @@ std::string CommandLine::get_working_directory() {
     std::string workingDirectory = "";
     char        buff[40000];
     char*       cwd = GETCWD(buff, 40000);
-    //from learning begin
+    // [SC:learning] begin
     if (cwd)
     {
         workingDirectory = cwd;
     }
     workingDirectory = Util::fix_path(workingDirectory);  //learning
-    //from learning end
+    // [SC:learning] end
     return workingDirectory;
 }
 
-//Book management and learning begin
+// [SC:learning] begin
 CommandLine* Util::cli = nullptr;
 void         Util::init(CommandLine* _cli) { cli = _cli; }
 std::string  Util::unquote(const std::string& s) {
@@ -669,7 +670,7 @@ std::string Util::format_string(const char* const fmt, ...) {
 
     return std::string(v.data(), len);
 }
-//Book management and learning end
+// [SC:learning] end
 
 
 }  // namespace ShashChess

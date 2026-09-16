@@ -1,6 +1,7 @@
 /*
   ShashChess, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2026 ShashChess developers (see AUTHORS file)
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2018-2026 The ShashChess developers (see AUTHORS file)
 
   ShashChess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -41,7 +42,7 @@
     #include <cstdint>
 
     #include <type_traits>
-//shashchess begin
+// [SC:shashchess] begin
     #if defined(__GNUC__) && !defined(__clang__)
         #if __GNUC__ >= 13
             #define sf_assume(cond) __attribute__((assume(cond)))
@@ -84,7 +85,7 @@ class ValueList {
     T           values_[MaxSize];
     std::size_t size_ = 0;
 };
-    //shashchess end
+    // [SC:shashchess] end
     #if defined(_MSC_VER)
         // Disable some silly and noisy warnings from MSVC compiler
         #pragma warning(disable: 4127)  // Conditional expression is constant
@@ -165,7 +166,7 @@ enum Color : uint8_t {
     BLACK,
     COLOR_NB = 2
 };
-//learning begin
+// [SC:learning] begin
 constexpr Color Colors[2] = {WHITE, BLACK};
 
 enum CastlingRights : uint8_t {
@@ -183,7 +184,7 @@ enum CastlingRights : uint8_t {
 
     CASTLING_RIGHT_NB = 16
 };
-//learning end
+// [SC:learning] end
 
 enum Bound : uint8_t {
     BOUND_NONE,

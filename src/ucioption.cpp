@@ -1,6 +1,7 @@
 /*
   ShashChess, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2026 ShashChess developers (see AUTHORS file)
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2018-2026 The ShashChess developers (see AUTHORS file)
 
   ShashChess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -67,7 +68,7 @@ const Option& OptionsMap::operator[](const std::string& name) const {
 
 // Inits options and assigns idx in the correct printing order
 void OptionsMap::add(const std::string& name, const Option& option) {
-    //combo management begin
+    // [SC:uci-combo] begin
     auto it = options_map.find(name);
 
     if (it == options_map.end())  // Se l'opzione NON esiste ancora, la aggiungiamo
@@ -96,7 +97,7 @@ void OptionsMap::add(const std::string& name, const Option& option) {
         std::cerr << "Option \"" << name << "\" was already added!" << std::endl;
         std::exit(EXIT_FAILURE);
     }
-    //combo management end
+    // [SC:uci-combo] end
 }
 
 
@@ -168,7 +169,7 @@ bool Option::operator!=(const char* s) const { return !(*this == s); }
 Option& Option::operator=(const std::string& v) {
 
     assert(!type.empty());
-    //combo management begin
+    // [SC:uci-combo] begin
     if ((type != "button" && type != "string" && v.empty())
         || (type == "check" && v != "true" && v != "false")
         || (type == "spin" && (std::stoi(v) < min || std::stoi(v) > max)))
@@ -187,7 +188,7 @@ Option& Option::operator=(const std::string& v) {
                 comboSet.insert(token);
         if (!comboSet.count(v))
             return *this;
-        //combo management end
+        // [SC:uci-combo] end
     }
 
     if (type == "string")

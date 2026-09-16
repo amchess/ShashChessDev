@@ -1,6 +1,7 @@
 /*
   ShashChess, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2026 ShashChess developers (see AUTHORS file)
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2018-2026 The ShashChess developers (see AUTHORS file)
 
   ShashChess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -246,7 +247,7 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
     }
 }
 
-//full threads patch begin
+// [SC:fullthreads] begin
 /// ThreadPool::setFull() ensures that requested threads are set to fullSearch
 /// Note that fullSearch is false for each thread when they are created or rereated.
 void ThreadPool::setFull(size_t requested) {
@@ -256,7 +257,7 @@ void ThreadPool::setFull(size_t requested) {
     for (auto&& th : *this)
         th->worker->fullSearch = thisidx++ >= startfull;
 }
-//full threads patch end
+// [SC:fullthreads] end
 
 // Sets threadPool data to initial values
 void ThreadPool::clear() {
@@ -339,11 +340,11 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
     {
         th->run_custom_job([&]() {
             th->worker->limits = limits;
-            //from Shashin Crystal begin
+            // [SC:shashin-crystal] begin
             (th->worker->nodes =
                (th->worker->tbHits = (th->worker->nmpGuard = (th->worker->nmpMinPly =
                                                                 th->worker->bestMoveChanges = 0))));
-            //from Shashin Crystal end
+            // [SC:shashin-crystal] end
             th->worker->rootDepth = th->worker->completedDepth = 0;
             th->worker->nmpSide                                = 0;  //from crystal
             th->worker->rootMoves                              = rootMoves;
