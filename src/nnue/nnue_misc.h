@@ -20,13 +20,15 @@
 #ifndef NNUE_MISC_H_INCLUDED
 #define NNUE_MISC_H_INCLUDED
 
-#include <cstddef>
-#include <memory>
 #include <string>
+#include <string_view>
+#include <optional>
+#include <filesystem>
 
 #include "../misc.h"
 #include "../types.h"
 #include "nnue_architecture.h"
+#include "../evaluate.h"
 
 namespace ShashChess {
 
@@ -34,42 +36,32 @@ class Position;
 
 namespace Eval::NNUE {
 
-// EvalFile uses fixed string types because it's part of the network structure which must be trivial.
+// NNUE file metadata uses fixed string types so it stays trivially copyable and cheap to move
+// around between the engine and the network loader.
 struct EvalFile {
     // Default net name, will use one of the EvalFileDefaultName* macros defined
     // in evaluate.h
-    FixedString<256> defaultName;
+    constexpr static std::string_view defaultName = EvalFileDefaultName;
     // Selected net name, either via uci option or default
-    FixedString<256> current;
+    std::optional<std::filesystem::path> current;
     // Net description extracted from the net file
-    FixedString<256> netDescription;
+    std::string netDescription;
 };
 
 struct NnueEvalTrace {
     static_assert(LayerStacks == PSQTBuckets);
 
-    Value       psqt[LayerStacks];
-    Value       positional[LayerStacks];
-    std::size_t correctBucket;
+    Value psqt[LayerStacks];
+    Value positional[LayerStacks];
+    usize correctBucket;
 };
 
-struct Networks;
+class Network;
 struct AccumulatorCaches;
 
-std::string trace(Position& pos, const Networks& networks, AccumulatorCaches& caches);
+std::string trace(Position& pos, const Network& network, AccumulatorCaches& caches);
 
 }  // namespace ShashChess::Eval::NNUE
 }  // namespace ShashChess
-
-template<>
-struct std::hash<ShashChess::Eval::NNUE::EvalFile> {
-    std::size_t operator()(const ShashChess::Eval::NNUE::EvalFile& evalFile) const noexcept {
-        std::size_t h = 0;
-        ShashChess::hash_combine(h, evalFile.defaultName);
-        ShashChess::hash_combine(h, evalFile.current);
-        ShashChess::hash_combine(h, evalFile.netDescription);
-        return h;
-    }
-};
 
 #endif  // #ifndef NNUE_MISC_H_INCLUDED

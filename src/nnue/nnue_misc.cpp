@@ -18,32 +18,35 @@
 */
 
 #include "nnue_misc.h"
+
+#include <algorithm>
+#include <cassert>
+#include <cctype>
+#include <climits>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <iomanip>
 #include <iosfwd>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string_view>
 #include <tuple>
 #include <vector>
-#include <algorithm>
-#include <climits>
-#include <cctype>
 
+#include "../misc.h"
 #include "../position.h"
 #include "../types.h"
 #include "../uci.h"
+#include "../wdl/win_probability.h"
 #include "network.h"
 #include "nnue_accumulator.h"
-#include "../wdl/win_probability.h"  // Inclusione del modello WDL di ShashChess
 
 namespace ShashChess::Eval::NNUE {
 
 constexpr std::string_view PieceToChar(" PNBRQK  pnbrqk");
 
-// --- INIZIO ANONYMOUS NAMESPACE ---
 namespace {
 
 void format_cp_compact(Value v, char* buffer, const Position& pos) {
@@ -86,10 +89,10 @@ void format_cp_aligned_dot(Value v, std::stringstream& stream, const Position& p
            << std::setiosflags(std::ios::fixed) << std::setw(6) << std::setprecision(2) << pawns;
 }
 
-}  // --- FINE ANONYMOUS NAMESPACE ---
+}  // namespace
 
 std::string
-trace(Position& pos, const Eval::NNUE::Networks& networks, Eval::NNUE::AccumulatorCaches& caches) {
+trace(Position& pos, const Eval::NNUE::Network& network, Eval::NNUE::AccumulatorCaches& caches) {
 
     std::stringstream ss;
     char              board[3 * 8 + 1][8 * 8 + 2];
@@ -151,7 +154,7 @@ trace(Position& pos, const Eval::NNUE::Networks& networks, Eval::NNUE::Accumulat
     for (int i = 0; i < SQUARE_NB; ++i)
         single_ablation[i] = -999;
 
-    auto [psqt, positional] = networks.big.evaluate(pos, *accumulators, caches.big);
+    auto [psqt, positional] = network.evaluate(pos, *accumulators, caches);
     Value base              = psqt + positional;
     base                    = pos.side_to_move() == WHITE ? base : -base;
     int wp_base             = WDLModel::get_win_probability(base, pos);
@@ -169,13 +172,11 @@ trace(Position& pos, const Eval::NNUE::Networks& networks, Eval::NNUE::Accumulat
             {
                 pos.remove_piece(sq);
                 accumulators->reset();
-                auto [psqt_abl, pos_abl] = networks.big.evaluate(pos, *accumulators, caches.big);
+                auto [psqt_abl, pos_abl] = network.evaluate(pos, *accumulators, caches);
                 Value eval               = psqt_abl + pos_abl;
                 eval                     = pos.side_to_move() == WHITE ? eval : -eval;
 
                 int wp_abl = WDLModel::get_win_probability(eval, pos);
-                // PROSPETTIVA CORRETTA: l'impatto e' sempre misurato dal punto di vista
-                // del colore del pezzo rimosso (non sempre da White).
                 if (color_of(pc) == WHITE)
                     wp_delta = wp_base - wp_abl;
                 else
@@ -204,13 +205,11 @@ trace(Position& pos, const Eval::NNUE::Networks& networks, Eval::NNUE::Accumulat
         {
             pos.put_piece(ghost_knight, sq);
             accumulators->reset();
-            auto [psqt_ghost, pos_ghost] = networks.big.evaluate(pos, *accumulators, caches.big);
+            auto [psqt_ghost, pos_ghost] = network.evaluate(pos, *accumulators, caches);
             Value eval_ghost             = psqt_ghost + pos_ghost;
             eval_ghost                   = stm == WHITE ? eval_ghost : -eval_ghost;
 
             int wp_ghost = WDLModel::get_win_probability(eval_ghost, pos);
-            // Dal punto di vista di chi muove: se stm e' Nero, wp_ghost cala quando
-            // il cavallo nero aiuta, quindi invertiamo il segno.
             int improvement = (stm == WHITE) ? (wp_ghost - wp_base) : (wp_base - wp_ghost);
             if (improvement > 0)
             {
@@ -244,7 +243,6 @@ trace(Position& pos, const Eval::NNUE::Networks& networks, Eval::NNUE::Accumulat
 
             if (deltaA != -999 && deltaB != -999)
             {
-                // Recupera WP del Bianco dopo rimozione singola, indipendentemente dalla prospettiva.
                 int wp_abl_A = (stm == WHITE) ? (wp_base - deltaA) : (wp_base + deltaA);
                 int wp_abl_B = (stm == WHITE) ? (wp_base - deltaB) : (wp_base + deltaB);
 
@@ -254,12 +252,11 @@ trace(Position& pos, const Eval::NNUE::Networks& networks, Eval::NNUE::Accumulat
                     pos.remove_piece(sqB);
                     accumulators->reset();
                     auto [psqt_both, pos_both] =
-                      networks.big.evaluate(pos, *accumulators, caches.big);
+                      network.evaluate(pos, *accumulators, caches);
                     Value eval_both = psqt_both + pos_both;
                     eval_both       = stm == WHITE ? eval_both : -eval_both;
 
                     int wp_both = WDLModel::get_win_probability(eval_both, pos);
-                    // Anche deltaBoth nella prospettiva di stm (coerente con deltaA e deltaB).
                     int deltaBoth = (stm == WHITE) ? (wp_base - wp_both) : (wp_both - wp_base);
                     pos.put_piece(pcA, sqA);
                     pos.put_piece(pcB, sqB);
@@ -335,7 +332,7 @@ trace(Position& pos, const Eval::NNUE::Networks& networks, Eval::NNUE::Accumulat
     ss << '\n';
 
     accumulators->reset();
-    auto        t            = networks.big.trace_evaluate(pos, *accumulators, caches.big);
+    auto        t            = network.trace_evaluate(pos, *accumulators, caches);
     int         total_pieces = pos.count<ALL_PIECES>();
     std::string phase_desc;
     if (t.correctBucket >= 6)
@@ -378,9 +375,7 @@ trace(Position& pos, const Eval::NNUE::Networks& networks, Eval::NNUE::Accumulat
     ss
       << "   (Note: High structural abstraction WP shift indicates complex patterns overriding raw material)\n\n";
 
-    // ========================================================================
     // 7. MULTI-PIECE FILTER PROBE
-    // ========================================================================
     struct FilterProbe {
         std::string sq_name;
         int         knight_imp = 0;
@@ -396,7 +391,7 @@ trace(Position& pos, const Eval::NNUE::Networks& networks, Eval::NNUE::Accumulat
             Piece ghost = make_piece(stm, pt);
             pos.put_piece(ghost, probe_sq);
             accumulators->reset();
-            auto [p_g, q_g] = networks.big.evaluate(pos, *accumulators, caches.big);
+            auto [p_g, q_g] = network.evaluate(pos, *accumulators, caches);
             Value e_g       = p_g + q_g;
             e_g             = stm == WHITE ? e_g : -e_g;
             int wp_g        = WDLModel::get_win_probability(e_g, pos);
@@ -465,9 +460,7 @@ trace(Position& pos, const Eval::NNUE::Networks& networks, Eval::NNUE::Accumulat
         ss << "   (Nessun miglioramento significativo trovato)\n";
     ss << '\n';
 
-    // ========================================================================
     // 8. PIECE CONTRIBUTION SPECTRUM
-    // ========================================================================
     std::pair<std::string, int>              white_best_piece  = {"", -999};
     std::pair<std::string, int>              black_best_piece  = {"", -999};
     std::pair<std::string, int>              white_worst_piece = {"", 999};
@@ -514,9 +507,7 @@ trace(Position& pos, const Eval::NNUE::Networks& networks, Eval::NNUE::Accumulat
     }
     ss << "\n\n";
 
-    // ========================================================================
     // 9. NATURAL LANGUAGE NNUE INTERPRETATION (SCAP Framework)
-    // ========================================================================
     ss << "9. NATURAL LANGUAGE NNUE INTERPRETATION (SCAP Framework)\n";
     ss << "   " << std::string(66, '~') << "\n";
 
@@ -550,7 +541,7 @@ trace(Position& pos, const Eval::NNUE::Networks& networks, Eval::NNUE::Accumulat
         switch (t.correctBucket)
         {
         case 7 :
-            precise_phase = "Opening (32 pcs) - massima complessità strutturale";
+            precise_phase = "Opening (32 pcs) - massima complessita' strutturale";
             break;
         case 6 :
             precise_phase = "Early Middlegame (25-28 pcs) - piano ancora fluido";
@@ -682,7 +673,7 @@ trace(Position& pos, const Eval::NNUE::Networks& networks, Eval::NNUE::Accumulat
         ss
           << "Mantenere l'equilibrio dinamico: preservare la coordinazione, difendere le case outpost.";
     else
-        ss << "Ricercare risorse tattiche e contrattacco per rompere la stabilità avversaria.";
+        ss << "Ricercare risorse tattiche e contrattacco per rompere la stabilita' avversaria.";
     ss << "\n";
 
     // 9J: SHASHHERMES COMPACT TRACE FORMAT

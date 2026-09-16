@@ -23,12 +23,15 @@
 #include <cassert>
 #include <cmath>
 #include <cstdlib>
+#include <deque>
 #include <iomanip>
 #include <iostream>
 #include <memory>
 #include <sstream>
 #include <tuple>
+#include <vector>
 
+#include "misc.h"
 #include "nnue/network.h"
 #include "nnue/nnue_misc.h"
 #include "position.h"
@@ -52,7 +55,7 @@ bool Eval::use_smallnet(const Position& pos) { return std::abs(simple_eval(pos))
 
 // Evaluate is the evaluator for the outer world. It returns a static evaluation
 // of the position from the point of view of the side to move.
-Value Eval::evaluate(const Eval::NNUE::Networks&    networks,
+Value Eval::evaluate(const Eval::NNUE::Network&     network,
                      const Position&                pos,
                      Eval::NNUE::AccumulatorStack&  accumulators,
                      Eval::NNUE::AccumulatorCaches& caches,
@@ -60,27 +63,17 @@ Value Eval::evaluate(const Eval::NNUE::Networks&    networks,
 
     assert(!pos.checkers());
 
-    bool smallNet           = use_smallnet(pos);
-    auto [psqt, positional] = smallNet ? networks.small.evaluate(pos, accumulators, caches.small)
-                                       : networks.big.evaluate(pos, accumulators, caches.big);
+    auto [psqt, positional] = network.evaluate(pos, accumulators, caches);
 
-    Value nnue = (125 * psqt + 131 * positional) / 128;
-
-    // Re-evaluate the position when higher eval accuracy is worth the time spent
-    if (smallNet && (std::abs(nnue) < 277))
-    {
-        std::tie(psqt, positional) = networks.big.evaluate(pos, accumulators, caches.big);
-        nnue                       = (125 * psqt + 131 * positional) / 128;
-        smallNet                   = false;
-    }
+    Value nnue = psqt + positional;
 
     // Blend optimism and eval with nnue complexity
     int nnueComplexity = std::abs(psqt - positional);
-    optimism += optimism * nnueComplexity / 476;
-    nnue -= nnue * nnueComplexity / 18236;
+    optimism += optimism * i64(nnueComplexity) / 476;
+    nnue -= nnue * i64(nnueComplexity) / 18236;
 
     int material = 534 * pos.count<PAWN>() + pos.non_pawn_material();
-    int v        = (nnue * (77871 + material) + optimism * (7191 + material)) / 77871;
+    int v        = nnue + (nnue * i64(material) + optimism * i64(7675)) / 91000;
 
     // Damp down the evaluation linearly when shuffling
     v -= v * pos.rule50_count() / 199;
@@ -301,13 +294,13 @@ std::string analyze_piece_activity_horizontal(const Position& pos) {
 }
 
 // Funzione per analizzare le mosse legali ordinate per attività
-std::string analyze_legal_moves(const Position& pos, const Eval::NNUE::Networks& networks) {
+std::string analyze_legal_moves(const Position& pos, const Eval::NNUE::Network& network) {
     std::vector<std::tuple<std::string, Value, uint8_t>> moves;  // (move, eval, win_prob)
 
     Color side_to_move = pos.side_to_move();
 
     auto acc_stack = std::make_unique<Eval::NNUE::AccumulatorStack>();
-    auto caches    = std::make_unique<Eval::NNUE::AccumulatorCaches>(networks);
+    auto caches    = std::make_unique<Eval::NNUE::AccumulatorCaches>(network);
 
     // Genera tutte le mosse legali
     for (const auto& move : MoveList<LEGAL>(pos))
@@ -319,7 +312,7 @@ std::string analyze_legal_moves(const Position& pos, const Eval::NNUE::Networks&
         StateInfo st;
         posCopy.do_move(move, st);
 
-        Value v              = Eval::evaluate(networks, posCopy, *acc_stack, *caches, VALUE_ZERO);
+        Value v              = Eval::evaluate(network, posCopy, *acc_stack, *caches, VALUE_ZERO);
         Value eval_for_mover = -v;
         Value v_white        = posCopy.side_to_move() == WHITE ? v : -v;
 
@@ -454,13 +447,13 @@ std::string generate_strategic_synthesis(uint8_t              winProbWhite,
 // a string (suitable for outputting to stdout) that contains the detailed
 // descriptions and values of each evaluation term. Useful for debugging.
 // Trace scores are from white's point of view
-std::string Eval::trace(Position& pos, const Eval::NNUE::Networks& networks, bool showWDL) {
+std::string Eval::trace(Position& pos, const Eval::NNUE::Network& network, bool showWDL) {
 
     if (pos.checkers())
         return "Final evaluation: none (in check)";
 
     auto accumulators = std::make_unique<Eval::NNUE::AccumulatorStack>();
-    auto caches       = std::make_unique<Eval::NNUE::AccumulatorCaches>(networks);
+    auto caches       = std::make_unique<Eval::NNUE::AccumulatorCaches>(network);
 
     std::stringstream ss;
 
@@ -471,7 +464,7 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Networks& networks, boo
     }
 
     // Calcola la valutazione finale
-    Value v = evaluate(networks, pos, *accumulators, *caches, VALUE_ZERO);
+    Value v = evaluate(network, pos, *accumulators, *caches, VALUE_ZERO);
 
     // Converti SEMPRE al punto di vista del bianco
     Value v_white = pos.side_to_move() == WHITE ? v : -v;
@@ -487,7 +480,7 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Networks& networks, boo
 
         // Mostra la trace NNUE
         ss << std::showpoint << std::noshowpos << std::fixed << std::setprecision(2);
-        ss << '\n' << NNUE::trace(pos, networks, *caches) << '\n';
+        ss << '\n' << NNUE::trace(pos, network, *caches) << '\n';
 
         ss << "=== SHASHIN STATIC ANALYSIS ===\n";
         ss << "*** Static activity evaluation based on NNUE network ***\n";
@@ -500,13 +493,13 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Networks& networks, boo
 
         // Analisi delle mosse legali
         ss << "--- LEGAL MOVES ANALYSIS ---\n";
-        ss << analyze_legal_moves(pos, networks) << "\n";
+        ss << analyze_legal_moves(pos, network) << "\n";
 
         // --- INIZIO INTEGRAZIONE SHASHHERMES DATA GENERATOR ---
         // Estraiamo al volo il pos_delta_act per passarlo nativamente allo snippet Elo 2200+
         auto accumulators_syn = std::make_unique<Eval::NNUE::AccumulatorStack>();
-        auto caches_syn       = std::make_unique<Eval::NNUE::AccumulatorCaches>(networks);
-        auto t_syn = networks.big.trace_evaluate(pos, *accumulators_syn, caches_syn->big);
+        auto caches_syn       = std::make_unique<Eval::NNUE::AccumulatorCaches>(network);
+        auto t_syn = network.trace_evaluate(pos, *accumulators_syn, *caches_syn);
 
         int wp_mat_syn = WDLModel::get_win_probability(t_syn.psqt[t_syn.correctBucket], pos);
         int wp_tot_syn = WDLModel::get_win_probability(
@@ -531,18 +524,19 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Networks& networks, boo
     {
         // Comportamento tradizionale
         ss << std::showpoint << std::noshowpos << std::fixed << std::setprecision(2);
-        ss << '\n' << NNUE::trace(pos, networks, *caches) << '\n';
+        ss << '\n' << NNUE::trace(pos, network, *caches) << '\n';
         ss << std::showpoint << std::showpos << std::fixed << std::setprecision(2) << std::setw(15);
 
-        auto [psqt, positional] = networks.big.evaluate(pos, *accumulators, caches->big);
+        auto [psqt, positional] = network.evaluate(pos, *accumulators, *caches);
         Value v_nnue            = psqt + positional;
+        ss << "NNUE evaluation          " << v_nnue << " (side to move, internal units)\n";
         v_nnue                  = pos.side_to_move() == WHITE ? v_nnue : -v_nnue;
         ss << "NNUE evaluation        " << 0.01 * UCIEngine::to_cp(v_nnue, pos)
            << " (white side)\n";
 
-        ss << "Final evaluation       " << 0.01 * UCIEngine::to_cp(v_white, pos) << " (white side)";
-        ss << " [with scaled NNUE, ...]";
-        ss << "\n";
+        ss << "Final evaluation      ";
+        ss << 0.01 * UCIEngine::to_cp(v_white, pos) << " (white side)";
+        ss << " [with scaled NNUE, ...]\n";
     }
 
     return ss.str();
