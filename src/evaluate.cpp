@@ -499,7 +499,7 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Network& network, bool 
         // Estraiamo al volo il pos_delta_act per passarlo nativamente allo snippet Elo 2200+
         auto accumulators_syn = std::make_unique<Eval::NNUE::AccumulatorStack>();
         auto caches_syn       = std::make_unique<Eval::NNUE::AccumulatorCaches>(network);
-        auto t_syn = network.trace_evaluate(pos, *accumulators_syn, *caches_syn);
+        auto t_syn            = network.trace_evaluate(pos, *accumulators_syn, *caches_syn);
 
         int wp_mat_syn = WDLModel::get_win_probability(t_syn.psqt[t_syn.correctBucket], pos);
         int wp_tot_syn = WDLModel::get_win_probability(
@@ -530,7 +530,7 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Network& network, bool 
         auto [psqt, positional] = network.evaluate(pos, *accumulators, *caches);
         Value v_nnue            = psqt + positional;
         ss << "NNUE evaluation          " << v_nnue << " (side to move, internal units)\n";
-        v_nnue                  = pos.side_to_move() == WHITE ? v_nnue : -v_nnue;
+        v_nnue = pos.side_to_move() == WHITE ? v_nnue : -v_nnue;
         ss << "NNUE evaluation        " << 0.01 * UCIEngine::to_cp(v_nnue, pos)
            << " (white side)\n";
 

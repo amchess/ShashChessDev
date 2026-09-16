@@ -35,12 +35,12 @@ endif
 
 ### Command prefix to run the built executable (e.g. wine, sde, qemu)
 ### Backward compatible alias: WINE_PATH (deprecated)
-ifneq (\((strip\)(WINE_PATH)),)
-ifeq (\((strip\)(RUN_PREFIX)),)
+ifneq ($(strip $(WINE_PATH)),)
+ifeq ($(strip $(RUN_PREFIX)),)
 RUN_PREFIX := $(WINE_PATH)
 endif
 ifeq ($(MAKELEVEL),0)
-ifneq (\((strip\)(RUN_PREFIX)),\((strip\)(WINE_PATH)))
+ifneq ($(strip $(RUN_PREFIX)),$(strip $(WINE_PATH)))
 $(warning *** Both RUN_PREFIX and WINE_PATH are set; ignoring WINE_PATH. ***)
 else
 $(warning *** WINE_PATH is deprecated; use RUN_PREFIX instead. ***)
@@ -63,7 +63,7 @@ endif
 ### Executable name
 ifeq ($(target_windows),yes)
 	EXE = shashchess.exe
-else ifneq (,\((findstring wasm,\)(ARCH)))
+else ifneq (,$(findstring wasm,$(ARCH)))
 	EXE = shashchess.js
 else
 	EXE = shashchess
@@ -74,7 +74,7 @@ PREFIX = /usr/local
 BINDIR = $(PREFIX)/bin
 
 ### Built-in benchmark for pgo-builds
-PGOBENCH = \((RUN_PREFIX) ./\)(EXE) bench
+PGOBENCH = $(RUN_PREFIX) ./$(EXE) bench
 
 ### Source and object files
 SRCS = attacks.cpp benchmark.cpp bitboard.cpp evaluate.cpp main.cpp \
@@ -108,7 +108,7 @@ HEADERS = attacks.h benchmark.h bitboard.h evaluate.h misc.h movegen.h movepick.
 		livebook/LichessGames.h livebook/ChessDBContributor.h \
 		livebook/json/json.hpp shashin/shashin_helper.h shashin/shashin_manager.h shashin/shashin_types.h shashin/moveconfig.h shashin/shashin_position.h shashin/shashin_params.h
 
-OBJS = \((notdir\)(SRCS:.cpp=.o))
+OBJS = $(notdir $(SRCS:.cpp=.o))
 
 VPATH = mcts:syzygy:nnue:nnue/features:book:book/polyglot:book/ctg:learn:shashin:livebook:livebook/analysis:livebook/json:wdl
 
@@ -121,10 +121,10 @@ ifeq ($(ARCH),)
 endif
 
 ifeq ($(ARCH), native)
-   override ARCH := \((shell\)(SHELL) ../scripts/get_native_properties.sh | cut -d " " -f 1)
+   override ARCH := $(shell $(SHELL) ../scripts/get_native_properties.sh | cut -d " " -f 1)
 endif
 
-ifeq (\((ARCH),\)(filter $(ARCH), \
+ifeq ($(ARCH), $(filter $(ARCH), \
                  x86-64-universal x86-64-avx512icl x86-64-vnni512 x86-64-avx512 x86-64-avxvnni \
                  x86-64-bmi2 x86-64-avx2 x86-64-sse41-popcnt x86-64-modern x86-64-ssse3 x86-64-sse3-popcnt \
                  x86-64 x86-32-sse41-popcnt x86-32-sse2 x86-32 ppc-64 ppc-64-altivec ppc-64-vsx ppc-32 e2k \
@@ -135,7 +135,7 @@ else
    SUPPORTED_ARCH=false
 endif
 
-ifneq (,\((filter\)(ARCH),x86-64-universal arm64-universal riscv64-universal))
+ifneq (,$(filter $(ARCH),x86-64-universal arm64-universal riscv64-universal))
    UNIVERSAL_BUILD=true
 else
    UNIVERSAL_BUILD=false
@@ -170,7 +170,7 @@ relaxedsimd = no
 syzygy = yes
 STRIP = strip
 
-ifneq ($(shell which clang-format-20 2< /dev/null),)
+ifneq ($(shell which clang-format-20 2> /dev/null),)
 	CLANG-FORMAT = clang-format-20
 else
 	CLANG-FORMAT = clang-format
@@ -178,9 +178,9 @@ endif
 
 ### 2.2 Architecture specific
 
-ifeq (\((findstring x86,\)(ARCH)),x86)
+ifeq ($(findstring x86,$(ARCH)),x86)
 
-ifeq (\((findstring x86-32,\)(ARCH)),x86-32)
+ifeq ($(findstring x86-32,$(ARCH)),x86-32)
 	arch = i386
 	bits = 32
 	sse = no
@@ -191,38 +191,38 @@ else
 	sse2 = yes
 endif
 
-ifeq (\((findstring -sse,\)(ARCH)),-sse)
+ifeq ($(findstring -sse,$(ARCH)),-sse)
 	sse = yes
 endif
 
-ifeq (\((findstring -popcnt,\)(ARCH)),-popcnt)
+ifeq ($(findstring -popcnt,$(ARCH)),-popcnt)
 	popcnt = yes
 endif
 
-ifeq (\((findstring -mmx,\)(ARCH)),-mmx)
+ifeq ($(findstring -mmx,$(ARCH)),-mmx)
 	mmx = yes
 endif
 
-ifeq (\((findstring -sse2,\)(ARCH)),-sse2)
+ifeq ($(findstring -sse2,$(ARCH)),-sse2)
 	sse = yes
 	sse2 = yes
 endif
 
-ifeq (\((findstring -ssse3,\)(ARCH)),-ssse3)
+ifeq ($(findstring -ssse3,$(ARCH)),-ssse3)
 	sse = yes
 	sse2 = yes
 	ssse3 = yes
 endif
 
-ifeq (\((findstring -sse41,\)(ARCH)),-sse41)
+ifeq ($(findstring -sse41,$(ARCH)),-sse41)
 	sse = yes
 	sse2 = yes
 	ssse3 = yes
 	sse41 = yes
 endif
 
-ifeq (\((findstring -modern,\)(ARCH)),-modern)
-        \((warning *** ARCH=\)(ARCH) is deprecated, defaulting to ARCH=x86-64-sse41-popcnt. Execute `make help` for a list of available architectures. ***)
+ifeq ($(findstring -modern,$(ARCH)),-modern)
+        $(warning *** ARCH=$(ARCH) is deprecated, defaulting to ARCH=x86-64-sse41-popcnt. Execute `make help` for a list of available architectures. ***)
         $(shell sleep 5)
 	popcnt = yes
 	sse = yes
@@ -231,7 +231,7 @@ ifeq (\((findstring -modern,\)(ARCH)),-modern)
 	sse41 = yes
 endif
 
-ifeq (\((findstring -avx2,\)(ARCH)),-avx2)
+ifeq ($(findstring -avx2,$(ARCH)),-avx2)
 	popcnt = yes
 	sse = yes
 	sse2 = yes
@@ -240,7 +240,7 @@ ifeq (\((findstring -avx2,\)(ARCH)),-avx2)
 	avx2 = yes
 endif
 
-ifeq (\((findstring -avxvnni,\)(ARCH)),-avxvnni)
+ifeq ($(findstring -avxvnni,$(ARCH)),-avxvnni)
 	popcnt = yes
 	sse = yes
 	sse2 = yes
@@ -251,7 +251,7 @@ ifeq (\((findstring -avxvnni,\)(ARCH)),-avxvnni)
 	pext = yes
 endif
 
-ifeq (\((findstring -bmi2,\)(ARCH)),-bmi2)
+ifeq ($(findstring -bmi2,$(ARCH)),-bmi2)
 	popcnt = yes
 	sse = yes
 	sse2 = yes
@@ -261,7 +261,7 @@ ifeq (\((findstring -bmi2,\)(ARCH)),-bmi2)
 	pext = yes
 endif
 
-ifeq (\((findstring -avx512,\)(ARCH)),-avx512)
+ifeq ($(findstring -avx512,$(ARCH)),-avx512)
 	popcnt = yes
 	sse = yes
 	sse2 = yes
@@ -272,7 +272,7 @@ ifeq (\((findstring -avx512,\)(ARCH)),-avx512)
 	avx512 = yes
 endif
 
-ifeq (\((findstring -vnni512,\)(ARCH)),-vnni512)
+ifeq ($(findstring -vnni512,$(ARCH)),-vnni512)
 	popcnt = yes
 	sse = yes
 	sse2 = yes
@@ -284,7 +284,7 @@ ifeq (\((findstring -vnni512,\)(ARCH)),-vnni512)
 	vnni512 = yes
 endif
 
-ifeq (\((findstring -avx512icl,\)(ARCH)),-avx512icl)
+ifeq ($(findstring -avx512icl,$(ARCH)),-avx512icl)
 	popcnt = yes
 	sse = yes
 	sse2 = yes
@@ -410,7 +410,7 @@ ifeq ($(ARCH),ppc-64-vsx)
 	vsx = yes
 endif
 
-ifeq (\((findstring e2k,\)(ARCH)),e2k)
+ifeq ($(findstring e2k,$(ARCH)),e2k)
 	arch = e2k
 	mmx = yes
 	bits = 64
@@ -421,7 +421,7 @@ ifeq (\((findstring e2k,\)(ARCH)),e2k)
 	popcnt = yes
 endif
 
-ifeq (\((findstring riscv64,\)(ARCH)),riscv64)
+ifeq ($(findstring riscv64,$(ARCH)),riscv64)
 	arch = riscv64
 endif
 
@@ -431,16 +431,16 @@ ifeq ($(ARCH),riscv64-rva23)
 	prefetch = yes
 endif
 
-ifeq (\((findstring loongarch64,\)(ARCH)),loongarch64)
+ifeq ($(findstring loongarch64,$(ARCH)),loongarch64)
 	arch = loongarch64
 	prefetch = yes
 
-ifeq (\((findstring -lasx,\)(ARCH)),-lasx)
+ifeq ($(findstring -lasx,$(ARCH)),-lasx)
 	lsx = yes
 	lasx = yes
 endif
 
-ifeq (\((findstring -lsx,\)(ARCH)),-lsx)
+ifeq ($(findstring -lsx,$(ARCH)),-lsx)
 	lsx = yes
 endif
 
@@ -459,9 +459,9 @@ ifeq ($(MAKELEVEL),0)
        export ENV_LDFLAGS := $(LDFLAGS)
 endif
 
-CXXFLAGS = \((ENV_CXXFLAGS) -Wall -Wcast-qual -fno-exceptions -std=c++17\)(EXTRACXXFLAGS)
+CXXFLAGS = $(ENV_CXXFLAGS) -Wall -Wcast-qual -fno-exceptions -std=c++17 $(EXTRACXXFLAGS)
 DEPENDFLAGS = $(ENV_DEPENDFLAGS) -std=c++17
-LDFLAGS = \((ENV_LDFLAGS)\)(EXTRALDFLAGS)
+LDFLAGS = $(ENV_LDFLAGS) $(EXTRALDFLAGS)
 
 ifeq ($(GOLD_DIGGER),yes)
 	CXXFLAGS += -DGOLD_DIGGER
@@ -476,7 +476,7 @@ ifeq ($(COMP),gcc)
 	CXX=g++
 	CXXFLAGS += -pedantic -Wextra -Wshadow -Wmissing-declarations
 
-	ifeq (\((arch),\)(filter $(arch),armv7 armv8 riscv64))
+	ifeq ($(arch),$(filter $(arch),armv7 armv8 riscv64))
 		ifeq ($(OS),Android)
 			CXXFLAGS += -m$(bits)
 			LDFLAGS += -m$(bits)
@@ -488,7 +488,7 @@ ifeq ($(COMP),gcc)
 		LDFLAGS += -m$(bits)
 	endif
 
-	ifeq (\((arch),\)(filter $(arch),armv7))
+	ifeq ($(arch),$(filter $(arch),armv7))
 		LDFLAGS += -latomic
 	endif
 
@@ -539,7 +539,7 @@ ifeq ($(COMP),clang)
 	CXXFLAGS += -pedantic -Wextra -Wshadow -Wmissing-prototypes \
 	            -Wconditional-uninitialized -flax-vector-conversions=none -fconstexpr-steps=500000000
 
-	ifeq (\((filter\)(TARGET_KERNEL),Darwin OpenBSD FreeBSD),)
+	ifeq ($(filter $(TARGET_KERNEL),Darwin OpenBSD FreeBSD),)
 	ifeq ($(target_windows),)
 	ifneq ($(RTLIB),compiler-rt)
 		LDFLAGS += -latomic
@@ -547,7 +547,7 @@ ifeq ($(COMP),clang)
 	endif
 	endif
 
-	ifeq (\((arch),\)(filter $(arch),armv7 armv8 riscv64))
+	ifeq ($(arch),$(filter $(arch),armv7 armv8 riscv64))
 		ifeq ($(OS),Android)
 			CXXFLAGS += -m$(bits)
 			LDFLAGS += -m$(bits)
@@ -606,11 +606,11 @@ ifdef COMPCXX
 	CXX=$(COMPCXX)
 endif
 
-	LLVM_PROFDATA := \((dir\)(realpath \((shell which\)(CXX) 2< /dev/null)))llvm-profdata
-ifeq (\((wildcard\)(LLVM_PROFDATA)),)
-	LLVM_PROFDATA := \((dir\)(realpath \((shell which\)(CXX) 2< /dev/null)))/compiler/llvm-profdata
+	LLVM_PROFDATA := $(dir $(realpath $(shell which $(CXX) 2< /dev/null)))llvm-profdata
+ifeq ($(wildcard $(LLVM_PROFDATA)),)
+	LLVM_PROFDATA := $(dir $(realpath $(shell which $(CXX) 2< /dev/null)))/compiler/llvm-profdata
 endif
-ifeq (\((wildcard\)(LLVM_PROFDATA)),)
+ifeq ($(wildcard $(LLVM_PROFDATA)),)
 	LLVM_PROFDATA := llvm-profdata
 endif
 
@@ -629,8 +629,8 @@ else
 endif
 
 ifeq ($(COMP),gcc)
-	gccversion := \((shell\)(CXX) --version 2</dev/null)
-	gccisclang := \((findstring clang,\)(gccversion))
+	gccversion := $(shell $(CXX) --version 2</dev/null)
+	gccisclang := $(findstring clang,$(gccversion))
 	ifneq ($(gccisclang),)
 		profile_make = clang-profile-make
 		profile_use = clang-profile-use
@@ -673,8 +673,8 @@ else
 endif
 
 ifneq ($(sanitize),none)
-        CXXFLAGS += -g3 \((addprefix -fsanitize=,\)(sanitize))
-        LDFLAGS += \((addprefix -fsanitize=,\)(sanitize))
+        CXXFLAGS += -g3 $(addprefix -fsanitize=,$(sanitize))
+        LDFLAGS += $(addprefix -fsanitize=,$(sanitize))
 endif
 
 ifeq ($(optimize),yes)
@@ -688,7 +688,7 @@ ifeq ($(optimize),yes)
 	endif
 
 	ifeq ($(TARGET_KERNEL),Darwin)
-		ifeq (\((comp),\)(filter $(comp),clang icx))
+		ifeq ($(comp),$(filter $(comp),clang icx))
 			CXXFLAGS += -mdynamic-no-pic
 		endif
 
@@ -700,8 +700,8 @@ ifeq ($(optimize),yes)
 	endif
 
 	ifeq ($(comp),clang)
-		clangmajorversion := \((shell\)(CXX) -dumpversion 2</dev/null | cut -f1 -d.)
-		ifeq (\((shell expr\)(clangmajorversion) \< 16),1)
+		clangmajorversion := $(shell $(CXX) -dumpversion 2</dev/null | cut -f1 -d.)
+		ifeq ($(shell expr $(clangmajorversion) < 16),1)
 			CXXFLAGS += -fexperimental-new-pass-manager
 		endif
 	endif
@@ -720,7 +720,7 @@ else
 endif
 
 ifeq ($(popcnt),yes)
-	ifeq (\((arch),\)(filter $(arch),ppc64 ppc64-altivec ppc64-vsx armv7 armv8 arm64 riscv64))
+	ifeq ($(arch),$(filter $(arch),ppc64 ppc64-altivec ppc64-vsx armv7 armv8 arm64 riscv64))
 		CXXFLAGS += -DUSE_POPCNT
 	else
 		CXXFLAGS += -msse3 -mpopcnt -DUSE_POPCNT
@@ -729,62 +729,62 @@ endif
 
 ifeq ($(avx2),yes)
 	CXXFLAGS += -DUSE_AVX2
-	ifeq (\((comp),\)(filter $(comp),gcc clang mingw icx))
+	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
 		CXXFLAGS += -mavx2 -mbmi
 	endif
 endif
 
 ifeq ($(avxvnni),yes)
 	CXXFLAGS += -DUSE_VNNI -DUSE_AVXVNNI
-	ifeq (\((comp),\)(filter $(comp),gcc clang mingw icx))
+	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
 		CXXFLAGS += -mavxvnni
 	endif
 endif
 
 ifeq ($(avx512),yes)
 	CXXFLAGS += -DUSE_AVX512
-	ifeq (\((comp),\)(filter $(comp),gcc clang mingw icx))
+	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
 		CXXFLAGS += -mavx512f -mavx512bw -mavx512dq -mavx512vl
 	endif
 endif
 
 ifeq ($(vnni512),yes)
 	CXXFLAGS += -DUSE_VNNI
-	ifeq (\((comp),\)(filter $(comp),gcc clang mingw icx))
+	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
 		CXXFLAGS += -mavx512f -mavx512bw -mavx512vnni -mavx512dq -mavx512vl
 	endif
 endif
 
 ifeq ($(avx512icl),yes)
 	CXXFLAGS += -DUSE_AVX512 -DUSE_VNNI -DUSE_AVX512ICL
-	ifeq (\((comp),\)(filter $(comp),gcc clang mingw icx))
+	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
 		CXXFLAGS += -mavx512f -mavx512cd -mavx512vl -mavx512dq -mavx512bw -mavx512ifma -mavx512vbmi -mavx512vbmi2 -mavx512vpopcntdq -mavx512bitalg -mavx512vnni -mvpclmulqdq -mgfni -mvaes
 	endif
 endif
 
 ifeq ($(sse41),yes)
 	CXXFLAGS += -DUSE_SSE41
-	ifeq (\((comp),\)(filter $(comp),gcc clang mingw icx))
+	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
 		CXXFLAGS += -msse4.1
 	endif
 endif
 
 ifeq ($(ssse3),yes)
 	CXXFLAGS += -DUSE_SSSE3
-	ifeq (\((comp),\)(filter $(comp),gcc clang mingw icx))
+	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
 		CXXFLAGS += -mssse3
 	endif
 endif
 
 ifeq ($(sse2),yes)
 	CXXFLAGS += -DUSE_SSE2
-	ifeq (\((comp),\)(filter $(comp),gcc clang mingw icx))
+	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
 		CXXFLAGS += -msse2
 	endif
 endif
 
 ifeq ($(mmx),yes)
-	ifeq (\((comp),\)(filter $(comp),gcc clang mingw icx))
+	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
 		CXXFLAGS += -mmmx
 	endif
 endif
@@ -824,14 +824,14 @@ endif
 
 ifeq ($(lasx),yes)
 	CXXFLAGS += -DUSE_LASX
-	ifeq (\((comp),\)(filter $(comp),gcc clang mingw icx))
+	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
 		CXXFLAGS += -mlasx
 	endif
 endif
 
 ifeq ($(lsx),yes)
 	CXXFLAGS += -DUSE_LSX
-	ifeq (\((comp),\)(filter $(comp),gcc clang mingw icx))
+	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
 		CXXFLAGS += -mlsx
 	endif
 endif
@@ -846,7 +846,7 @@ endif
 
 ifeq ($(pext),yes)
 	CXXFLAGS += -DUSE_PEXT
-	ifeq (\((comp),\)(filter $(comp),gcc clang mingw icx))
+	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
 		CXXFLAGS += -mbmi2
 	endif
 endif
@@ -860,22 +860,22 @@ BUILD_DATE_FILE      := .build_date.txt
 BUILD_DIFFINDEX_FILE := .build_diffindex.txt
 GIT_SHA              := $(shell git rev-parse HEAD 2</dev/null | cut -c 1-8 || true)
 GIT_DATE             := $(shell git show -s --date=format:%Y%m%d --format=%cd HEAD 2</dev/null || true)
-GIT_DIFFINDEX        := \((shell git update-index --refresh >/dev/null 2>&1; git -c core.filemode=false -c core.autocrlf=false  diff-index --quiet HEAD -- 2</dev/null; [\)$? -eq 1 ] && echo 1 || true)
+GIT_DIFFINDEX        := $(shell git update-index --refresh >/dev/null 2>&1; git -c core.filemode=false -c core.autocrlf=false  diff-index --quiet HEAD -- 2</dev/null; [ $? -eq 1 ] && echo 1 || true)
 COMPILER_DATE        := $(shell date +%Y%m%d 2</dev/null)
 
-BUILD_DATE           := \((if\)(GIT_DATE),\((GIT_DATE),\)(COMPILER_DATE))
+BUILD_DATE           := $(if $(GIT_DATE),$(GIT_DATE),$(COMPILER_DATE))
 
 define cache_file_contents
 $(shell \
-	if [ ! -f "\((1)" ] || [ "\)\((cat "\)(1)" 2</dev/null)" != "$(2)" ]; then \
-		printf '%s\n' "\((2)" > "\)(1)"; \
+	if [ ! -f "$(1)" ] || [ "$($(cat "$(1)" 2</dev/null))" != "$(2)" ]; then \
+		printf '%s\n' "$(2)" > "$(1)"; \
 	fi)
 endef
 
-ifneq (\((filter\)(MAKECMDGOALS),help strip install clean net objclean profileclean format config-sanity),$(MAKECMDGOALS))
-_ := \((call cache_file_contents,\)(BUILD_SHA_FILE),$(GIT_SHA))
-_ := \((call cache_file_contents,\)(BUILD_DATE_FILE),$(BUILD_DATE))
-_ := \((call cache_file_contents,\)(BUILD_DIFFINDEX_FILE),$(BUILD_DIFFINDEX))
+ifneq ($(filter $(MAKECMDGOALS),help strip install clean net objclean profileclean format config-sanity),$(MAKECMDGOALS))
+_ := $(call cache_file_contents,$(BUILD_SHA_FILE),$(GIT_SHA))
+_ := $(call cache_file_contents,$(BUILD_DATE_FILE),$(GIT_DATE))
+_ := $(call cache_file_contents,$(BUILD_DIFFINDEX_FILE),$(GIT_DIFFINDEX))
 endif
 
 ifneq ($(ARCH), )
@@ -901,7 +901,7 @@ ifeq ($(debug),no)
 		endif
 	endif
 
-	ifeq (\((comp),\)(filter $(comp),clang icx))
+	ifeq ($(comp),$(filter $(comp),clang icx))
 		CXXFLAGS += -flto=full
 		ifeq ($(comp),icx)
 			CXXFLAGS += -fwhole-program-vtables
@@ -1029,47 +1029,47 @@ endif
 	format analyze
 
 analyze: net config-sanity objclean
-	\((MAKE) -k ARCH=\)(ARCH) COMP=\((COMP)\)(OBJS)
+	$(MAKE) -k ARCH=$(ARCH) COMP=$(COMP) $(OBJS)
 
 ifeq ($(UNIVERSAL_BUILD),false)
 build: net config-sanity
-	\((MAKE) ARCH=\)(ARCH) COMP=$(COMP) all
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) all
 
 profile-build: net config-sanity objclean profileclean
 	@echo ""
 	@echo "Step 1/4. Building instrumented executable ..."
-	\((MAKE) ARCH=\)(ARCH) COMP=\((COMP)\)(profile_make)
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) $(profile_make)
 	@echo ""
 	@echo "Step 2/4. Running benchmark for pgo-build ..."
 	$(PGOBENCH) > PGOBENCH.out 2>&1
 	tail -n 4 PGOBENCH.out
 	@echo ""
 	@echo "Step 3/4. Building optimized executable ..."
-	\((MAKE) ARCH=\)(ARCH) COMP=$(COMP) objclean
-	\((MAKE) ARCH=\)(ARCH) COMP=\((COMP)\)(profile_use)
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) objclean
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) $(profile_use)
 	@echo ""
 	@echo "Step 4/4. Deleting profile data ..."
-	\((MAKE) ARCH=\)(ARCH) COMP=$(COMP) profileclean
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) profileclean
 endif
 
-macos-lipo: NNUE_NET = \((shell grep -oE 'nn-[0-9a-f]+\.nnue'\)(CURDIR)/evaluate.h | head -1)
+macos-lipo: NNUE_NET = $(shell grep -oE 'nn-[0-9a-f]+\.nnue' $(CURDIR)/evaluate.h | head -1)
 macos-lipo:
 	@echo ""
 	@echo "Step 1/4. Building x86-64 slice (network shared from Apple-silicon slice) ..."
-	CXXFLAGS="-arch x86_64" \((MAKE) build ARCH=x86-64-universal COMP=\)(COMP) MACOS_X86_SLICE=1
-	mv \((EXE)\)(EXE)-x86_64
+	CXXFLAGS="-arch x86_64" $(MAKE) build ARCH=x86-64-universal COMP=$(COMP) MACOS_X86_SLICE=1
+	mv $(EXE) $(EXE)-x86_64
 	@echo ""
 	@echo "Step 2/4. Building Apple silicon slice ..."
-	\((MAKE) profile-build ARCH=apple-silicon COMP=\)(COMP)
-	mv \((EXE)\)(EXE)-arm64
+	$(MAKE) profile-build ARCH=apple-silicon COMP=$(COMP)
+	mv $(EXE) $(EXE)-arm64
 	@echo ""
 	@echo "Step 3/4. Combining slices and locating the embedded network ..."
-	lipo -create \((EXE)-x86_64\)(EXE)-arm64 -output $(EXE)
-	\((SHELL) universal/patch_x86_slice.sh\)(EXE) \((EXE)-x86_64\)(NNUE_NET)
+	lipo -create $(EXE)-x86_64 $(EXE)-arm64 -output $(EXE)
+	$(SHELL) universal/patch_x86_slice.sh $(EXE) $(EXE)-x86_64 $(NNUE_NET)
 	@echo ""
 	@echo "Step 4/4. Re-combining slices with the patched x86-64 slice ..."
-	lipo -create \((EXE)-x86_64\)(EXE)-arm64 -output $(EXE)
-	@rm -f \((EXE)-x86_64\)(EXE)-arm64
+	lipo -create $(EXE)-x86_64 $(EXE)-arm64 -output $(EXE)
+	@rm -f $(EXE)-x86_64 $(EXE)-arm64
 	@echo "Universal macOS binary built: $(EXE)"
 
 ifeq ($(TARGET_KERNEL),Darwin)
@@ -1092,52 +1092,52 @@ ifeq ($(arch),armv8)
   ASM_FLAGS := -mcpu=neoverse-v2
 endif
 
-MODNAME := \((subst -,_,\)(notdir $(CURDIR)))
+MODNAME := $(subst -,_,$(notdir $(CURDIR)))
 
 universal-object-pgo: objclean profileclean universalclean
 	@echo ""
 	@echo "Step 1/4. Building instrumented executable ..."
-	\((MAKE) ARCH=\)(ARCH) COMP=\((COMP) ENV_LDFLAGS='\)(ENV_LDFLAGS) \((NNUE_EMBED_OBJ)'\)(profile_make)
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) ENV_LDFLAGS='$(ENV_LDFLAGS) $(NNUE_EMBED_OBJ)' $(profile_make)
 	@echo ""
 	@echo "Step 2/4. Running benchmark for pgo-build ..."
 	$(PGOBENCH) > PGOBENCH.out 2>&1
 	tail -n 4 PGOBENCH.out
 	@echo ""
 	@echo "Step 3/4. Building optimized object files ..."
-	\((MAKE) ARCH=\)(ARCH) COMP=$(COMP) objclean
-	\((MAKE) ARCH=\)(ARCH) COMP=\((COMP) ENV_LDFLAGS='\)(SAVE_TEMPS) \((NNUE_EMBED_OBJ)'\)(profile_use)
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) objclean
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) ENV_LDFLAGS='$(SAVE_TEMPS) $(NNUE_EMBED_OBJ)' $(profile_use)
 	@echo ""
 ifeq ($(use_lto_emit_asm),yes)
 	@echo "Step 4/4. Renaming ctors and extracting LTO-optimized relocatable object ..."
 	awk -v MODNAME=$(MODNAME) -f ../../universal/rewrite_asm_sections.awk *.lto.s > renamed.s
-	\((CXX) -c renamed.s -o shashchess.o\)(ASM_FLAGS)
+	$(CXX) -c renamed.s -o shashchess.o $(ASM_FLAGS)
 else
 	@echo "Step 4/4. Extracting LTO-optimized relocatable object ..."
-	cp "\((basename\)(EXE))$(LTO_OBJ_SUFFIX)" shashchess.o
+	cp "$(basename $(EXE))$(LTO_OBJ_SUFFIX)" shashchess.o
 endif
 
 universal-object-nopgo: objclean universalclean
-	\((MAKE) ARCH=\)(ARCH) COMP=\((COMP) ENV_LDFLAGS='\)(SAVE_TEMPS) $(NNUE_EMBED_OBJ)' all
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) ENV_LDFLAGS='$(SAVE_TEMPS) $(NNUE_EMBED_OBJ)' all
 ifeq ($(use_lto_emit_asm),yes)
 	awk -v MODNAME=$(MODNAME) -f ../../universal/rewrite_asm_sections.awk *.lto.s > renamed.s
-	\((CXX) -c renamed.s -o shashchess.o\)(ASM_FLAGS)
+	$(CXX) -c renamed.s -o shashchess.o $(ASM_FLAGS)
 else
-	cp "\((basename\)(EXE))$(LTO_OBJ_SUFFIX)" shashchess.o
+	cp "$(basename $(EXE))$(LTO_OBJ_SUFFIX)" shashchess.o
 endif
 
 strip:
-	\((STRIP)\)(EXE)
+	$(STRIP) $(EXE)
 
 install:
 	-mkdir -p -m 755 $(BINDIR)
-	-cp \((EXE)\)(BINDIR)
-	\((STRIP)\)(BINDIR)/$(EXE)
+	-cp $(EXE) $(BINDIR)
+	$(STRIP) $(BINDIR)/$(EXE)
 
 clean: objclean profileclean universalclean
 	@rm -f .depend *~ core
 
 objclean:
-	@rm -f shashchess shashchess.exe *.o ./syzygy/*.o ./nnue/*.o ./nnue/features/*.o ./book/*.o ./book/polyglot/*.o ./book/ctg/*.o ./learn/*.o ./livebook/*.o ./livebook/analysis/*.o ./livebook/json/*.o ./shashin/*.o ./wdl/*.o \((BUILD_SHA_FILE)\)(BUILD_DATE_FILE) $(BUILD_DIFFINDEX_FILE)
+	@rm -f shashchess shashchess.exe *.o ./syzygy/*.o ./nnue/*.o ./nnue/features/*.o ./book/*.o ./book/polyglot/*.o ./book/ctg/*.o ./learn/*.o ./livebook/*.o ./livebook/analysis/*.o ./livebook/json/*.o ./shashin/*.o ./wdl/*.o $(BUILD_SHA_FILE) $(BUILD_DATE_FILE) $(BUILD_DIFFINDEX_FILE)
 
 profileclean:
 	@rm -rf profdir
@@ -1157,7 +1157,7 @@ net:
 	@$(SHELL) ../scripts/net.sh
 
 format:
-	\((CLANG-FORMAT) -i\)(SRCS) \((OTHER_SRCS)\)(HEADERS) -style=file
+	$(CLANG-FORMAT) -i $(SRCS) $(OTHER_SRCS) $(HEADERS) -style=file
 
 ### ==========================================================================
 ### Section 5. Private Targets
@@ -1205,91 +1205,91 @@ config-sanity: net
 	echo "" && \
 	echo "Testing config sanity. If this fails, try 'make help' ..." && \
 	echo "" && \
-	(test "\((debug)" = "yes" || test "\)(debug)" = "no") && \
-	(test "\((optimize)" = "yes" || test "\)(optimize)" = "no") && \
+	(test "$(debug)" = "yes" || test "$(debug)" = "no") && \
+	(test "$(optimize)" = "yes" || test "$(optimize)" = "no") && \
 	(test "$(SUPPORTED_ARCH)" = "true") && \
-	(test "\((arch)" = "any" || test "\)(arch)" = "x86_64" || test "$(arch)" = "i386" || \
-	 test "\((arch)" = "ppc64" || test "\)(arch)" = "ppc" || test "$(arch)" = "e2k" || \
-	 test "\((arch)" = "armv7" || test "\)(arch)" = "armv8" || test "$(arch)" = "arm64" || \
-	 test "\((arch)" = "riscv64" || test "\)(arch)" = "loongarch64" || \
+	(test "$(arch)" = "any" || test "$(arch)" = "x86_64" || test "$(arch)" = "i386" || \
+	 test "$(arch)" = "ppc64" || test "$(arch)" = "ppc" || test "$(arch)" = "e2k" || \
+	 test "$(arch)" = "armv7" || test "$(arch)" = "armv8" || test "$(arch)" = "arm64" || \
+	 test "$(arch)" = "riscv64" || test "$(arch)" = "loongarch64" || \
 	 test "$(arch)" = "wasm32") && \
-	(test "\((bits)" = "32" || test "\)(bits)" = "64") && \
-	(test "\((prefetch)" = "yes" || test "\)(prefetch)" = "no") && \
-	(test "\((popcnt)" = "yes" || test "\)(popcnt)" = "no") && \
-	(test "\((pext)" = "yes" || test "\)(pext)" = "no") && \
-	(test "\((sse)" = "yes" || test "\)(sse)" = "no") && \
-	(test "\((mmx)" = "yes" || test "\)(mmx)" = "no") && \
-	(test "\((sse2)" = "yes" || test "\)(sse2)" = "no") && \
-	(test "\((ssse3)" = "yes" || test "\)(ssse3)" = "no") && \
-	(test "\((sse41)" = "yes" || test "\)(sse41)" = "no") && \
-	(test "\((avx2)" = "yes" || test "\)(avx2)" = "no") && \
-	(test "\((avx512)" = "yes" || test "\)(avx512)" = "no") && \
-	(test "\((vnni512)" = "yes" || test "\)(vnni512)" = "no") && \
-	(test "\((avx512icl)" = "yes" || test "\)(avx512icl)" = "no") && \
-	(test "\((altivec)" = "yes" || test "\)(altivec)" = "no") && \
-	(test "\((vsx)" = "yes" || test "\)(vsx)" = "no") && \
-	(test "\((neon)" = "yes" || test "\)(neon)" = "no") && \
-	(test "\((lsx)" = "yes" || test "\)(lsx)" = "no") && \
-	(test "\((lasx)" = "yes" || test "\)(lasx)" = "no") && \
-	(test "\((syzygy)" = "yes" || test "\)(syzygy)" = "no") && \
-	(test "\((comp)" = "gcc" || test "\)(comp)" = "icx" || test "$(comp)" = "mingw" || \
-	 test "\((comp)" = "clang" || test "\)(comp)" = "armv7a-linux-androideabi16-clang" || \
+	(test "$(bits)" = "32" || test "$(bits)" = "64") && \
+	(test "$(prefetch)" = "yes" || test "$(prefetch)" = "no") && \
+	(test "$(popcnt)" = "yes" || test "$(popcnt)" = "no") && \
+	(test "$(pext)" = "yes" || test "$(pext)" = "no") && \
+	(test "$(sse)" = "yes" || test "$(sse)" = "no") && \
+	(test "$(mmx)" = "yes" || test "$(mmx)" = "no") && \
+	(test "$(sse2)" = "yes" || test "$(sse2)" = "no") && \
+	(test "$(ssse3)" = "yes" || test "$(ssse3)" = "no") && \
+	(test "$(sse41)" = "yes" || test "$(sse41)" = "no") && \
+	(test "$(avx2)" = "yes" || test "$(avx2)" = "no") && \
+	(test "$(avx512)" = "yes" || test "$(avx512)" = "no") && \
+	(test "$(vnni512)" = "yes" || test "$(vnni512)" = "no") && \
+	(test "$(avx512icl)" = "yes" || test "$(avx512icl)" = "no") && \
+	(test "$(altivec)" = "yes" || test "$(altivec)" = "no") && \
+	(test "$(vsx)" = "yes" || test "$(vsx)" = "no") && \
+	(test "$(neon)" = "yes" || test "$(neon)" = "no") && \
+	(test "$(lsx)" = "yes" || test "$(lsx)" = "no") && \
+	(test "$(lasx)" = "yes" || test "$(lasx)" = "no") && \
+	(test "$(syzygy)" = "yes" || test "$(syzygy)" = "no") && \
+	(test "$(comp)" = "gcc" || test "$(comp)" = "icx" || test "$(comp)" = "mingw" || \
+	 test "$(comp)" = "clang" || test "$(comp)" = "armv7a-linux-androideabi16-clang" || \
 	 test "$(comp)" = "aarch64-linux-android21-clang")
 
-\((EXE):\)(OBJS)
-	+\((CXX) -o\)@ \((OBJS)\)(LDFLAGS)
+$(EXE): $(OBJS)
+	+$(CXX) -o $@ $(OBJS) $(LDFLAGS)
 
 %.o: %.cpp
-	\((strip\)(CXX) \((CPPFLAGS)\)(CXXFLAGS)) -c -o \(@\)<
+	$(strip $(CXX) $(CPPFLAGS) $(CXXFLAGS)) -c -o $@ <
 
-misc.o: misc.cpp \((BUILD_SHA_FILE)\)(BUILD_DATE_FILE) $(BUILD_DIFFINDEX_FILE)
-	\((strip\)(CXX) \((CPPFLAGS)\)(CXXFLAGS) \((if\)(GIT_SHA),-DGIT_SHA=\((GIT_SHA))\)(if \((GIT_DATE),-DGIT_DATE=\)(GIT_DATE))) \((if\)(GIT_DIFFINDEX),-DGIT_DIFFINDEX=\((GIT_DIFFINDEX)) -c -o\)@ $<
+misc.o: misc.cpp $(BUILD_SHA_FILE) $(BUILD_DATE_FILE) $(BUILD_DIFFINDEX_FILE)
+	$(strip $(CXX) $(CPPFLAGS) $(CXXFLAGS) $(if $(GIT_SHA),-DGIT_SHA=$(GIT_SHA)) $(if $(GIT_DATE),-DGIT_DATE=$(GIT_DATE))) $(if $(GIT_DIFFINDEX),-DGIT_DIFFINDEX=$(GIT_DIFFINDEX)) -c -o $@ <
 
 clang-profile-make:
-	\((MAKE) ARCH=\)(ARCH) COMP=$(COMP) \
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
 	EXTRACXXFLAGS='-fprofile-generate ' \
 	EXTRALDFLAGS=' -fprofile-generate' \
 	all
 
 clang-profile-use:
-	\((XCRUN)\)(LLVM_PROFDATA) merge -output=shashchess.profdata *.profraw
-	\((MAKE) ARCH=\)(ARCH) COMP=$(COMP) \
+	$(XCRUN) $(LLVM_PROFDATA) merge -output=shashchess.profdata *.profraw
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
 	EXTRACXXFLAGS='-fprofile-use=shashchess.profdata' \
 	EXTRALDFLAGS='-fprofile-use ' \
 	all
 
 gcc-profile-make:
 	@mkdir -p profdir
-	\((MAKE) ARCH=\)(ARCH) COMP=$(COMP) \
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
 	EXTRACXXFLAGS='-fprofile-generate=profdir' \
 	EXTRACXXFLAGS+=$(EXTRAPROFILEFLAGS) \
 	EXTRALDFLAGS='-lgcov' \
 	all
 
 gcc-profile-use:
-	\((MAKE) ARCH=\)(ARCH) COMP=$(COMP) \
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
 	EXTRACXXFLAGS='-fprofile-use=profdir -fno-peel-loops -fno-tracer' \
 	EXTRACXXFLAGS+=$(EXTRAPROFILEFLAGS) \
 	EXTRALDFLAGS='-lgcov' \
 	all
 
 icx-profile-make:
-	\((MAKE) ARCH=\)(ARCH) COMP=$(COMP) \
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
 	EXTRACXXFLAGS='-fprofile-instr-generate ' \
 	EXTRALDFLAGS=' -fprofile-instr-generate' \
 	all
 
 icx-profile-use:
-	\((XCRUN)\)(LLVM_PROFDATA) merge -output=shashchess.profdata *.profraw
-	\((MAKE) ARCH=\)(ARCH) COMP=$(COMP) \
+	$(XCRUN) $(LLVM_PROFDATA) merge -output=shashchess.profdata *.profraw
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
 	EXTRACXXFLAGS='-fprofile-instr-use=shashchess.profdata' \
 	EXTRALDFLAGS='-fprofile-use ' \
 	all
 
 .depend: $(SRCS)
-	-@\((CXX)\)(DEPENDFLAGS) -MM \((SRCS) >\)@ 2</dev/null
+	-@$(CXX) $(DEPENDFLAGS) -MM $(SRCS) > $@ 2</dev/null
 
-ifeq (, \((filter\)(MAKECMDGOALS), help strip install clean net objclean profileclean format config-sanity))
+ifeq (, $(filter $(MAKECMDGOALS), help strip install clean net objclean profileclean format config-sanity))
 ifeq ($(UNIVERSAL_BUILD),false)
 -include .depend
 endif
@@ -1300,7 +1300,7 @@ endif
 ### ==========================================================================
 
 TEMP_DIR             := $(CURDIR)/temp_builds
-UNIVERSAL_EXE        := \((CURDIR)/\)(EXE)
+UNIVERSAL_EXE        := $(CURDIR)/$(EXE)
 
 ifeq ($(UNIVERSAL_BUILD),true)
 
@@ -1326,10 +1326,10 @@ else
   BASELINE_ARCH := armv8
 endif
 
-TRACKED_TOP := \((sort\)(foreach f,\((SRCS)\)(HEADERS) Makefile incbin,\((firstword\)(subst /, ,$(f)))))
+TRACKED_TOP := $(sort $(foreach f,$(SRCS) $(HEADERS) Makefile incbin,$(firstword $(subst /, ,$(f)))))
 
-ARCH_OBJS := \((TEMP_DIR)/\)(BASELINE_ARCH)/shashchess.o \
-             \((patsubst %,\)(TEMP_DIR)/%/shashchess.o,\((filter-out\)(BASELINE_ARCH),$(UNIVERSAL_ARCHES)))
+ARCH_OBJS := $(TEMP_DIR)/$(BASELINE_ARCH)/shashchess.o \
+             $(patsubst %,$(TEMP_DIR)/%/shashchess.o,$(filter-out $(BASELINE_ARCH),$(UNIVERSAL_ARCHES)))
 
 UNIVERSAL_FINAL_FLAGS := -fno-exceptions -Os \
 			 -Wno-c++26-extensions -Wno-c23-extensions
@@ -1350,20 +1350,20 @@ else
   endif
 endif
 
-arch-suffix     = \((subst -,_,\)(1))
-arch-namespace  = ShashChess_\((call arch-suffix,\)(1))
-arch-mangled    = _ZN\((shell printf %s '\)(call arch-namespace,\((1))' | wc -c | tr -d ' ')\)(call arch-namespace,$(1))4mainEiPPc
-arch-mac-section = _i_\((subst -,_,\)(patsubst x86-64,,\((patsubst x86-64-%,%,\)(1))))
+arch-suffix     = $(subst -,_,$(1))
+arch-namespace  = ShashChess_$(call arch-suffix,$(1))
+arch-mangled    = _ZN$(shell printf %s '$(call arch-namespace,$(1))' | wc -c | tr -d ' ')$(call arch-namespace,$(1))4mainEiPPc
+arch-mac-section = _i_$(subst -,_,$(patsubst x86-64,,$(patsubst x86-64-%,%,$(1))))
 
 ifeq ($(TARGET_KERNEL),Darwin)
-  arch-defmain = -Wl,-alias,_\((call arch-mangled,\)(1)),_main
-else ifeq (\((target_windows)+\)(COMP),yes+clang)
+  arch-defmain = -Wl,-alias,_$(call arch-mangled,$(1)),_main
+else ifeq ($(target_windows)+$(COMP),yes+clang)
   arch-defmain = -DUNIVERSAL_NEEDS_MAIN_SHIM
 else
-  arch-defmain = -Wl,--defsym=main=\((call arch-mangled,\)(1))
+  arch-defmain = -Wl,--defsym=main=$(call arch-mangled,$(1))
 endif
 
-EMBED_DIR_SUPPORTED := \((shell echo 'int main(){}' |\)(CXX) -x c++ --embed-dir=. -o /dev/null -c - 2</dev/null && echo 1 || echo 0)
+EMBED_DIR_SUPPORTED := $(shell echo 'int main(){}' | $(CXX) -x c++ --embed-dir=. -o /dev/null -c - 2</dev/null && echo 1 || echo 0)
 ifeq ($(EMBED_DIR_SUPPORTED),1)
   EMBED_DIR = --embed-dir=$(CURDIR)
 endif
@@ -1372,8 +1372,8 @@ ifeq ($(MACOS_X86_SLICE),1)
   SLICE_DEF := -DUNIVERSAL_BINARY_MACOS_X86_SLICE
 endif
 
-arch-cxxflags   = \((EMBED_DIR) -DShashChess=\)(call arch-namespace,\((1)) -DUNIVERSAL_BINARY\)(SLICE_DEF) \
-                  \((call arch-defmain,\)(1)) -Wno-c++26-extensions -Wno-c23-extensions
+arch-cxxflags   = $(EMBED_DIR) -DShashChess=$(call arch-namespace,$(1)) -DUNIVERSAL_BINARY $(SLICE_DEF) \
+                  $(call arch-defmain,$(1)) -Wno-c++26-extensions -Wno-c23-extensions
 
 UOBJ_TGT ?= universal-object-pgo
 ifeq ($(COMP),clang)
@@ -1391,45 +1391,45 @@ profile-build: $(UNIVERSAL_EXE)
 $(TEMP_DIR):
 	@mkdir -p $@
 
-\((NET_SENTINEL): |\)(TEMP_DIR)
-	@cd \((CURDIR) &&\)(SHELL) ../scripts/net.sh $(EMBED_DIR_SUPPORTED)
+$(NET_SENTINEL): | $(TEMP_DIR)
+	@$(shell cd $(CURDIR) && $(SHELL) ../scripts/net.sh $(EMBED_DIR_SUPPORTED))
 	@touch $@
 
-\((NNUE_EMBED_OBJ):\)(UNIVERSAL_SRC_DIR)/nnue_embed.cpp \((NET_SENTINEL) |\)(TEMP_DIR)
-	\((CXX) -O2 -std=c++20 -Wno-c++26-extensions\)(SLICE_DEF) \((mac_target_flags)\)(EXTRACXXFLAGS) \((EMBED_DIR) -c\)< -o $@
+$(NNUE_EMBED_OBJ): $(UNIVERSAL_SRC_DIR)/nnue_embed.cpp $(NET_SENTINEL) | $(TEMP_DIR)
+	$(CXX) -O2 -std=c++20 -Wno-c++26-extensions $(SLICE_DEF) $(mac_target_flags) $(EXTRACXXFLAGS) $(EMBED_DIR) -c < -o $@
 
-\((UNIVERSAL_ENTRY_OBJ):\)(UNIVERSAL_ENTRY_SRC) | $(TEMP_DIR)
-	\((CXX) -O2 -std=c++20\)(mac_target_flags) \((EXTRACXXFLAGS) -c\)< -o $@
+$(UNIVERSAL_ENTRY_OBJ): $(UNIVERSAL_ENTRY_SRC) | $(TEMP_DIR)
+	$(CXX) -O2 -std=c++20 $(mac_target_flags) $(EXTRACXXFLAGS) -c < -o $@
 
-\((TEMP_DIR)/%/.setup: |\)(TEMP_DIR)
-	@rm -rf \((TEMP_DIR)/\)*
-	@mkdir -p \((TEMP_DIR)/\)*
-	@\((foreach f,\)(TRACKED_TOP),ln -s \((CURDIR)/\)(f) \((TEMP_DIR)/\)*/$(f);)
+$(TEMP_DIR)/%/.setup: | $(TEMP_DIR)
+	@rm -rf $(TEMP_DIR)/$*
+	@mkdir -p $(TEMP_DIR)/$*
+	@$(foreach f,$(TRACKED_TOP),ln -s $(CURDIR)/$(f) $(TEMP_DIR)/$*/$(f);)
 	@touch $@
 
-.SECONDARY: \((patsubst %,\)(TEMP_DIR)/%/.setup,$(UNIVERSAL_ARCHES))
+.SECONDARY: $(patsubst %,$(TEMP_DIR)/%/.setup,$(UNIVERSAL_ARCHES))
 
-\((TEMP_DIR)/%/shashchess.o:\)(TEMP_DIR)/%/.setup \((NNUE_EMBED_OBJ)\)(NET_SENTINEL)
-	+ENV_CXXFLAGS='\((ENV_CXXFLAGS)\)(call arch-cxxflags,$*)' \
-	    \((MAKE) -C\)(TEMP_DIR)/\(*\)(UOBJ_TGT) \
-	        ARCH=\(* CXX=\)(CXX) COMP=$(COMP) \
+$(TEMP_DIR)/%/shashchess.o: $(TEMP_DIR)/%/.setup $(NNUE_EMBED_OBJ) $(NET_SENTINEL)
+	+ENV_CXXFLAGS='$(ENV_CXXFLAGS) $(call arch-cxxflags,$*)' \
+	    $(MAKE) -C $(TEMP_DIR)/$* $(UOBJ_TGT) \
+	        ARCH=$* CXX=$(CXX) COMP=$(COMP) \
 	        NNUE_EMBED_OBJ=$(NNUE_EMBED_OBJ)
 ifeq ($(TARGET_KERNEL),Darwin)
-	ld -r -rename_section __DATA __mod_init_func __DATA \((call arch-mac-section,\)*) \(@ -o\)@.tmp
-	mv \(@.tmp\)@
+	ld -r -rename_section __DATA __mod_init_func __DATA $(call arch-mac-section,$*) $@ -o $@.tmp
+	mv $@.tmp $@
 else
-	\((OBJCOPY) -R .group\)@
+	$(OBJCOPY) -R .group $@
 ifeq ($(use_lto_emit_asm),yes)
-	\((OBJCOPY) -N main\)@
+	$(OBJCOPY) -N main $@
 else
-	\((OBJCOPY) --rename-section .init_array=\)(call arch-suffix,\(*)_init\)@
-	\((OBJCOPY) --rename-section .ctors=\)(call arch-suffix,\(*)_init\)@
-	\((OBJCOPY) --set-section-flags\)(call arch-suffix,\(*)_init=alloc,data\)@
+	$(OBJCOPY) --rename-section .init_array=$(call arch-suffix,$*)_init $@
+	$(OBJCOPY) --rename-section .ctors=$(call arch-suffix,$*)_init $@
+	$(OBJCOPY) --set-section-flags $(call arch-suffix,$*)_init=alloc,data $@
 endif
 endif
 
-\((UNIVERSAL_EXE):\)(UNIVERSAL_ENTRY_OBJ) \((NNUE_EMBED_OBJ)\)(ARCH_OBJS)
-	\((CXX) -o\)@ \((UNIVERSAL_ENTRY_OBJ)\)(NNUE_EMBED_OBJ) \((ARCH_OBJS)\)(UNIVERSAL_FINAL_FLAGS) $(EXTRALDFLAGS)
+$(UNIVERSAL_EXE): $(UNIVERSAL_ENTRY_OBJ) $(NNUE_EMBED_OBJ) $(ARCH_OBJS)
+	$(CXX) -o $@ $(UNIVERSAL_ENTRY_OBJ) $(NNUE_EMBED_OBJ) $(ARCH_OBJS) $(UNIVERSAL_FINAL_FLAGS) $(EXTRALDFLAGS)
 	@echo "Universal binary built: $@"
 
 endif  # UNIVERSAL_BUILD

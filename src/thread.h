@@ -226,11 +226,11 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
                                           : std::make_unique<Search::NullSearchManager>();
 
                 auto binder = doBindThreads ? OptionalThreadToNumaNodeBinder(numaConfig, numaId)
-                                            : OptionalThreadToNumaNodeBinder(numaId);
+                                                       : OptionalThreadToNumaNodeBinder(numaId);
 
                 threads.emplace_back(std::make_unique<Thread>(sharedState, std::move(manager),
-                                                              threadId, counts[numaId]++,
-                                                              threadsPerNode[numaId], binder));
+                                                                         threadId, counts[numaId]++,
+                                                                         threadsPerNode[numaId], binder));
             };
 
             if (doBindThreads)
@@ -330,8 +330,9 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
         th->run_custom_job([&]() {
             th->worker->limits = limits;
             // [SC:shashin-crystal] begin
-            th->worker->nodes = th->worker->tbHits = th->worker->nmpGuard = th->worker->nmpMinPly = th->worker->bestMoveChanges = 0;
-            th->worker->nmpSide                                = 0;
+            th->worker->nodes = th->worker->tbHits = th->worker->nmpGuard = th->worker->nmpMinPly =
+              th->worker->bestMoveChanges                                 = 0;
+            th->worker->nmpSide                                           = 0;
             // [SC:shashin-crystal] end
             th->worker->rootDepth = th->worker->completedDepth = 0;
             th->worker->rootMoves                              = rootMoves;

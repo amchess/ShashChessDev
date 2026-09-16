@@ -65,9 +65,12 @@ void TimeManagement::init(Search::LimitsType& limits,
         return;
     }
 
-    TimePoint minThinkingTime = options.count("Minimum Thinking Time") ? TimePoint(options["Minimum Thinking Time"]) : TimePoint(1);
-    TimePoint moveOverhead     = TimePoint(options["Move Overhead"]);
-    TimePoint slowMover        = options.count("Slow Mover") ? TimePoint(options["Slow Mover"]) : TimePoint(100);
+    TimePoint minThinkingTime = options.count("Minimum Thinking Time")
+                                ? TimePoint(options["Minimum Thinking Time"])
+                                : TimePoint(1);
+    TimePoint moveOverhead    = TimePoint(options["Move Overhead"]);
+    TimePoint slowMover =
+      options.count("Slow Mover") ? TimePoint(options["Slow Mover"]) : TimePoint(100);
 
     // optScale is a percentage of available time to use for the current move.
     // maxScale is a multiplier applied to optimumTime.

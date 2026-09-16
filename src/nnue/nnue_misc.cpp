@@ -209,7 +209,7 @@ trace(Position& pos, const Eval::NNUE::Network& network, Eval::NNUE::Accumulator
             Value eval_ghost             = psqt_ghost + pos_ghost;
             eval_ghost                   = stm == WHITE ? eval_ghost : -eval_ghost;
 
-            int wp_ghost = WDLModel::get_win_probability(eval_ghost, pos);
+            int wp_ghost    = WDLModel::get_win_probability(eval_ghost, pos);
             int improvement = (stm == WHITE) ? (wp_ghost - wp_base) : (wp_base - wp_ghost);
             if (improvement > 0)
             {
@@ -251,12 +251,11 @@ trace(Position& pos, const Eval::NNUE::Network& network, Eval::NNUE::Accumulator
                     pos.remove_piece(sqA);
                     pos.remove_piece(sqB);
                     accumulators->reset();
-                    auto [psqt_both, pos_both] =
-                      network.evaluate(pos, *accumulators, caches);
-                    Value eval_both = psqt_both + pos_both;
-                    eval_both       = stm == WHITE ? eval_both : -eval_both;
+                    auto [psqt_both, pos_both] = network.evaluate(pos, *accumulators, caches);
+                    Value eval_both            = psqt_both + pos_both;
+                    eval_both                  = stm == WHITE ? eval_both : -eval_both;
 
-                    int wp_both = WDLModel::get_win_probability(eval_both, pos);
+                    int wp_both   = WDLModel::get_win_probability(eval_both, pos);
                     int deltaBoth = (stm == WHITE) ? (wp_base - wp_both) : (wp_both - wp_base);
                     pos.put_piece(pcA, sqA);
                     pos.put_piece(pcB, sqB);

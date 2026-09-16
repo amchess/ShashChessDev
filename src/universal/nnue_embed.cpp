@@ -39,7 +39,7 @@ extern const volatile ShashChess::u64 gUniversalNNUEOffset = 0xCAFE0FF5E70FF5E7U
 extern const volatile ShashChess::u64 gUniversalNNUESize   = 0xCAFE512ECAFE512EULL;
 
 static const unsigned char* map_embedded_nnue() {
-    char           path[PATH_MAX];
+    char            path[PATH_MAX];
     ShashChess::u32 len = sizeof(path);
     if (_NSGetExecutablePath(path, &len) != 0)
         return nullptr;

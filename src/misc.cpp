@@ -583,9 +583,7 @@ std::string CommandLine::get_binary_directory(std::string argv0, std::string wor
 
 fs::path CommandLine::get_working_directory_fs() { return std::filesystem::current_path(); }
 
-std::string CommandLine::get_working_directory() {
-    return get_working_directory_fs().string();
-}
+std::string CommandLine::get_working_directory() { return get_working_directory_fs().string(); }
 
 void set_console_utf8() {
 #ifdef _WIN32

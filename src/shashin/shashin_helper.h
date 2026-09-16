@@ -37,9 +37,8 @@ constexpr auto to_underlying(E e) noexcept
 // =============================================
 
 // Verifica se 'value' è compreso tra 'lower' e 'upper' (inclusi)
-inline constexpr bool isInRange(ShashinPosition value, 
-                                ShashinPosition lower, 
-                                ShashinPosition upper) {
+inline constexpr bool
+isInRange(ShashinPosition value, ShashinPosition lower, ShashinPosition upper) {
     auto v = to_underlying(value);
     auto l = to_underlying(lower);
     auto u = to_underlying(upper);

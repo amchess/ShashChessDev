@@ -370,8 +370,7 @@ void UCIEngine::bench(std::istream& args) {
     dbg_print();
 
     std::cerr << "\n==========================="
-              << "\nTotal time (ms) : " << elapsed
-              << "\nNodes searched  : " << nodes
+              << "\nTotal time (ms) : " << elapsed << "\nNodes searched  : " << nodes
               << "\nNodes/second    : " << 1000 * nodes / elapsed << std::endl;
 
     engine.set_on_update_full([&](const auto& i) { on_update_full(i, options["UCI_ShowWDL"]); });
@@ -430,9 +429,9 @@ void UCIEngine::benchmark(std::istream& args) {
 
     cnt = 1;
 
-    int           numHashfullReadings = 0;
-    constexpr int hashfullAges[]      = {0, 999};
-    constexpr int hashfullAgeCount    = std::size(hashfullAges);
+    int           numHashfullReadings             = 0;
+    constexpr int hashfullAges[]                  = {0, 999};
+    constexpr int hashfullAgeCount                = std::size(hashfullAges);
     int           totalHashfull[hashfullAgeCount] = {0};
     int           maxHashfull[hashfullAgeCount]   = {0};
 
@@ -506,9 +505,7 @@ void UCIEngine::benchmark(std::istream& args) {
         threadBinding = "none";
 
     std::cerr << "==========================="
-              << "\nVersion                    : "
-              << engine_version_info()
-              << compiler_info()
+              << "\nVersion                    : " << engine_version_info() << compiler_info()
               << "Large pages                : " << (has_large_pages() ? "yes" : "no")
               << "\nUser invocation            : " << BenchmarkCommand << " "
               << setup.originalInvocation << "\nFilled invocation          : " << BenchmarkCommand
@@ -665,9 +662,7 @@ void UCIEngine::on_update_full(const Engine::InfoFull& info, bool showWDL) {
     std::stringstream ss;
 
     ss << "info";
-    ss << " depth " << info.depth
-       << " seldepth " << info.selDepth
-       << " multipv " << info.multiPV
+    ss << " depth " << info.depth << " seldepth " << info.selDepth << " multipv " << info.multiPV
        << " score " << format_score(info.score);
 
     if (!info.bound.empty())
@@ -676,12 +671,8 @@ void UCIEngine::on_update_full(const Engine::InfoFull& info, bool showWDL) {
     if (showWDL)
         ss << " wdl " << info.wdl;
 
-    ss << " nodes " << info.nodes
-       << " nps " << info.nps
-       << " hashfull " << info.hashfull
-       << " tbhits " << info.tbHits
-       << " time " << info.timeMs
-       << " pv " << info.pv;
+    ss << " nodes " << info.nodes << " nps " << info.nps << " hashfull " << info.hashfull
+       << " tbhits " << info.tbHits << " time " << info.timeMs << " pv " << info.pv;
 
     sync_cout << ss.str() << sync_endl;
 }
@@ -690,9 +681,8 @@ void UCIEngine::on_iter(const Engine::InfoIter& info) {
     std::stringstream ss;
 
     ss << "info";
-    ss << " depth " << info.depth
-       << " currmove " << info.currmove
-       << " currmovenumber " << info.currmovenumber;
+    ss << " depth " << info.depth << " currmove " << info.currmove << " currmovenumber "
+       << info.currmovenumber;
 
     sync_cout << ss.str() << sync_endl;
 }

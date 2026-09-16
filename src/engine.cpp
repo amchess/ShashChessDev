@@ -87,12 +87,12 @@ static constexpr std::array<int, 16> lmrDivisor = {3637, 2787, 2761, 2939, 3171,
 
 namespace TB = Tablebases;
 
-void syzygy_extend_pv(const OptionsMap&            options,
-                      const Search::LimitsType&    limits,
+void syzygy_extend_pv(const OptionsMap&             options,
+                      const Search::LimitsType&     limits,
                       ShashChess::Position&         pos,
                       ShashChess::Search::RootMove& rootMove,
-                      Value&                       v,
-                      const usize                  multiPV);
+                      Value&                        v,
+                      const usize                   multiPV);
 
 using namespace Search;
 
@@ -151,7 +151,7 @@ void update_correction_history(const Position& pos,
 }
 
 Value value_draw(usize nodes) { return VALUE_DRAW - 1 + Value(nodes & 0x2); }
-int variety;
+int   variety;
 
 Value value_to_tt(Value v, int ply);
 Value value_from_tt(Value v, int ply, int r50c);
@@ -341,7 +341,7 @@ Search::Worker::Worker(SharedState&                    sharedState,
     numaTotal(numaTotalThreads),
     numaAccessToken(token),
     manager(std::move(sm)),
-    bookMan(sharedState.bookMan),    // from book management
+    bookMan(sharedState.bookMan),  // from book management
     options(sharedState.options),
     threads(sharedState.threads),
     tt(sharedState.tt),
@@ -355,9 +355,7 @@ Search::Worker::Worker(SharedState&                    sharedState,
 Search::Worker::~Worker() = default;
 ShashinManager& Worker::getShashinManager() { return *shashinManager; }
 
-void Search::Worker::ensure_network_replicated() {
-    (void) (network[numaAccessToken]);
-}
+void Search::Worker::ensure_network_replicated() { (void) (network[numaAccessToken]); }
 
 void Search::Worker::start_searching() {
 
@@ -441,7 +439,8 @@ void Search::Worker::start_searching() {
                 think = false;
                 for (auto&& th : threads)
                     std::swap(th->worker->rootMoves[0],
-                              *std::find(th->worker->rootMoves.begin(), th->worker->rootMoves.end(), bookMove));
+                              *std::find(th->worker->rootMoves.begin(), th->worker->rootMoves.end(),
+                                         bookMove));
             }
         }
 
@@ -454,11 +453,12 @@ void Search::Worker::start_searching() {
                 std::vector<Livebook::BaseLivebook*> livebooks;
 
                 const std::string& syzygyPath = static_cast<std::string>(options["SyzygyPath"]);
-                int totalUnits = rootPos.count<ALL_PIECES>();
+                int                totalUnits = rootPos.count<ALL_PIECES>();
 
                 if ((totalUnits <= 7)
                     && (syzygyPath.empty()
-                        || ((!syzygyPath.empty()) && ((int(options["SyzygyProbeLimit"]) < totalUnits)))))
+                        || ((!syzygyPath.empty())
+                            && ((int(options["SyzygyProbeLimit"]) < totalUnits)))))
                 {
                     livebooks = endgame_livebooks;
                 }
@@ -469,7 +469,8 @@ void Search::Worker::start_searching() {
 
                 for (const auto livebook : livebooks)
                 {
-                    if (std::vector<std::pair<std::string, Analysis>> output = livebook->lookup(rootPos);
+                    if (std::vector<std::pair<std::string, Analysis>> output =
+                          livebook->lookup(rootPos);
                         !output.empty())
                     {
                         std::string     uci;
@@ -497,10 +498,11 @@ void Search::Worker::start_searching() {
 
             if (bookMove && std::count(rootMoves.begin(), rootMoves.end(), bookMove))
             {
-                think = false;
+                think            = false;
                 auto best_thread = threads.get_best_thread()->worker.get();
                 std::swap(best_thread->rootMoves[0],
-                          *std::find(best_thread->rootMoves.begin(), best_thread->rootMoves.end(), bookMove));
+                          *std::find(best_thread->rootMoves.begin(), best_thread->rootMoves.end(),
+                                     bookMove));
             }
             else
             {
@@ -520,7 +522,8 @@ void Search::Worker::start_searching() {
             uciPvSent = iterative_deepening();
         }
 
-        while (!threads.stop && (main_manager()->ponder || limits.infinite)) {}
+        while (!threads.stop && (main_manager()->ponder || limits.infinite))
+        {}
         threads.stop = true;
         threads.wait_for_search_finished();
 
@@ -552,14 +555,16 @@ void Search::Worker::start_searching() {
 
                 if (LD.learning_mode() == LearningMode::Self)
                 {
-                    const LearningMove* existingMove = LD.probe_move(plm.key, plm.learningMove.move);
+                    const LearningMove* existingMove =
+                      LD.probe_move(plm.key, plm.learningMove.move);
                     if (existingMove)
                         plm.learningMove.score = existingMove->score;
                     QLearningMove qLearningMove;
                     qLearningMove.persistedLearningMove = plm;
                     const int qLearningMoveMaterial =
-                      rootPos.count<PAWN>() + 3 * rootPos.count<KNIGHT>() + 3 * rootPos.count<BISHOP>()
-                      + 5 * rootPos.count<ROOK>() + 9 * rootPos.count<QUEEN>();
+                      rootPos.count<PAWN>() + 3 * rootPos.count<KNIGHT>()
+                      + 3 * rootPos.count<BISHOP>() + 5 * rootPos.count<ROOK>()
+                      + 9 * rootPos.count<QUEEN>();
                     qLearningMove.materialClamp = std::clamp(qLearningMoveMaterial, 17, 78);
                     qLearningTrajectory.push_back(qLearningMove);
                 }
@@ -571,7 +576,8 @@ void Search::Worker::start_searching() {
             if (!enabledLearningProbe)
                 useLearning = false;
 
-            if (is_game_decided(rootPos, (bestThread->rootMoves[0].score)) && LD.is_enabled() && !LD.is_paused())
+            if (is_game_decided(rootPos, (bestThread->rootMoves[0].score)) && LD.is_enabled()
+                && !LD.is_paused())
             {
                 if (LD.learning_mode() == LearningMode::Self)
                     putQLearningTrajectoryIntoLearningTable();
@@ -624,8 +630,7 @@ bool Search::Worker::iterative_deepening() {
 
     for (int i = 7; i > 0; --i)
     {
-        (ss - i)->continuationHistory =
-          &continuationHistory[0][0][NO_PIECE][0];
+        (ss - i)->continuationHistory           = &continuationHistory[0][0][NO_PIECE][0];
         (ss - i)->continuationCorrectionHistory = &continuationCorrectionHistory[NO_PIECE][0];
         (ss - i)->staticEval                    = VALUE_NONE;
     }
@@ -652,7 +657,7 @@ bool Search::Worker::iterative_deepening() {
             mainThread->iterValue.fill(mainThread->bestPreviousScore);
     }
 
-    usize multiPV  = usize(options["MultiPV"]);
+    usize multiPV   = usize(options["MultiPV"]);
     antiDancingMode = bool(options["Anti Dancing Analysis"]);
 
     Skill skill(options["Skill Level"], options["UCI_LimitStrength"] ? int(options["UCI_Elo"]) : 0);
@@ -675,10 +680,10 @@ bool Search::Worker::iterative_deepening() {
 
     if (bool(options["MCTS by Shashin"]))
     {
-        bool maybeDraw = rootPos.rule50_count() >= 90 || rootPos.upcoming_repetition(2);
-        Value rootPosValue = localShashinManager.static_value(
-          network[numaAccessToken], accumulatorStack, refreshTable, rootPos, ss,
-          optimism[rootPos.side_to_move()]);
+        bool  maybeDraw = rootPos.rule50_count() >= 90 || rootPos.upcoming_repetition(2);
+        Value rootPosValue =
+          localShashinManager.static_value(network[numaAccessToken], accumulatorStack, refreshTable,
+                                           rootPos, ss, optimism[rootPos.side_to_move()]);
         bool isMCTSExplorationApplicable = localShashinManager.isMCTSExplorationApplicable();
         bool mctsExplore                 = options["MCTS Explore"]
                         && (isMCTSExplorationApplicable
@@ -693,7 +698,8 @@ bool Search::Worker::iterative_deepening() {
             if (monteCarlo)
             {
                 monteCarlo->search(threads, limits, is_mainthread(), this);
-                if ((this->threadIdx) == 1 && limits.infinite && threads.stop.load(std::memory_order_relaxed))
+                if ((this->threadIdx) == 1 && limits.infinite
+                    && threads.stop.load(std::memory_order_relaxed))
                     monteCarlo->print_children();
                 delete monteCarlo;
                 return uciPvSent;
@@ -739,7 +745,7 @@ bool Search::Worker::iterative_deepening() {
 
             selDepth = 0;
 
-            delta     = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 10193;
+            delta = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 10193;
 
             if (localShashinManager.isStrategical())
             {
@@ -1099,12 +1105,12 @@ Value Search::Worker::search(
     SearchedList capturesSearched;
     SearchedList quietsSearched;
 
-    ss->inCheck   = pos.checkers();
-    priorCapture  = pos.captured_piece();
-    Color us      = pos.side_to_move();
-    ss->moveCount = 0;
-    bestValue     = -VALUE_INFINITE;
-    maxValue      = VALUE_INFINITE;
+    ss->inCheck       = pos.checkers();
+    priorCapture      = pos.captured_piece();
+    Color us          = pos.side_to_move();
+    ss->moveCount     = 0;
+    bestValue         = -VALUE_INFINITE;
+    maxValue          = VALUE_INFINITE;
     ss->secondaryLine = false;
     ss->mainLine      = false;
 
@@ -1213,7 +1219,8 @@ Value Search::Worker::search(
         {
             ss->staticEval = eval = expTTValue;
             if (!is_valid(eval))
-                ss->staticEval = eval = to_corrected_static_eval(unadjustedStaticEval, correctionValue);
+                ss->staticEval = eval =
+                  to_corrected_static_eval(unadjustedStaticEval, correctionValue);
             if (eval == VALUE_DRAW)
                 eval = value_draw(this->nodes);
             if (is_valid(expTTValue))
@@ -1462,16 +1469,16 @@ Value Search::Worker::search(
                  + std::abs(correctionValue) / 198435;
         };
 
-        if (!ss->ttPv && depth < (seekMate ? 6 : 19) && eval - futility_margin(depth) >= beta && eval >= beta
-            && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval))
+        if (!ss->ttPv && depth < (seekMate ? 6 : 19) && eval - futility_margin(depth) >= beta
+            && eval >= beta && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval))
         {
             return (661 * beta + 363 * eval) / 1024;
         }
     }
 
     // Null move search
-    if (cutNode && !disableNMAndPC && ss->staticEval >= beta - 13 * depth - 47 * improving + 365 && !excludedMove
-        && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && beta >= -2000)
+    if (cutNode && !disableNMAndPC && ss->staticEval >= beta - 13 * depth - 47 * improving + 365
+        && !excludedMove && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && beta >= -2000)
     {
         bool skipNullMove = false;
         bool nodeHot = staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial;
@@ -1504,7 +1511,7 @@ Value Search::Worker::search(
                 assert(!nmpMinPly);
 
                 nmpMinPly = ss->ply + 3 * (depth - R) / 4;
-                Value v = search<NonPV>(pos, ss, beta - 1, beta, depth - R, false);
+                Value v   = search<NonPV>(pos, ss, beta - 1, beta, depth - R, false);
                 nmpMinPly = 0;
 
                 if (v >= beta)
@@ -1564,7 +1571,7 @@ Value Search::Worker::search(
             assert(probCutBeta < VALUE_INFINITE && probCutBeta > beta);
 
             MovePicker mp(pos, ttData.move, probCutBeta - ss->staticEval, &captureHistory);
-            Depth      probCutDepth = std::clamp(depth - 5 - (ss->staticEval - beta) / 315, 0, depth);
+            Depth probCutDepth = std::clamp(depth - 5 - (ss->staticEval - beta) / 315, 0, depth);
 
             if (isCapablanca && depth > 8)
                 probCutDepth = std::clamp(depth - 7 - (ss->staticEval - beta) / 315, 0, depth);
@@ -1590,8 +1597,8 @@ Value Search::Worker::search(
                 value = -qsearch<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1);
 
                 if (value >= probCutBeta && probCutDepth > 0)
-                    value = -search<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1, probCutDepth,
-                                           !cutNode);
+                    value = -search<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1,
+                                           probCutDepth, !cutNode);
 
                 undo_move(pos, move);
 
@@ -1609,7 +1616,7 @@ Value Search::Worker::search(
 
 moves_loop:
 
-    probCutBeta = beta + 428;
+    probCutBeta              = beta + 428;
     const bool commonProbcut = (ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 4
                             && ttData.value >= probCutBeta && !is_decisive(beta)
                             && is_valid(ttData.value) && !is_decisive(ttData.value);
@@ -1631,7 +1638,7 @@ moves_loop:
     MovePicker mp(pos, ttData.move, depth, &mainHistory, &lowPlyHistory, &captureHistory, contHist,
                   &sharedHistory, ss->ply);
 
-    value = bestValue;
+    value         = bestValue;
     int moveCount = 0;
 
     while ((move = mp.next_move()) != Move::none())
@@ -1669,7 +1676,7 @@ moves_loop:
         newDepth = depth - 1;
 
         int delta = beta - alpha;
-        int r = reduction(improving, depth, moveCount, delta);
+        int r     = reduction(improving, depth, moveCount, delta);
 
         if (ss->ttPv)
             r += 929;
@@ -1832,11 +1839,13 @@ skipExtensionAndPruning:
         if ((ss + 1)->cutoffCnt > 1)
         {
             if (dynamicDerived.isHighTal || isTacticalReactive || staticState.isSacrificial)
-                r += 120 + 1024 * ((ss + 1)->cutoffCnt > 2) + 100 * ((ss + 1)->cutoffCnt > 3) + 1024 * allNode;
+                r += 120 + 1024 * ((ss + 1)->cutoffCnt > 2) + 100 * ((ss + 1)->cutoffCnt > 3)
+                   + 1024 * allNode;
             else if (isStrategical)
                 r += 264 + 1095 * ((ss + 1)->cutoffCnt > 2) + 1138 * allNode;
             else
-                r += 180 + 1024 * ((ss + 1)->cutoffCnt > 2) + 75 * ((ss + 1)->cutoffCnt > 3) + 1024 * allNode;
+                r += 180 + 1024 * ((ss + 1)->cutoffCnt > 2) + 75 * ((ss + 1)->cutoffCnt > 3)
+                   + 1024 * allNode;
         }
         else if (move == ttData.move)
             r -= 2179;
@@ -1860,8 +1869,8 @@ skipExtensionAndPruning:
 
         if (depth >= 2 && moveCount > std::max(sibs, 1) && doLMRStep)
         {
-            int original_r = r;
-            Depth d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
+            int   original_r = r;
+            Depth d          = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
 
             if (depth > 5 && ss->ply > 1)
             {
@@ -2131,7 +2140,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
     static_assert(nodeType != Root);
     const RootShashinState& rootShashinState = shashinManager->getState();
-    constexpr bool PvNode = nodeType == PV;
+    constexpr bool          PvNode           = nodeType == PV;
 
     assert(alpha >= -VALUE_INFINITE && alpha < beta && beta <= VALUE_INFINITE);
     assert(PvNode || (alpha == beta - 1));
@@ -2190,8 +2199,8 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
     const auto& staticState    = rootShashinState.staticState;
     const auto& dynamicDerived = rootShashinState.dynamicDerived;
-    const bool isStrategical = dynamicDerived.isStrategical;
-    const bool isAggressive  = dynamicDerived.isAggressive;
+    const bool  isStrategical  = dynamicDerived.isStrategical;
+    const bool  isAggressive   = dynamicDerived.isAggressive;
 
     if (!PvNode && is_valid(ttData.value)
         && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER)))
@@ -2976,8 +2985,8 @@ Value ShashinManager::static_value(const Eval::NNUE::Networks&    networks,
 }
 
 Value Worker::minimax_value(Position& pos, Search::Stack* ss, Depth depth) {
-    Value alpha = -VALUE_INFINITE;
-    Value beta  = VALUE_INFINITE;
+    Value   alpha = -VALUE_INFINITE;
+    Value   beta  = VALUE_INFINITE;
     PVMoves pv;
     ss->pv = &pv;
 

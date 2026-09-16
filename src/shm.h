@@ -37,7 +37,7 @@
 #include <utility>
 #include <variant>
 
-#include "misc.h" // ShashChess
+#include "misc.h"  // ShashChess
 
 #if (defined(__linux__) && !defined(__ANDROID__)) || defined(__APPLE__) || defined(__FreeBSD__) \
   || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)

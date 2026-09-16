@@ -37,7 +37,7 @@ namespace ShashChess {
 
 int main(int argc, char* argv[]);  // silence 'no previous declaration'
 
-__attribute__((used)) // keep main alive
+__attribute__((used))  // keep main alive
 #endif
 
 int main(int argc, char* argv[]) {

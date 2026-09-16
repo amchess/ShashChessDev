@@ -178,7 +178,7 @@ struct RootMove {
     bool        previousScoreExact = false;
     int         selDepth           = 0;
     int         tbRank             = 0;
-    Value       tbScore            = 0; // for windows build
+    Value       tbScore            = 0;  // for windows build
     RootPVMoves pv, previousPV;
 };
 
@@ -327,9 +327,9 @@ class SearchManager: public ISearchManager {
                    Depth                     depth);
 
     ShashChess::TimeManagement tm;
-    double                    originalTimeAdjust;
-    int                       callsCnt;
-    std::atomic_bool          ponder;
+    double                     originalTimeAdjust;
+    int                        callsCnt;
+    std::atomic_bool           ponder;
 
     std::array<Value, 4> iterValue;
     double               previousTimeReduction;
@@ -388,11 +388,11 @@ class Worker {
     SharedHistories& sharedHistory;
     ContinuationHistory (&continuationHistory)[2][2];
 
-    RootMoves        rootMoves;                          // mcts
-    Depth            completedDepth;                     // mcts
-    bool             nmpGuard = false, nmpSide = false;  // from Crystal-shashin
-    ShashinManager&  getShashinManager();                // from crystal-Shashin
-    int              lastShashinUpdatedDepth = 0;        // from shashin
+    RootMoves       rootMoves;                          // mcts
+    Depth           completedDepth;                     // mcts
+    bool            nmpGuard = false, nmpSide = false;  // from Crystal-shashin
+    ShashinManager& getShashinManager();                // from crystal-Shashin
+    int             lastShashinUpdatedDepth = 0;        // from shashin
 
    private:
     bool iterative_deepening();
@@ -443,8 +443,8 @@ class Worker {
     usize                     numaThreadIdx, numaTotal;
     NumaReplicatedAccessToken numaAccessToken;
 
-    bool                      fullSearch      = false;  // full threads patch
-    bool                      antiDancingMode = false;  // anti dancing option
+    bool fullSearch      = false;  // full threads patch
+    bool antiDancingMode = false;  // anti dancing option
 
     // Reductions lookup table initialized at startup
     std::array<int, MAX_MOVES> reductions;  // [depth or moveNumber]

@@ -32,23 +32,23 @@ constexpr Depth ADJUSTED_QS_DEPTH       = DEPTH_QS + 2;
 // REFACTORING: Enum sequenziale ordinato logicamente (Spettro Petrosian -> Capablanca -> Tal)
 // Questo permette di usare operatori >= e <= per i range.
 enum class ShashinPosition : uint8_t {
-    HIGH_PETROSIAN           = 0,
-    MIDDLE_HIGH_PETROSIAN    = 1,
-    MIDDLE_PETROSIAN         = 2,
-    MIDDLE_LOW_PETROSIAN     = 3,
-    LOW_PETROSIAN            = 4,
-    
-    CAPABLANCA_PETROSIAN     = 5,
-    CAPABLANCA               = 6,
-    CAPABLANCA_TAL           = 7,
-    
-    LOW_TAL                  = 8,
-    MIDDLE_LOW_TAL           = 9,
-    MIDDLE_TAL               = 10,
-    MIDDLE_HIGH_TAL          = 11,
-    HIGH_TAL                 = 12,
-    
-    TAL_CAPABLANCA_PETROSIAN = 13 // Total Chaos / Undefined
+    HIGH_PETROSIAN        = 0,
+    MIDDLE_HIGH_PETROSIAN = 1,
+    MIDDLE_PETROSIAN      = 2,
+    MIDDLE_LOW_PETROSIAN  = 3,
+    LOW_PETROSIAN         = 4,
+
+    CAPABLANCA_PETROSIAN = 5,
+    CAPABLANCA           = 6,
+    CAPABLANCA_TAL       = 7,
+
+    LOW_TAL         = 8,
+    MIDDLE_LOW_TAL  = 9,
+    MIDDLE_TAL      = 10,
+    MIDDLE_HIGH_TAL = 11,
+    HIGH_TAL        = 12,
+
+    TAL_CAPABLANCA_PETROSIAN = 13  // Total Chaos / Undefined
 };
 
 // Win probability ranges - made constexpr
@@ -146,8 +146,8 @@ struct RootShashinStateBase {
     StaticState         staticState;
 };
 
-constexpr size_t BASE_SIZE = sizeof(RootShashinStateBase);
-constexpr size_t TARGET_SIZE = 64;
+constexpr size_t BASE_SIZE    = sizeof(RootShashinStateBase);
+constexpr size_t TARGET_SIZE  = 64;
 constexpr size_t PADDING_SIZE = (BASE_SIZE < TARGET_SIZE) ? (TARGET_SIZE - BASE_SIZE) : 0;
 
 // Ensure proper alignment for performance
@@ -156,22 +156,23 @@ struct RootShashinState {
     DynamicDerivedState dynamicDerived;
     StaticState         staticState;
     uint8_t             padding[PADDING_SIZE];
-    
+
     RootShashinState() :
         dynamicBase(),
         dynamicDerived(),
-        staticState()
-    {
-        for (size_t i = 0; i < sizeof(padding); ++i) {
+        staticState() {
+        for (size_t i = 0; i < sizeof(padding); ++i)
+        {
             padding[i] = 0;
         }
     }
-    
+
     void clear() {
-        dynamicBase = DynamicBaseState();
+        dynamicBase    = DynamicBaseState();
         dynamicDerived = DynamicDerivedState();
-        staticState = StaticState();
-        for (size_t i = 0; i < sizeof(padding); ++i) {
+        staticState    = StaticState();
+        for (size_t i = 0; i < sizeof(padding); ++i)
+        {
             padding[i] = 0;
         }
     }

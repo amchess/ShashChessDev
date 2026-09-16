@@ -635,16 +635,16 @@ struct CommandLine {
     static std::filesystem::path get_binary_directory(std::filesystem::path argv0);
     // Override di ShashChess
     static std::string get_binary_directory(std::string argv0, std::string workingDirectory);
-    
+
     static std::filesystem::path get_working_directory_fs();
-    static std::string get_working_directory();
+    static std::string           get_working_directory();
 
     int    argc;
     char** argv;
-    
+
     // [SC:learning] begin
-    std::string        binaryDirectory;
-    std::string        workingDirectory;
+    std::string binaryDirectory;
+    std::string workingDirectory;
     // [SC:learning] end
 
    private:

@@ -83,8 +83,8 @@ class Engine {
 
     bool set_numa_config_from_option(const std::string& o);
     void resize_threads();
-    void init_bookMan(int bookIndex);    // book management
-    void resize_full(usize requested);   // full threads patch
+    void init_bookMan(int bookIndex);   // book management
+    void resize_full(usize requested);  // full threads patch
     void set_tt_size(usize mb);
     void set_ponderhit(bool);
     void search_clear();
@@ -116,10 +116,10 @@ class Engine {
     BookManager       get_bookMan();  // book management
     int               get_hashfull(int maxAge = 0) const;
 
-    std::string                          fen() const;
-    std::optional<PositionSetError>      flip();
-    std::string                          visualize() const;
-    void                                 show_moves_bookMan(const Position& position);  // book management
+    std::string                     fen() const;
+    std::optional<PositionSetError> flip();
+    std::string                     visualize() const;
+    void show_moves_bookMan(const Position& position);  // book management
     std::vector<std::pair<usize, usize>> get_bound_thread_count_by_numa_node() const;
     std::string                          get_numa_config_as_string() const;
     std::string                          numa_config_information_as_string() const;
