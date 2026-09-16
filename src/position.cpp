@@ -14,17 +14,17 @@
   GNU General Public License for more details.
 
   You should have received a copy of the GNU General Public License
-  along with this program.  If not, see [MINORE]http://www.gnu.org/licenses/[MAGGIORE].
+  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "position.h"
 
-#include[MINORE] algorithm[MAGGIORE]
-#include[MINORE] cassert[MAGGIORE]
-#include[MINORE] cstring[MAGGIORE]
-#include[MINORE] optional[MAGGIORE]
-#include[MINORE] sstream[MAGGIORE]
-#include[MINORE] string[MAGGIORE]
+#include< algorithm>
+#include< cassert>
+#include< cstring>
+#include< optional>
+#include< sstream>
+#include< string>
 
 #include "bitboard.h"
 #include "misc.h"
@@ -63,34 +63,34 @@ void Position::init() {
     PRNG rng(1070372ull);
 
     for (Piece pc : Pieces)
-        for (Square s = SQ_A1; s[MINORE] = SQ_H8; ++s)
-            PieceKey[pc][s] = rng.rand[MINORE] Key[MAGGIORE]();
+        for (Square s = SQ_A1; s< = SQ_H8; ++s)
+            PieceKey[pc][s] = rng.rand< Key>();
 
-    for (File f = FILE_A; f[MINORE] = FILE_H; ++f)
-        EnPassantKey[f] = rng.rand[MINORE] Key[MAGGIORE]();
+    for (File f = FILE_A; f< = FILE_H; ++f)
+        EnPassantKey[f] = rng.rand< Key>();
 
-    for (int i = 0; i[MINORE] 16; ++i)
-        CastleKey[i] = rng.rand[MINORE] Key[MAGGIORE]();
+    for (int i = 0; i< 16; ++i)
+        CastleKey[i] = rng.rand< Key>();
 
-    SideKey = rng.rand[MINORE] Key[MAGGIORE]();
+    SideKey = rng.rand< Key>();
 }
 
 
 // Setups the position object with the given FEN string
-std::optional[MINORE] PositionSetError[MAGGIORE] Position::set(const std::string& fenStr,
+std::optional< PositionSetError> Position::set(const std::string& fenStr,
                                                                bool               isChess960,
                                                                StateInfo*         si) {
 
     // Helper functions
     auto str_to_square =
-      [](const std::string& str) - [MAGGIORE] std::optional[MINORE] Square[MAGGIORE] {
-          if (str.length() == 2 && str[0][MAGGIORE] = 'a' && str[0][MINORE] =
-                'h' && str[1][MAGGIORE] = '1' && str[1][MINORE] = '8')
+      [](const std::string& str) - > std::optional< Square> {
+          if (str.length() == 2 && str[0]> = 'a' && str[0]< =
+                'h' && str[1]> = '1' && str[1]< = '8')
               return make_square(File(str[0] - 'a'), Rank(str[1] - '1'));
           return std::nullopt;
       };
 
-    auto square_to_char = [](Square sq) - [MAGGIORE] char { return char('a' + file_of(sq)); };
+    auto square_to_char = [](Square sq) - > char { return char('a' + file_of(sq)); };
 
     /*
      * A FEN string is divided in 6 fields:
@@ -101,10 +101,10 @@ std::optional[MINORE] PositionSetError[MAGGIORE] Position::set(const std::string
      * 5. Halfmove clock
      * 6. Fullmove number
      */
-    std::vector[MINORE] std::string[MAGGIORE] fields;
+    std::vector< std::string> fields;
     std::stringstream ss(fenStr);
     std::string       field;
-    while (ss[MAGGIORE][MAGGIORE] field)
+    while (ss>> field)
     {
         fields.push_back(field);
     }
@@ -112,7 +112,7 @@ std::optional[MINORE] PositionSetError[MAGGIORE] Position::set(const std::string
     if (fields.empty())
         return PositionSetError("Empty FEN string");
 
-    if (fields.size()[MINORE] 4)
+    if (fields.size()< 4)
         return PositionSetError("Incomplete FEN string, missing fields");
 
     const std::string& piecePlacement = fields[0];
@@ -151,9 +151,9 @@ std::optional[MINORE] PositionSetError[MAGGIORE] Position::set(const std::string
                 return PositionSetError("Invalid FEN: unknown piece '" + std::string(1, token)
                                         + "'");
 
-            Piece piece = static_cast[MINORE] Piece[MAGGIORE](idx);
+            Piece piece = static_cast< Piece>(idx);
 
-            if (col[MAGGIORE] = 8 || row[MINORE] 0)
+            if (col> = 8 || row< 0)
                 return PositionSetError(
                   "Invalid FEN: board dimensions exceeded during piece placement");
 
@@ -211,7 +211,7 @@ std::optional[MINORE] PositionSetError[MAGGIORE] Position::set(const std::string
                     if (file_of(rsq) == FILE_H)
                         return PositionSetError("Invalid FEN: no rook on queenside for castling");
             }
-            else if (token[MAGGIORE] = 'A' && token[MINORE] = 'H')
+            else if (token> = 'A' && token< = 'H')
             {
                 rsq = make_square(File(token - 'A'), relative_rank(c, RANK_1));
                 if (piece_on(rsq) != rook)
@@ -256,16 +256,16 @@ std::optional[MINORE] PositionSetError[MAGGIORE] Position::set(const std::string
             return PositionSetError(
               "Invalid FEN: en passant square and the square behind it must be empty");
 
-        st - [MAGGIORE] epSquare = epSq;
+        st - > epSquare = epSq;
     }
 
     // 5. Halfmove clock
-    if (fields.size()[MAGGIORE] 4)
+    if (fields.size()> 4)
     {
         try
         {
-            st - [MAGGIORE] rule50 = std::stoi(fields[4]);
-            if (st - [MAGGIORE] rule50[MINORE] 0)
+            st - > rule50 = std::stoi(fields[4]);
+            if (st - > rule50< 0)
                 return PositionSetError("Invalid FEN: halfmove clock cannot be negative");
         } catch (...)
         { return PositionSetError("Invalid FEN: halfmove clock is not a valid integer"); }
@@ -273,12 +273,12 @@ std::optional[MINORE] PositionSetError[MAGGIORE] Position::set(const std::string
 
     // 6. Fullmove number
     int gamePly = 0;
-    if (fields.size()[MAGGIORE] 5)
+    if (fields.size()> 5)
     {
         try
         {
             int fullMoveClock = std::stoi(fields[5]);
-            if (fullMoveClock[MINORE] 1)
+            if (fullMoveClock< 1)
                 fullMoveClock = 1;  // Handle invalid fullmove numbers gracefully
             gamePly = std::max(2 * (fullMoveClock - 1), 0) + (sideToMove == BLACK);
         } catch (...)
@@ -292,10 +292,10 @@ std::optional[MINORE] PositionSetError[MAGGIORE] Position::set(const std::string
     if (checkers())
     {
         // Forbid castling while in check
-        st - [MAGGIORE] castlingRights = 0;
-        st - [MAGGIORE] epSquare       = SQ_NONE;
+        st - > castlingRights = 0;
+        st - > epSquare       = SQ_NONE;
 
-        if (attackers_to(square[MINORE] KING[MAGGIORE](~sideToMove)) & pieces(sideToMove))
+        if (attackers_to(square< KING>(~sideToMove)) & pieces(sideToMove))
             return PositionSetError("Invalid FEN: Both kings are in check.");
     }
     // Compute gamePly after set_state to avoid setting halfMoveClock
@@ -303,19 +303,19 @@ std::optional[MINORE] PositionSetError[MAGGIORE] Position::set(const std::string
     gamePlyCount = gamePly;
 
     // Check if the fen is a valid chess position
-    if (popcount(pieces(WHITE))[MAGGIORE] 16 || popcount(pieces(BLACK))[MAGGIORE] 16)
+    if (popcount(pieces(WHITE))> 16 || popcount(pieces(BLACK))> 16)
         return PositionSetError("Invalid FEN: Too many pieces.");
 
-    if (popcount(pieces(PAWN))[MAGGIORE] 16)
+    if (popcount(pieces(PAWN))> 16)
         return PositionSetError("Invalid FEN: Too many pawns.");
 
-    if (popcount(pieces(WHITE, PAWN))[MAGGIORE] 8 || popcount(pieces(BLACK, PAWN))[MAGGIORE] 8)
+    if (popcount(pieces(WHITE, PAWN))> 8 || popcount(pieces(BLACK, PAWN))> 8)
         return PositionSetError("Invalid FEN: Too many pawns.");
 
     if ((pieces(PAWN) & (Rank1BB | Rank8BB)))
         return PositionSetError("Invalid FEN: Pawns on the first or eighth rank.");
 
-    if (attackers_to(square[MINORE] KING[MAGGIORE](~sideToMove)) & pieces(sideToMove))
+    if (attackers_to(square< KING>(~sideToMove)) & pieces(sideToMove))
         return PositionSetError("Invalid FEN: Opponent king is in check.");
 
     return std::nullopt;
@@ -323,14 +323,14 @@ std::optional[MINORE] PositionSetError[MAGGIORE] Position::set(const std::string
 
 
 // Flips position along the middle ranks
-std::optional[MINORE] PositionSetError[MAGGIORE] Position::flip() {
+std::optional< PositionSetError> Position::flip() {
 
     std::string fen_str;
     int         empty_squares = 0;
 
-    for (Rank r = RANK_1; r[MINORE] = RANK_8; ++r)
+    for (Rank r = RANK_1; r< = RANK_8; ++r)
     {
-        for (File f = FILE_A; f[MINORE] = FILE_H; ++f)
+        for (File f = FILE_A; f< = FILE_H; ++f)
         {
             Square sq    = make_square(f, r);
             Piece  piece = piece_on(sq);
@@ -352,7 +352,7 @@ std::optional[MINORE] PositionSetError[MAGGIORE] Position::flip() {
             fen_str += std::to_string(empty_squares);
             empty_squares = 0;
         }
-        if (r[MINORE] RANK_8)
+        if (r< RANK_8)
             fen_str += '/';
     }
 
@@ -393,31 +393,31 @@ std::optional[MINORE] PositionSetError[MAGGIORE] Position::flip() {
 // the correctness of the StateInfo data when running in debug mode.
 void Position::set_state(StateInfo* si) const {
 
-    si - [MAGGIORE] key                    = VALUE_ZERO;
-    si - [MAGGIORE] nonPawnMaterial[WHITE] = si - [MAGGIORE] nonPawnMaterial[BLACK] = VALUE_ZERO;
-    si - [MAGGIORE] checkersBB =
-      attackers_to(square[MINORE] KING[MAGGIORE](sideToMove)) & pieces(~sideToMove);
+    si - > key                    = VALUE_ZERO;
+    si - > nonPawnMaterial[WHITE] = si - > nonPawnMaterial[BLACK] = VALUE_ZERO;
+    si - > checkersBB =
+      attackers_to(square< KING>(sideToMove)) & pieces(~sideToMove);
 
-    set_castling_right(WHITE, square[MINORE] KING[MAGGIORE](WHITE));
-    set_castling_right(BLACK, square[MINORE] KING[MAGGIORE](BLACK));
+    set_castling_right(WHITE, square< KING>(WHITE));
+    set_castling_right(BLACK, square< KING>(BLACK));
 
     for (Bitboard b = pieces(); b;)
     {
         Square sq = pop_lsb(b);
         Piece  pc = piece_on(sq);
-        si - [MAGGIORE] key ^= PieceKey[pc][sq];
+        si - > key ^= PieceKey[pc][sq];
 
         if (type_of(pc) != PAWN)
-            si - [MAGGIORE] nonPawnMaterial[color_of(pc)] += PieceValue[pc];
+            si - > nonPawnMaterial[color_of(pc)] += PieceValue[pc];
     }
 
-    if (si - [MAGGIORE] epSquare != SQ_NONE)
-        si - [MAGGIORE] key ^= EnPassantKey[file_of(si - [MAGGIORE] epSquare)];
+    if (si - > epSquare != SQ_NONE)
+        si - > key ^= EnPassantKey[file_of(si - > epSquare)];
 
     if (sideToMove == BLACK)
-        si - [MAGGIORE] key ^= SideKey;
+        si - > key ^= SideKey;
 
-    si - [MAGGIORE] key ^= CastleKey[si - [MAGGIORE] castlingRights];
+    si - > key ^= CastleKey[si - > castlingRights];
 }
 
 
@@ -427,17 +427,17 @@ void Position::set_castling_right(Color c, Square rsq) {
     if (piece_on(rsq) != make_piece(c, ROOK))
         return;
 
-    Square ksq = square[MINORE] KING[MAGGIORE](c);
+    Square ksq = square< KING>(c);
 
-    CastlingRights cr = c & (ksq[MINORE] rsq ? KING_SIDE : QUEEN_SIDE);
+    CastlingRights cr = c & (ksq< rsq ? KING_SIDE : QUEEN_SIDE);
 
-    st - [MAGGIORE] castlingRights |= cr;
+    st - > castlingRights |= cr;
     castlingRookSquare[cr] = rsq;
 
     castlingPath[cr] = (between_bb(ksq, rsq) | rsq) & ~ksq;
 
-    ksq = make_square(ksq[MINORE] rsq ? FILE_G : FILE_C, rank_of(ksq));
-    rsq = make_square(ksq[MINORE] rsq ? FILE_F : FILE_D, rank_of(rsq));
+    ksq = make_square(ksq< rsq ? FILE_G : FILE_C, rank_of(ksq));
+    rsq = make_square(ksq< rsq ? FILE_F : FILE_D, rank_of(rsq));
 
     castlingRightsMask[ksq] |= cr;
     castlingRightsMask[rsq] |= cr;
@@ -445,23 +445,23 @@ void Position::set_castling_right(Color c, Square rsq) {
 
 
 // Returns an ASCII representation of the position
-std::ostream& operator[MINORE][MINORE](std::ostream & os, const Position & pos) {
+std::ostream& operator<<(std::ostream & os, const Position & pos) {
 
-    os[MINORE][MINORE] "\n +---+---+---+---+---+---+---+---+\n";
+    os<< "\n +---+---+---+---+---+---+---+---+\n";
 
-    for (Rank r = RANK_8; r[MAGGIORE] = RANK_1; --r)
+    for (Rank r = RANK_8; r> = RANK_1; --r)
     {
-        for (File f = FILE_A; f[MINORE] = FILE_H; ++f)
-            os[MINORE][MINORE] " | "[MINORE][MINORE] PieceToChar[pos.piece_on(make_square(f, r))];
+        for (File f = FILE_A; f< = FILE_H; ++f)
+            os<< " | "<< PieceToChar[pos.piece_on(make_square(f, r))];
 
-        os[MINORE][MINORE] " |\n +---+---+---+---+---+---+---+---+\n";
+        os<< " |\n +---+---+---+---+---+---+---+---+\n";
     }
 
-    os[MINORE][MINORE] "\nFen: "[MINORE][MINORE] pos
-      .fen()[MINORE][MINORE] "\nKey: "[MINORE][MINORE] std::hex[MINORE][MINORE] std::uppercase
-        [MINORE][MINORE] std::setfill('0')[MINORE][MINORE] std::setw(16)[MINORE][MINORE] pos
-      .key()[MINORE][MINORE] std::setfill(
-        ' ')[MINORE][MINORE] std::dec[MINORE][MINORE] "\nCheckers: "[MINORE][MINORE] pos.checkers();
+    os<< "\nFen: "<< pos
+      .fen()<< "\nKey: "<< std::hex<< std::uppercase
+        << std::setfill('0')<< std::setw(16)<< pos
+      .key()<< std::setfill(
+        ' ')<< std::dec<< "\nCheckers: "<< pos.checkers();
 
     return os;
 }
@@ -473,22 +473,22 @@ std::string Position::fen() const {
     int         emptyCnt;
     std::string fen;
 
-    for (Rank r = RANK_8; r[MAGGIORE] = RANK_1; --r)
+    for (Rank r = RANK_8; r> = RANK_1; --r)
     {
-        for (File f = FILE_A; f[MINORE] = FILE_H; ++f)
+        for (File f = FILE_A; f< = FILE_H; ++f)
         {
 
-            for (emptyCnt = 0; f[MINORE] = FILE_H && empty(make_square(f, r)); ++f)
+            for (emptyCnt = 0; f< = FILE_H && empty(make_square(f, r)); ++f)
                 ++emptyCnt;
 
             if (emptyCnt)
                 fen += std::to_string(emptyCnt);
 
-            if (f[MINORE] = FILE_H)
+            if (f< = FILE_H)
                 fen += PieceToChar[piece_on(make_square(f, r))];
         }
 
-        if (r[MAGGIORE] RANK_1)
+        if (r> RANK_1)
             fen += '/';
     }
 
@@ -509,14 +509,14 @@ std::string Position::fen() const {
     if (!can_castle(ANY_CASTLING))
         fen += "-";
 
-    fen += st - [MAGGIORE] epSquare == SQ_NONE
+    fen += st - > epSquare == SQ_NONE
            ? " - "
            : " "
-               + std::string{char('a' + file_of(st - [MAGGIORE] epSquare)),
-                             char('1' + rank_of(st - [MAGGIORE] epSquare))}
+               + std::string{char('a' + file_of(st - > epSquare)),
+                             char('1' + rank_of(st - > epSquare))}
                + " ";
 
-    fen += std::to_string(st - [MAGGIORE] rule50) + " "
+    fen += std::to_string(st - > rule50) + " "
          + std::to_string(1 + (gamePlyCount - (sideToMove == BLACK)) / 2);
 
     return fen;
@@ -543,7 +543,7 @@ inline void Position::move_piece(Square from, Square to) {
 inline void Position::do_castling(
   Color us, Square from, Square& to, Square& rfrom, Square& rto, bool isChess960) {
 
-    bool kingSide = to[MAGGIORE] from;
+    bool kingSide = to> from;
     rfrom         = castlingRookSquare[us & (kingSide ? KING_SIDE : QUEEN_SIDE)];
     rto           = make_square(kingSide ? FILE_F : FILE_D, rank_of(from));
 
@@ -567,7 +567,7 @@ inline void Position::undo_castling(
 
     if (!isChess960)
     {
-        bool kingSide = to[MAGGIORE] from;
+        bool kingSide = to> from;
         to            = make_square(kingSide ? FILE_G : FILE_C, rank_of(from));
     }
 
@@ -577,7 +577,7 @@ inline void Position::undo_castling(
     put_piece(make_piece(us, ROOK), rfrom);
 }
 
-template[MINORE] bool NNUE[MAGGIORE] void Position::do_move(Move                      m,
+template< bool NNUE> void Position::do_move(Move                      m,
                                                             StateInfo&                newSt,
                                                             bool                      givesCheck,
                                                             Eval::NNUE::DirtyPiece&   dp,
@@ -587,20 +587,20 @@ template[MINORE] bool NNUE[MAGGIORE] void Position::do_move(Move                
 
     assert(m.is_ok());
 
-    st - [MAGGIORE] currentMove = m;
+    st - > currentMove = m;
 
     StateInfo* last          = st;
     st                       = &newSt;
-    st - [MAGGIORE] previous = last;
+    st - > previous = last;
 
-    st - [MAGGIORE] pliesFromNull          = last - [MAGGIORE] pliesFromNull + 1;
-    st - [MAGGIORE] checkersBB             = 0;
-    st - [MAGGIORE] rule50                 = last - [MAGGIORE] rule50 + 1;
-    st - [MAGGIORE] key                    = last - [MAGGIORE] key ^ SideKey;
-    st - [MAGGIORE] nonPawnMaterial[WHITE] = last - [MAGGIORE] nonPawnMaterial[WHITE];
-    st - [MAGGIORE] nonPawnMaterial[BLACK] = last - [MAGGIORE] nonPawnMaterial[BLACK];
-    st - [MAGGIORE] castlingRights         = last - [MAGGIORE] castlingRights;
-    st - [MAGGIORE] epSquare               = SQ_NONE;
+    st - > pliesFromNull          = last - > pliesFromNull + 1;
+    st - > checkersBB             = 0;
+    st - > rule50                 = last - > rule50 + 1;
+    st - > key                    = last - > key ^ SideKey;
+    st - > nonPawnMaterial[WHITE] = last - > nonPawnMaterial[WHITE];
+    st - > nonPawnMaterial[BLACK] = last - > nonPawnMaterial[BLACK];
+    st - > castlingRights         = last - > castlingRights;
+    st - > epSquare               = SQ_NONE;
 
     Color  us   = sideToMove;
     Color  them = ~us;
@@ -632,7 +632,7 @@ template[MINORE] bool NNUE[MAGGIORE] void Position::do_move(Move                
             dp.to[1]    = rto;
         }
 
-        st - [MAGGIORE] capturedPiece = NO_PIECE;
+        st - > capturedPiece = NO_PIECE;
     }
     else
     {
@@ -644,7 +644,7 @@ template[MINORE] bool NNUE[MAGGIORE] void Position::do_move(Move                
             assert(cpc == make_piece(them, PAWN));
 
             remove_piece(capsq);
-            st - [MAGGIORE] key ^= PieceKey[cpc][capsq];
+            st - > key ^= PieceKey[cpc][capsq];
 
             if constexpr (NNUE)
             {
@@ -661,17 +661,17 @@ template[MINORE] bool NNUE[MAGGIORE] void Position::do_move(Move                
         {
             if (cpc != NO_PIECE)
             {
-                st - [MAGGIORE] rule50 = 0;
-                st - [MAGGIORE] key ^= PieceKey[cpc][to];
+                st - > rule50 = 0;
+                st - > key ^= PieceKey[cpc][to];
                 if (type_of(cpc) != PAWN)
-                    st - [MAGGIORE] nonPawnMaterial[them] -= PieceValue[cpc];
+                    st - > nonPawnMaterial[them] -= PieceValue[cpc];
 
                 // If the captured piece is a rook, update castling rights if needed
                 if (type_of(cpc) == ROOK && castlingRightsMask[to])
                 {
-                    st - [MAGGIORE] castlingRights &= ~castlingRightsMask[to];
-                    st - [MAGGIORE] key ^= CastleKey[last - [MAGGIORE] castlingRights]
-                                         ^ CastleKey[st - [MAGGIORE] castlingRights];
+                    st - > castlingRights &= ~castlingRightsMask[to];
+                    st - > key ^= CastleKey[last - > castlingRights]
+                                         ^ CastleKey[st - > castlingRights];
                 }
             }
             if constexpr (NNUE)
@@ -687,21 +687,21 @@ template[MINORE] bool NNUE[MAGGIORE] void Position::do_move(Move                
         }
 
         move_piece(from, to);
-        st - [MAGGIORE] key ^= PieceKey[pc][from] ^ PieceKey[pc][to];
-        st - [MAGGIORE] capturedPiece = cpc;
+        st - > key ^= PieceKey[pc][from] ^ PieceKey[pc][to];
+        st - > capturedPiece = cpc;
 
         // If the moved piece is a pawn, update rule50, en-passant square, and promotion
         if (type_of(pc) == PAWN)
         {
-            st - [MAGGIORE] rule50 = 0;
+            st - > rule50 = 0;
 
             if (m.type_of() == PROMOTION)
             {
                 Piece promotion = make_piece(us, m.promotion_type());
                 remove_piece(to);
                 put_piece(promotion, to);
-                st - [MAGGIORE] key ^= PieceKey[pc][to] ^ PieceKey[promotion][to];
-                st - [MAGGIORE] nonPawnMaterial[us] += PieceValue[promotion];
+                st - > key ^= PieceKey[pc][to] ^ PieceKey[promotion][to];
+                st - > nonPawnMaterial[us] += PieceValue[promotion];
                 if constexpr (NNUE)
                 {
                     dp.pc[0] = promotion;
@@ -714,8 +714,8 @@ template[MINORE] bool NNUE[MAGGIORE] void Position::do_move(Move                
                 // Set epSquare only if the pawn can be captured
                 if (pawn_attacks_bb(us, epSq) & pieces(them, PAWN))
                 {
-                    st - [MAGGIORE] epSquare = epSq;
-                    st - [MAGGIORE] key ^= EnPassantKey[file_of(st - [MAGGIORE] epSquare)];
+                    st - > epSquare = epSq;
+                    st - > key ^= EnPassantKey[file_of(st - > epSquare)];
                 }
             }
         }
@@ -723,15 +723,15 @@ template[MINORE] bool NNUE[MAGGIORE] void Position::do_move(Move                
         // If the moved piece is a king or a rook, update castling rights if needed
         if (castlingRightsMask[from])
         {
-            st - [MAGGIORE] castlingRights &= ~castlingRightsMask[from];
-            st - [MAGGIORE] key ^= CastleKey[last - [MAGGIORE] castlingRights]
-                                 ^ CastleKey[st - [MAGGIORE] castlingRights];
+            st - > castlingRights &= ~castlingRightsMask[from];
+            st - > key ^= CastleKey[last - > castlingRights]
+                                 ^ CastleKey[st - > castlingRights];
         }
     }
 
     if (givesCheck)
     {
-        st - [MAGGIORE] checkersBB = attackers_to(square[MINORE] KING[MAGGIORE](them)) & pieces(us);
+        st - > checkersBB = attackers_to(square< KING>(them)) & pieces(us);
     }
     // Update threat evaluation of the position
     if constexpr (NNUE)
@@ -745,22 +745,22 @@ template[MINORE] bool NNUE[MAGGIORE] void Position::do_move(Move                
         else
         {
             dts.threatsUpdated    = true;
-            dts.king_attackers[0] = last - [MAGGIORE] king_attackers[0];
-            dts.king_attackers[1] = last - [MAGGIORE] king_attackers[1];
+            dts.king_attackers[0] = last - > king_attackers[0];
+            dts.king_attackers[1] = last - > king_attackers[1];
             Eval::NNUE::update_threats(*this, dp, dts, tt, sh);
         }
     }
 }
 
 // Explicit template instantiations
-template void Position::do_move[MINORE] true[MAGGIORE](Move                           m,
+template void Position::do_move< true>(Move                           m,
                                                        StateInfo&                     newSt,
                                                        bool                           givesCheck,
                                                        Eval::NNUE::DirtyPiece&        dp,
                                                        Eval::NNUE::DirtyThreats&      dts,
                                                        const TranspositionTable*      tt,
                                                        const Search::SharedHistories* sh);
-template void Position::do_move[MINORE] false[MAGGIORE](Move                           m,
+template void Position::do_move< false>(Move                           m,
                                                         StateInfo&                     newSt,
                                                         bool                           givesCheck,
                                                         Eval::NNUE::DirtyPiece&        dp,
@@ -803,13 +803,13 @@ void Position::undo_move(Move m) {
             Square capsq = make_square(file_of(to), rank_of(from));
             put_piece(make_piece(~us, PAWN), capsq);
         }
-        else if (st - [MAGGIORE] capturedPiece != NO_PIECE)
+        else if (st - > capturedPiece != NO_PIECE)
         {
-            put_piece(st - [MAGGIORE] capturedPiece, to);
+            put_piece(st - > capturedPiece, to);
         }
     }
 
-    st = st - [MAGGIORE] previous;
+    st = st - > previous;
 }
 
 
@@ -822,22 +822,22 @@ void Position::do_null_move(StateInfo& newSt) {
 
     StateInfo* last          = st;
     st                       = &newSt;
-    st - [MAGGIORE] previous = last;
+    st - > previous = last;
 
-    st - [MAGGIORE] pliesFromNull          = 0;
-    st - [MAGGIORE] rule50                 = last - [MAGGIORE] rule50 + 1;
-    st - [MAGGIORE] nonPawnMaterial[WHITE] = last - [MAGGIORE] nonPawnMaterial[WHITE];
-    st - [MAGGIORE] nonPawnMaterial[BLACK] = last - [MAGGIORE] nonPawnMaterial[BLACK];
-    st - [MAGGIORE] castlingRights         = last - [MAGGIORE] castlingRights;
-    st - [MAGGIORE] epSquare               = SQ_NONE;
+    st - > pliesFromNull          = 0;
+    st - > rule50                 = last - > rule50 + 1;
+    st - > nonPawnMaterial[WHITE] = last - > nonPawnMaterial[WHITE];
+    st - > nonPawnMaterial[BLACK] = last - > nonPawnMaterial[BLACK];
+    st - > castlingRights         = last - > castlingRights;
+    st - > epSquare               = SQ_NONE;
 
-    st - [MAGGIORE] key = last - [MAGGIORE] key ^ SideKey;
-    if (last - [MAGGIORE] epSquare != SQ_NONE)
-        st - [MAGGIORE] key ^= EnPassantKey[file_of(last - [MAGGIORE] epSquare)];
+    st - > key = last - > key ^ SideKey;
+    if (last - > epSquare != SQ_NONE)
+        st - > key ^= EnPassantKey[file_of(last - > epSquare)];
 
-    st - [MAGGIORE] checkersBB    = 0;
-    st - [MAGGIORE] capturedPiece = NO_PIECE;
-    st - [MAGGIORE] currentMove   = Move::null();
+    st - > checkersBB    = 0;
+    st - > capturedPiece = NO_PIECE;
+    st - > currentMove   = Move::null();
 
     gamePlyCount++;
     sideToMove = ~sideToMove;
@@ -846,21 +846,21 @@ void Position::do_null_move(StateInfo& newSt) {
 
 void Position::undo_null_move() {
 
-    assert(st - [MAGGIORE] capturedPiece == NO_PIECE);
+    assert(st - > capturedPiece == NO_PIECE);
 
     sideToMove = ~sideToMove;
     gamePlyCount--;
-    st = st - [MAGGIORE] previous;
+    st = st - > previous;
 }
 
 // Tests if the position has a move which draws by repetition
 // or an earlier position has a draw by 50-move rule.
 bool Position::is_draw(int ply) const {
-    if (st - [MAGGIORE] rule50[MAGGIORE] 99
-        && (!checkers() || MoveList[MINORE] LEGAL[MAGGIORE](*this).size()[MAGGIORE] 0))
+    if (st - > rule50> 99
+        && (!checkers() || MoveList< LEGAL>(*this).size()> 0))
         return true;
 
-    return st - [MAGGIORE] rule50[MAGGIORE] = 4 && is_repetition(ply);
+    return st - > rule50> = 4 && is_repetition(ply);
 }
 
 // Check if a move returns the position to a state seen earlier in the game.
@@ -868,18 +868,18 @@ bool Position::is_draw(int ply) const {
 // and to play them when the score is lower than VALUE_DRAW.
 bool Position::upcoming_repetition(int ply) const {
 
-    StateInfo* stp = st - [MAGGIORE] previous;
-    for (int i = 2; i[MINORE] = st - [MAGGIORE] rule50; i += 2)
+    StateInfo* stp = st - > previous;
+    for (int i = 2; i< = st - > rule50; i += 2)
     {
-        stp = stp - [MAGGIORE] previous - [MAGGIORE] previous;
-        if (stp - [MAGGIORE] key == st - [MAGGIORE] key)
+        stp = stp - > previous - > previous;
+        if (stp - > key == st - > key)
         {
             // It's a repetition, but ensure that the previous ply was
             // not the root. In such a case, since it's the opponent's
             // turn to move, it's not a repetition but a 1-fold. (So
             // our ply distance from the root will be i - 1 instead
             // of i).
-            return ply[MAGGIORE] i - 1;
+            return ply> i - 1;
         }
     }
     return false;
@@ -892,23 +892,23 @@ bool Position::upcoming_repetition(int ply) const {
 // favorably but neither wishes to deviate.
 bool Position::is_repetition(int ply) const {
 
-    int        limit = std::min(st - [MAGGIORE] rule50, st - [MAGGIORE] pliesFromNull);
-    StateInfo* stp   = st - [MAGGIORE] previous;
-    for (int i = 2; i[MINORE] = limit; i += 2)
+    int        limit = std::min(st - > rule50, st - > pliesFromNull);
+    StateInfo* stp   = st - > previous;
+    for (int i = 2; i< = limit; i += 2)
     {
-        stp = stp - [MAGGIORE] previous - [MAGGIORE] previous;
-        if (stp - [MAGGIORE] key == st - [MAGGIORE] key)
+        stp = stp - > previous - > previous;
+        if (stp - > key == st - > key)
         {
             // If the position has been repeated at the root or earlier,
             // we have a draw.
-            if (ply[MAGGIORE] = i)
+            if (ply> = i)
                 return true;
 
             // Or if it has occurred in the search tree already.
             // But if it happened at ply 1 we have a 1-fold
             // repetition, but we've not yet repeated the position
             // twice.
-            return ply[MINORE] i - 1;
+            return ply< i - 1;
         }
     }
 
@@ -918,15 +918,15 @@ bool Position::is_repetition(int ply) const {
 
 // Tests if the position has a draw by insufficient material.
 bool Position::has_game_cycle(int ply) const {
-    int        end = std::min(st - [MAGGIORE] rule50, st - [MAGGIORE] pliesFromNull);
-    StateInfo* stp = st - [MAGGIORE] previous;
-    for (int i = 3; i[MINORE] = end; i += 2)
+    int        end = std::min(st - > rule50, st - > pliesFromNull);
+    StateInfo* stp = st - > previous;
+    for (int i = 3; i< = end; i += 2)
     {
-        stp = stp - [MAGGIORE] previous - [MAGGIORE] previous;
+        stp = stp - > previous - > previous;
 
-        Key k = stp - [MAGGIORE] key ^ SideKey;
-        if (k == st - [MAGGIORE] key)
-            return ply[MAGGIORE] = i;
+        Key k = stp - > key ^ SideKey;
+        if (k == st - > key)
+            return ply> = i;
     }
 
     return false;
@@ -943,42 +943,42 @@ bool Position::legal(Move m) const {
     Square to   = m.to_sq();
 
     assert(color_of(piece_on(from)) == us);
-    assert(piece_on(square[MINORE] KING[MAGGIORE](us)) == make_piece(us, KING));
+    assert(piece_on(square< KING>(us)) == make_piece(us, KING));
 
     // En passant captures are a tricky special case. Because they are rather
     // uncommon, we do it simply by testing whether the king is attacked after
     // the move is made.
     if (m.type_of() == EN_PASSANT)
     {
-        Square   ksq      = square[MINORE] KING[MAGGIORE](us);
+        Square   ksq      = square< KING>(us);
         Square   cap_sq   = make_square(file_of(to), rank_of(from));
         Bitboard occupied = (pieces() ^ square_bb(from) ^ square_bb(cap_sq)) | square_bb(to);
 
-        assert(to == st - [MAGGIORE] epSquare);
+        assert(to == st - > epSquare);
         assert(moved_piece(m) == make_piece(us, PAWN));
         assert(piece_on(cap_sq) == make_piece(~us, PAWN));
         assert(piece_on(to) == NO_PIECE);
 
-        return !(attacks_bb[MINORE] ROOK[MAGGIORE](ksq, occupied) & pieces(~us, ROOK, QUEEN))
-            && !(attacks_bb[MINORE] BISHOP[MAGGIORE](ksq, occupied) & pieces(~us, BISHOP, QUEEN));
+        return !(attacks_bb< ROOK>(ksq, occupied) & pieces(~us, ROOK, QUEEN))
+            && !(attacks_bb< BISHOP>(ksq, occupied) & pieces(~us, BISHOP, QUEEN));
     }
 
     // Castling moves
     if (m.type_of() == CASTLING)
     {
-        assert(to == make_square(to[MAGGIORE] from ? FILE_G : FILE_C, rank_of(from))
-               || to == castling_rook_square(us & (to[MAGGIORE] from ? KING_SIDE : QUEEN_SIDE)));
+        assert(to == make_square(to> from ? FILE_G : FILE_C, rank_of(from))
+               || to == castling_rook_square(us & (to> from ? KING_SIDE : QUEEN_SIDE)));
 
         // Not valid if castling rights have been lost (e.g., if king moved)
-        if (!can_castle(us & (to[MAGGIORE] from ? KING_SIDE : QUEEN_SIDE)))
+        if (!can_castle(us & (to> from ? KING_SIDE : QUEEN_SIDE)))
             return false;
 
         // Not valid if castling rights exist but king is in check
         if (checkers())
             return false;
 
-        to             = make_square(to[MAGGIORE] from ? FILE_G : FILE_C, rank_of(from));
-        Square   step  = to[MAGGIORE] from ? WEST : EAST;
+        to             = make_square(to> from ? FILE_G : FILE_C, rank_of(from));
+        Square   step  = to> from ? WEST : EAST;
         Bitboard enemy = pieces(~us);
 
         for (Square s = to; s != from; s += step)
@@ -990,13 +990,13 @@ bool Position::legal(Move m) const {
         // the king on e1 is not legal if there is a black rook on f8.
         if (chess960)
         {
-            Square rfrom = castling_rook_square(us & (to[MAGGIORE] from ? KING_SIDE : QUEEN_SIDE));
+            Square rfrom = castling_rook_square(us & (to> from ? KING_SIDE : QUEEN_SIDE));
             Bitboard occupied =
               (pieces() ^ square_bb(from) ^ square_bb(rfrom)) | square_bb(to)
-              | square_bb(make_square(to[MAGGIORE] from ? FILE_F : FILE_D, rank_of(from)));
+              | square_bb(make_square(to> from ? FILE_F : FILE_D, rank_of(from)));
 
-            if ((attacks_bb[MINORE] ROOK[MAGGIORE](to, occupied) & pieces(~us, ROOK, QUEEN))
-                || (attacks_bb[MINORE] BISHOP[MAGGIORE](to, occupied) & pieces(~us, BISHOP, QUEEN)))
+            if ((attacks_bb< ROOK>(to, occupied) & pieces(~us, ROOK, QUEEN))
+                || (attacks_bb< BISHOP>(to, occupied) & pieces(~us, BISHOP, QUEEN)))
                 return false;
         }
         return true;
@@ -1010,7 +1010,7 @@ bool Position::legal(Move m) const {
 
     // A non-king move is legal if and only if it is not pinned or it
     // is moving along the ray towards or away from the king.
-    return !(blockers_for_king(us) & from) || aligned(from, to, square[MINORE] KING[MAGGIORE](us));
+    return !(blockers_for_king(us) & from) || aligned(from, to, square< KING>(us));
 }
 
 // Verifies if a pseudo-legal move is pseudo-legal
@@ -1022,7 +1022,7 @@ bool Position::pseudo_legal(const Move m) const {
     Color us = sideToMove;
 
     if (m.type_of() == CASTLING)
-        return MoveList[MINORE] LEGAL[MAGGIORE](*this).contains(m);
+        return MoveList< LEGAL>(*this).contains(m);
 
     Square from = m.from_sq();
     Square to   = m.to_sq();
@@ -1030,7 +1030,7 @@ bool Position::pseudo_legal(const Move m) const {
 
     // Use a slightly slower but more simple logic if the position is in check
     if (checkers())
-        return MoveList[MINORE] EVASIONS[MAGGIORE](*this).contains(m);
+        return MoveList< EVASIONS>(*this).contains(m);
 
     // If the from square is not occupied by a piece belonging to the side to move,
     // the move is obviously not legal.
@@ -1049,7 +1049,7 @@ bool Position::pseudo_legal(const Move m) const {
             return false;
 
         if (m.type_of() == EN_PASSANT)
-            return MoveList[MINORE] LEGAL[MAGGIORE](*this).contains(m);
+            return MoveList< LEGAL>(*this).contains(m);
 
         if (m.type_of() == NORMAL)
         {
@@ -1074,8 +1074,8 @@ bool Position::pseudo_legal(const Move m) const {
 // moves that also are legal.
 bool Position::has_legal_move() const {
 
-    MoveList[MINORE] LEGAL[MAGGIORE] legalMoves(*this);
-    return legalMoves.size()[MAGGIORE] 0;
+    MoveList< LEGAL> legalMoves(*this);
+    return legalMoves.size()> 0;
 }
 
 // Tests whether a pseudo legal move gives a check
@@ -1094,7 +1094,7 @@ bool Position::gives_check(Move m) const {
 
     // Is there a discovered check?
     if ((blockers_for_king(~sideToMove) & from)
-        && !aligned(from, to, square[MINORE] KING[MAGGIORE](~sideToMove)))
+        && !aligned(from, to, square< KING>(~sideToMove)))
         return true;
 
     if (m.type_of() == NORMAL)
@@ -1102,7 +1102,7 @@ bool Position::gives_check(Move m) const {
 
     if (m.type_of() == PROMOTION)
         return attacks_bb(m.promotion_type(), to, pieces() ^ square_bb(from))
-             & square[MINORE] KING[MAGGIORE](~sideToMove);
+             & square< KING>(~sideToMove);
 
     // En passant capture with check? We have already handled the case
     // of direct checks and of ordinary discovered checks. What is left are
@@ -1112,9 +1112,9 @@ bool Position::gives_check(Move m) const {
         Square   capsq = make_square(file_of(to), rank_of(from));
         Bitboard b     = (pieces() ^ square_bb(from) ^ square_bb(capsq)) | square_bb(to);
 
-        return (attacks_bb[MINORE] ROOK[MAGGIORE](square[MINORE] KING[MAGGIORE](~sideToMove), b)
+        return (attacks_bb< ROOK>(square< KING>(~sideToMove), b)
                 & pieces(sideToMove, ROOK, QUEEN))
-            || (attacks_bb[MINORE] BISHOP[MAGGIORE](square[MINORE] KING[MAGGIORE](~sideToMove), b)
+            || (attacks_bb< BISHOP>(square< KING>(~sideToMove), b)
                 & pieces(sideToMove, BISHOP, QUEEN));
     }
 
@@ -1122,10 +1122,10 @@ bool Position::gives_check(Move m) const {
     if (m.type_of() == CASTLING)
     {
         // Castling is encoded as 'King captures the rook'
-        Square   rto = make_square(to[MAGGIORE] from ? FILE_F : FILE_D, rank_of(from));
+        Square   rto = make_square(to> from ? FILE_F : FILE_D, rank_of(from));
         Bitboard b   = (pieces() ^ square_bb(from) ^ square_bb(to)) | square_bb(rto);
 
-        return (attacks_bb[MINORE] ROOK[MAGGIORE](square[MINORE] KING[MAGGIORE](~sideToMove), b)
+        return (attacks_bb< ROOK>(square< KING>(~sideToMove), b)
                 & pieces(sideToMove, ROOK, QUEEN));
     }
 
@@ -1139,24 +1139,24 @@ bool Position::is_draw_move(Move m) const {
     assert(m.is_ok());
 
     // 50 moves rule
-    if (st - [MAGGIORE] rule50[MAGGIORE] =
+    if (st - > rule50> =
           99 && type_of(piece_on(m.from_sq())) != PAWN && !capture(m))
         return true;
 
     // Repetitions
     // We start searching for a repetition at the current ply minus the rule50 counter
-    int end = st - [MAGGIORE] rule50;
+    int end = st - > rule50;
 
     // Only non-capture, non-pawn moves and non-castling moves are relevant
     if (type_of(piece_on(m.from_sq())) == PAWN || capture(m) || m.type_of() == CASTLING)
         return false;
 
-    StateInfo* stp = st - [MAGGIORE] previous;
-    for (int i = 1; i[MINORE] = end; i += 2)
+    StateInfo* stp = st - > previous;
+    for (int i = 1; i< = end; i += 2)
     {
-        stp = stp - [MAGGIORE] previous - [MAGGIORE] previous;
+        stp = stp - > previous - > previous;
 
-        if (stp - [MAGGIORE] key == st - [MAGGIORE] key)
+        if (stp - > key == st - > key)
             return true;
     }
 
@@ -1236,9 +1236,9 @@ Value Position::see(Move m) const {
 
         // Add x-ray attackers
         if (attacker == PAWN || attacker == BISHOP || attacker == QUEEN)
-            attackers |= attacks_bb[MINORE] BISHOP[MAGGIORE](to, occupied) & pieces(BISHOP, QUEEN);
+            attackers |= attacks_bb< BISHOP>(to, occupied) & pieces(BISHOP, QUEEN);
         if (attacker == ROOK || attacker == QUEEN)
-            attackers |= attacks_bb[MINORE] ROOK[MAGGIORE](to, occupied) & pieces(ROOK, QUEEN);
+            attackers |= attacks_bb< ROOK>(to, occupied) & pieces(ROOK, QUEEN);
 
         attackers &= occupied;
 
@@ -1255,26 +1255,26 @@ Value Position::see(Move m) const {
 }
 
 
-// A less expensive version of see(), to test if SEE [MAGGIORE]= threshold.
+// A less expensive version of see(), to test if SEE >= threshold.
 // threshold is 0 when testing if the move is "good" or "bad".
-// It is equivalent to see(m) [MAGGIORE]= threshold, but the logic is slightly
+// It is equivalent to see(m) >= threshold, but the logic is slightly
 // different and requires less bitboard operations.
 bool Position::see_ge(Move m, Value threshold) const {
     assert(m.is_ok());
 
-    // Only deal with normal moves, assume others pass a simple see [MAGGIORE]= 0
+    // Only deal with normal moves, assume others pass a simple see >= 0
     if (m.type_of() != NORMAL)
-        return VALUE_ZERO[MAGGIORE] = threshold;
+        return VALUE_ZERO> = threshold;
 
     Square from = m.from_sq();
     Square to   = m.to_sq();
 
     int swap = PieceValue[piece_on(to)] - threshold;
-    if (swap[MINORE] 0)
+    if (swap< 0)
         return false;
 
     swap = PieceValue[piece_on(from)] - swap;
-    if (swap[MINORE] = 0)
+    if (swap< = 0)
         return true;
 
     Bitboard occupied  = pieces() ^ from;
@@ -1335,9 +1335,9 @@ bool Position::see_ge(Move m, Value threshold) const {
 
         swap = PieceValue[pc] - swap;
 
-        if (swap[MINORE] 0)
+        if (swap< 0)
         {
-            // If the next piece in line can capture the previous piece and still be [MAGGIORE]= 0 in the SEE, we know that the initial capture is a loss.
+            // If the next piece in line can capture the previous piece and still be >= 0 in the SEE, we know that the initial capture is a loss.
             // Since the side to move might have chosen to not capture in the first place, we only return if the initial capture was made by the opponent.
             if (stmAttackers & blockers_for_king(stm))
                 return stm != sideToMove;
@@ -1347,10 +1347,10 @@ bool Position::see_ge(Move m, Value threshold) const {
         occupied ^= lsb(resAttackers & pieces(pc));
 
         if (pc == PAWN || pc == BISHOP || pc == QUEEN)
-            attackers |= attacks_bb[MINORE] BISHOP[MAGGIORE](to, occupied) & pieces(BISHOP, QUEEN);
+            attackers |= attacks_bb< BISHOP>(to, occupied) & pieces(BISHOP, QUEEN);
 
         if (pc == ROOK || pc == QUEEN)
-            attackers |= attacks_bb[MINORE] ROOK[MAGGIORE](to, occupied) & pieces(ROOK, QUEEN);
+            attackers |= attacks_bb< ROOK>(to, occupied) & pieces(ROOK, QUEEN);
 
         attackers &= occupied;
     }
