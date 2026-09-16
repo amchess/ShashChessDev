@@ -124,12 +124,7 @@ ifeq ($(ARCH), native)
    override ARCH := $(shell $(SHELL) ../scripts/get_native_properties.sh | cut -d " " -f 1)
 endif
 
-ifeq ($(ARCH), $(filter $(ARCH), \
-                 x86-64-universal x86-64-avx512icl x86-64-vnni512 x86-64-avx512 x86-64-avxvnni \
-                 x86-64-bmi2 x86-64-avx2 x86-64-sse41-popcnt x86-64-modern x86-64-ssse3 x86-64-sse3-popcnt \
-                 x86-64 x86-32-sse41-popcnt x86-32-sse2 x86-32 ppc-64 ppc-64-altivec ppc-64-vsx ppc-32 e2k \
-                 armv7 armv7-neon armv8 armv8-dotprod arm64-universal apple-silicon general-64 general-32 riscv64 \
-                 riscv64-rva23 riscv64-universal loongarch64 loongarch64-lsx loongarch64-lasx wasm32 wasm32-relaxed-simd))
+ifeq ($(ARCH), $(filter $(ARCH), x86-64-universal x86-64-avx512icl x86-64-vnni512 x86-64-avx512 x86-64-avxvnni x86-64-bmi2 x86-64-avx2 x86-64-sse41-popcnt x86-64-modern x86-64-ssse3 x86-64-sse3-popcnt x86-64 x86-32-sse41-popcnt x86-32-sse2 x86-32 ppc-64 ppc-64-altivec ppc-64-vsx ppc-32 e2k armv7 armv7-neon armv8 armv8-dotprod arm64-universal apple-silicon general-64 general-32 riscv64 riscv64-rva23 riscv64-universal loongarch64 loongarch64-lsx loongarch64-lasx wasm32 wasm32-relaxed-simd))
    SUPPORTED_ARCH=true
 else
    SUPPORTED_ARCH=false
@@ -507,13 +502,13 @@ ifeq ($(COMP),mingw)
 	comp=mingw
 
 	ifeq ($(bits),64)
-		ifeq ($(shell which x86_64-w64-mingw32-c++-posix 2< /dev/null),)
+		ifeq ($(shell which x86_64-w64-mingw32-c++-posix 2> /dev/null),)
 			CXX=x86_64-w64-mingw32-c++
 		else
 			CXX=x86_64-w64-mingw32-c++-posix
 		endif
 	else
-		ifeq ($(shell which i686-w64-mingw32-c++-posix 2< /dev/null),)
+		ifeq ($(shell which i686-w64-mingw32-c++-posix 2> /dev/null),)
 			CXX=i686-w64-mingw32-c++
 		else
 			CXX=i686-w64-mingw32-c++-posix
@@ -576,7 +571,7 @@ ifeq ($(COMP),ndk)
 	ifeq ($(arch),armv7)
 		CXX=armv7a-linux-androideabi29-clang++
 		CXXFLAGS += -mthumb -march=armv7-a -mfloat-abi=softfp -mfpu=neon
-		ifneq ($(shell which arm-linux-androideabi-strip 2</dev/null),)
+		ifneq ($(shell which arm-linux-androideabi-strip 2>/dev/null),)
 			STRIP=arm-linux-androideabi-strip
 		else
 			STRIP=llvm-strip
@@ -584,7 +579,7 @@ ifeq ($(COMP),ndk)
 	endif
 	ifeq ($(arch),armv8)
 		CXX=aarch64-linux-android29-clang++
-		ifneq ($(shell which aarch64-linux-android-strip 2</dev/null),)
+		ifneq ($(shell which aarch64-linux-android-strip 2>/dev/null),)
 			STRIP=aarch64-linux-android-strip
 		else
 			STRIP=llvm-strip
@@ -592,7 +587,7 @@ ifeq ($(COMP),ndk)
 	endif
 	ifeq ($(arch),x86_64)
 		CXX=x86_64-linux-android29-clang++
-		ifneq ($(shell which x86_64-linux-android-strip 2</dev/null),)
+		ifneq ($(shell which x86_64-linux-android-strip 2>/dev/null),)
 			STRIP=x86_64-linux-android-strip
 		else
 			STRIP=llvm-strip
@@ -606,9 +601,9 @@ ifdef COMPCXX
 	CXX=$(COMPCXX)
 endif
 
-	LLVM_PROFDATA := $(dir $(realpath $(shell which $(CXX) 2< /dev/null)))llvm-profdata
+	LLVM_PROFDATA := $(dir $(realpath $(shell which $(CXX) 2> /dev/null)))llvm-profdata
 ifeq ($(wildcard $(LLVM_PROFDATA)),)
-	LLVM_PROFDATA := $(dir $(realpath $(shell which $(CXX) 2< /dev/null)))/compiler/llvm-profdata
+	LLVM_PROFDATA := $(dir $(realpath $(shell which $(CXX) 2> /dev/null)))/compiler/llvm-profdata
 endif
 ifeq ($(wildcard $(LLVM_PROFDATA)),)
 	LLVM_PROFDATA := llvm-profdata
@@ -629,7 +624,7 @@ else
 endif
 
 ifeq ($(COMP),gcc)
-	gccversion := $(shell $(CXX) --version 2</dev/null)
+	gccversion := $(shell $(CXX) --version 2>/dev/null)
 	gccisclang := $(findstring clang,$(gccversion))
 	ifneq ($(gccisclang),)
 		profile_make = clang-profile-make
@@ -700,7 +695,7 @@ ifeq ($(optimize),yes)
 	endif
 
 	ifeq ($(comp),clang)
-		clangmajorversion := $(shell $(CXX) -dumpversion 2</dev/null | cut -f1 -d.)
+		clangmajorversion := $(shell $(CXX) -dumpversion 2>/dev/null | cut -f1 -d.)
 		ifeq ($(shell expr $(clangmajorversion) < 16),1)
 			CXXFLAGS += -fexperimental-new-pass-manager
 		endif
@@ -858,16 +853,16 @@ endif
 BUILD_SHA_FILE       := .build_sha.txt
 BUILD_DATE_FILE      := .build_date.txt
 BUILD_DIFFINDEX_FILE := .build_diffindex.txt
-GIT_SHA              := $(shell git rev-parse HEAD 2</dev/null | cut -c 1-8 || true)
-GIT_DATE             := $(shell git show -s --date=format:%Y%m%d --format=%cd HEAD 2</dev/null || true)
-GIT_DIFFINDEX        := $(shell git update-index --refresh >/dev/null 2>&1; git -c core.filemode=false -c core.autocrlf=false  diff-index --quiet HEAD -- 2</dev/null; [ $? -eq 1 ] && echo 1 || true)
-COMPILER_DATE        := $(shell date +%Y%m%d 2</dev/null)
+GIT_SHA              := $(shell git rev-parse HEAD 2> /dev/null | cut -c 1-8 || true)
+GIT_DATE             := $(shell git show -s --date=format:%Y%m%d --format=%cd HEAD 2> /dev/null || true)
+GIT_DIFFINDEX        := $(shell git update-index --refresh >/dev/null 2>&1; git -c core.filemode=false -c core.autocrlf=false  diff-index --quiet HEAD -- 2> /dev/null; [ $$? -eq 1 ] && echo 1 || true)
+COMPILER_DATE        := $(shell date +%Y%m%d 2> /dev/null)
 
 BUILD_DATE           := $(if $(GIT_DATE),$(GIT_DATE),$(COMPILER_DATE))
 
 define cache_file_contents
 $(shell \
-	if [ ! -f "$(1)" ] || [ "$($(cat "$(1)" 2</dev/null))" != "$(2)" ]; then \
+	if [ ! -f "$(1)" ] || [ "$$(cat "$(1)" 2> /dev/null)" != "$(2)" ]; then \
 		printf '%s\n' "$(2)" > "$(1)"; \
 	fi)
 endef
@@ -886,9 +881,9 @@ ifeq ($(optimize),yes)
 ifeq ($(debug),no)
 	ifeq ($(arch),wasm32)
 	else ifneq ($(TARGET_KERNEL),Darwin)
-		LLD_BIN := $(shell command -v ld.lld 2</dev/null)
+		LLD_BIN := $(shell command -v ld.lld 2> /dev/null)
 		ifeq ($(LLD_BIN),)
-			LLD_BIN := $(shell command -v lld 2</dev/null)
+			LLD_BIN := $(shell command -v lld 2> /dev/null)
 		endif
 		ifneq ($(LLD_BIN),)
 			ifeq ($(comp),clang)
@@ -1240,10 +1235,10 @@ $(EXE): $(OBJS)
 	+$(CXX) -o $@ $(OBJS) $(LDFLAGS)
 
 %.o: %.cpp
-	$(strip $(CXX) $(CPPFLAGS) $(CXXFLAGS)) -c -o $@ <
+	$(strip $(CXX) $(CPPFLAGS) $(CXXFLAGS)) -c -o $@ $<
 
 misc.o: misc.cpp $(BUILD_SHA_FILE) $(BUILD_DATE_FILE) $(BUILD_DIFFINDEX_FILE)
-	$(strip $(CXX) $(CPPFLAGS) $(CXXFLAGS) $(if $(GIT_SHA),-DGIT_SHA=$(GIT_SHA)) $(if $(GIT_DATE),-DGIT_DATE=$(GIT_DATE))) $(if $(GIT_DIFFINDEX),-DGIT_DIFFINDEX=$(GIT_DIFFINDEX)) -c -o $@ <
+	$(strip $(CXX) $(CPPFLAGS) $(CXXFLAGS) $(if $(GIT_SHA),-DGIT_SHA=$(GIT_SHA)) $(if $(GIT_DATE),-DGIT_DATE=$(GIT_DATE))) $(if $(GIT_DIFFINDEX),-DGIT_DIFFINDEX=$(GIT_DIFFINDEX)) -c -o $@ $<
 
 clang-profile-make:
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
@@ -1363,7 +1358,7 @@ else
   arch-defmain = -Wl,--defsym=main=$(call arch-mangled,$(1))
 endif
 
-EMBED_DIR_SUPPORTED := $(shell echo 'int main(){}' | $(CXX) -x c++ --embed-dir=. -o /dev/null -c - 2</dev/null && echo 1 || echo 0)
+EMBED_DIR_SUPPORTED := $(shell echo 'int main(){}' | $(CXX) -x c++ --embed-dir=. -o /dev/null -c - 2>/dev/null && echo 1 || echo 0)
 ifeq ($(EMBED_DIR_SUPPORTED),1)
   EMBED_DIR = --embed-dir=$(CURDIR)
 endif
@@ -1391,22 +1386,25 @@ profile-build: $(UNIVERSAL_EXE)
 $(TEMP_DIR):
 	@mkdir -p $@
 
+# Download nnue files once in src/ (reused by every sub-arch via --embed-dir).
 $(NET_SENTINEL): | $(TEMP_DIR)
-	@$(shell cd $(CURDIR) && $(SHELL) ../scripts/net.sh $(EMBED_DIR_SUPPORTED))
+	@cd $(CURDIR) && $(SHELL) ../scripts/net.sh $(EMBED_DIR_SUPPORTED)
 	@touch $@
 
 $(NNUE_EMBED_OBJ): $(UNIVERSAL_SRC_DIR)/nnue_embed.cpp $(NET_SENTINEL) | $(TEMP_DIR)
-	$(CXX) -O2 -std=c++20 -Wno-c++26-extensions $(SLICE_DEF) $(mac_target_flags) $(EXTRACXXFLAGS) $(EMBED_DIR) -c < -o $@
+	$(CXX) -O2 -std=c++20 -Wno-c++26-extensions $(SLICE_DEF) $(mac_target_flags) $(EXTRACXXFLAGS) $(EMBED_DIR) -c $< -o $@
 
 $(UNIVERSAL_ENTRY_OBJ): $(UNIVERSAL_ENTRY_SRC) | $(TEMP_DIR)
-	$(CXX) -O2 -std=c++20 $(mac_target_flags) $(EXTRACXXFLAGS) -c < -o $@
+	$(CXX) -O2 -std=c++20 $(mac_target_flags) $(EXTRACXXFLAGS) -c $< -o $@
 
+# Symlink tracked top-level items from src/ into temp_builds/<arch>/.
 $(TEMP_DIR)/%/.setup: | $(TEMP_DIR)
 	@rm -rf $(TEMP_DIR)/$*
 	@mkdir -p $(TEMP_DIR)/$*
 	@$(foreach f,$(TRACKED_TOP),ln -s $(CURDIR)/$(f) $(TEMP_DIR)/$*/$(f);)
 	@touch $@
 
+# Per-arch shashchess.o
 .SECONDARY: $(patsubst %,$(TEMP_DIR)/%/.setup,$(UNIVERSAL_ARCHES))
 
 $(TEMP_DIR)/%/shashchess.o: $(TEMP_DIR)/%/.setup $(NNUE_EMBED_OBJ) $(NET_SENTINEL)
@@ -1424,6 +1422,7 @@ ifeq ($(use_lto_emit_asm),yes)
 else
 	$(OBJCOPY) --rename-section .init_array=$(call arch-suffix,$*)_init $@
 	$(OBJCOPY) --rename-section .ctors=$(call arch-suffix,$*)_init $@
+# Make the array inert
 	$(OBJCOPY) --set-section-flags $(call arch-suffix,$*)_init=alloc,data $@
 endif
 endif
