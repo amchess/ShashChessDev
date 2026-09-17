@@ -8,22 +8,29 @@ REM
 REM  ARCH=x86-64-universal compila 8 slice
 REM  (x86-64, sse41-popcnt, avx2, bmi2, avxvnni, avx512, vnni512, avx512icl)
 REM  e le linka in un unico .exe che sceglie a runtime quella giusta.
+REM
+REM  RETE ESTERNA: richiede Makefile e universal\nnue_embed.cpp patchati.
+REM  L'exe non contiene la rete: il file nn-*.nnue va tenuto accanto all'exe
+REM  oppure indicato con l'opzione UCI EvalFile.
 REM ==========================================================================
 
 REM --- toolchain: identica al batch nativo ----------------------------------
 SET PATH=C:\tools\msys64\mingw64\bin;C:\tools\msys64\usr\bin;%PATH%
 
 REM --- Intel SDE: serve SOLO per il PGO -------------------------------------
-REM  profile-build esegue il bench di OGNI slice, comprese AVX-512/VNNI/ICL:
-REM  senza emulatore la CPU si ferma con "illegal instruction".
-REM  Percorso SENZA spazi. Lasciare vuoto ( SET "SDE_DIR=" ) per build no-PGO.
 SET "SDE_DIR=C:\tools\sde"
 
-REM --- NON passare ENV_CXXFLAGS sulla riga di comando di make ---------------
-REM  Sulla riga di comando sovrascriverebbe i flag per-slice
-REM  (-DShashChess=..., -DUNIVERSAL_BINARY, --defsym=main=..., --embed-dir=...)
-REM  iniettati dal driver universal nel sub-make => link rotto.
-REM  Se servono flag extra: SET "CXXFLAGS=-Dxxx" come variabile d'ambiente.
+REM --- controllo: sorgenti patchati per la rete esterna ---------------------
+findstr /c:"NNUE_STUB_OBJ" Makefile >nul 2>&1
+if errorlevel 1 (
+    echo *** Makefile non patchato: manca il supporto a NNUE_EMBEDDING_OFF=yes ***
+    goto :fallita
+)
+findstr /c:"defined(NNUE_EMBEDDING_OFF)" universal\nnue_embed.cpp >nul 2>&1
+if errorlevel 1 (
+    echo *** universal\nnue_embed.cpp non patchato ***
+    goto :fallita
+)
 
 set "TARGET=build"
 set "RUN_PREFIX="
@@ -38,19 +45,69 @@ if exist "%SDE_DIR%\sde.exe" (
 
 mingw32-make clean
 
-mingw32-make %TARGET% ARCH=x86-64-universal COMP=mingw -j %NUMBER_OF_PROCESSORS%
+REM NNUE_EMBEDDING_OFF=yes: le slice e il loro bench PGO usano ancora la rete
+REM incorporata in temp_builds, solo il link finale usa il segnaposto da 1 byte.
+REM Non passare CXXFLAGS da riga di comando: sostituisce -O3, -m... e -flto.
+mingw32-make %TARGET% ARCH=x86-64-universal COMP=mingw NNUE_EMBEDDING_OFF=yes -j %NUMBER_OF_PROCESSORS%
 if errorlevel 1 goto :fallita
 if not exist shashchess.exe goto :fallita
 
 strip shashchess.exe
-ren shashchess.exe ShashChess19-universal.exe
+REM move /y invece di ren: ren fallisce se l'exe esiste gia' e il clean finale
+REM cancellerebbe quello nuovo, lasciando il binario della build precedente.
+move /y shashchess.exe ShashChess42-universal.exe >nul
+if errorlevel 1 goto :fallita
+
+REM --- nome della rete di default, letto da evaluate.h ----------------------
+set "NETFILE="
+for /f "tokens=3" %%N in ('findstr /c:"define EvalFileDefaultName " evaluate.h') do set "NETFILE=%%~N"
+if not defined NETFILE (
+    echo *** EvalFileDefaultName non trovato in evaluate.h ***
+    goto :fallita
+)
+if not exist "%NETFILE%" (
+    echo *** Rete %NETFILE% assente in src: scaricala con "mingw32-make net" ***
+    goto :fallita
+)
+
+REM --- verifiche in una cartella temporanea, senza toccare src ---------------
+set "CHECKDIR=%TEMP%\shashchess_netcheck"
+if exist "%CHECKDIR%" rmdir /s /q "%CHECKDIR%"
+mkdir "%CHECKDIR%"
+copy /y ShashChess42-universal.exe "%CHECKDIR%\ShashChess42-universal.exe" >nul
+
+REM verifica 1: senza rete accanto all'exe il motore deve fermarsi
+pushd "%CHECKDIR%"
+ShashChess42-universal.exe bench 16 1 1 >nul 2>&1
+set "RC=%errorlevel%"
+popd
+if "%RC%"=="0" (
+    rmdir /s /q "%CHECKDIR%"
+    echo *** ATTENZIONE: il bench gira anche senza %NETFILE%: la rete e' ancora incorporata ***
+    goto :fallita
+)
+echo [universal] OK: senza %NETFILE% il motore si ferma, la rete non e' incorporata
+
+REM verifica 2: con la rete accanto all'exe il bench deve funzionare
+copy /y "%NETFILE%" "%CHECKDIR%\%NETFILE%" >nul
+pushd "%CHECKDIR%"
+ShashChess42-universal.exe bench 16 1 1 >nul 2>&1
+set "RC=%errorlevel%"
+popd
+rmdir /s /q "%CHECKDIR%"
+if not "%RC%"=="0" (
+    echo *** ERRORE: il motore non carica %NETFILE% messo accanto all'exe ***
+    goto :fallita
+)
+echo [universal] OK: rete caricata da file esterno
 
 REM --- verifica: stampa la slice selezionata sulla CPU corrente -------------
-ShashChess19-universal.exe compiler
+ShashChess42-universal.exe compiler
 
 mingw32-make clean
 echo.
-echo [universal] OK: ShashChess19-universal.exe
+echo [universal] OK: ShashChess42-universal.exe
+echo [universal] Da distribuire insieme: ShashChess42-universal.exe + %NETFILE%
 pause
 exit /b 0
 

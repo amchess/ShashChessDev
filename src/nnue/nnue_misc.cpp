@@ -49,7 +49,7 @@ constexpr std::string_view PieceToChar(" PNBRQK  pnbrqk");
 
 namespace {
 
-void format_cp_compact(Value v, char* buffer, const Position& pos) {
+[[maybe_unused]] void format_cp_compact(Value v, char* buffer, const Position& pos) {
     buffer[0] = (v < 0 ? '-' : v > 0 ? '+' : ' ');
     int cp    = std::abs(UCIEngine::to_cp(v, pos));
     if (cp >= 10000)
@@ -81,7 +81,8 @@ void format_cp_compact(Value v, char* buffer, const Position& pos) {
     }
 }
 
-void format_cp_aligned_dot(Value v, std::stringstream& stream, const Position& pos) {
+[[maybe_unused]] void
+format_cp_aligned_dot(Value v, std::stringstream& stream, const Position& pos) {
     const double pawns = std::abs(0.01 * UCIEngine::to_cp(v, pos));
     stream << (v < 0   ? '-'
                : v > 0 ? '+'

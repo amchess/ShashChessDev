@@ -43,7 +43,6 @@
 #include <vector>
 
 // [SC:shashchess] begin
-#include "types.h"
 #ifndef _WIN32
     #include <fcntl.h>
     #include <unistd.h>

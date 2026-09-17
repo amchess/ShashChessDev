@@ -59,7 +59,7 @@ namespace fs = std::filesystem;
 namespace {
 
 // Version number or dev.
-constexpr std::string_view version = "41.2";
+constexpr std::string_view version = "42";
 
 struct Tie: public std::streambuf {
 
@@ -577,7 +577,8 @@ fs::path CommandLine::get_binary_directory(fs::path argv0) {
     return binaryDirectory;
 }
 
-std::string CommandLine::get_binary_directory(std::string argv0, std::string workingDirectory) {
+std::string CommandLine::get_binary_directory(std::string                  argv0,
+                                              [[maybe_unused]] std::string workingDirectory) {
     return get_binary_directory(fs::path(argv0)).string();
 }
 

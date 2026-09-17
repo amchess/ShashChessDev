@@ -17,3019 +17,600 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "search.h"
+#include "engine.h"
 
-// [SC:variety] begin
-#include <chrono>
-#include <cstdint>
-#include <random>
-// [SC:variety] end
 #include <algorithm>
-#include <array>
-#include <atomic>
 #include <cassert>
-#include <cmath>
-#include <cstdlib>
-#include <initializer_list>
-#include <iostream>
-#include <list>
-#include <ratio>
-#include <string>
+#include <deque>
+#include <filesystem>
+#include <iosfwd>
+#include <memory>
+#include <ostream>
+#include <sstream>
+#include <string_view>
 #include <utility>
+#include <vector>
 
-#include "bitboard.h"
 #include "evaluate.h"
-#include "history.h"
 #include "misc.h"
-#include "movegen.h"
-#include "movepick.h"
 #include "nnue/network.h"
-#include "nnue/nnue_accumulator.h"
+#include "nnue/nnue_common.h"
+#include "nnue/nnue_misc.h"
+#include "numa.h"
+#include "perft.h"
 #include "position.h"
+#include "search.h"
+#include "shm.h"
 #include "syzygy/tbprobe.h"
-#include "thread.h"
-#include "timeman.h"
-#include "tt.h"
 #include "types.h"
 #include "uci.h"
 #include "ucioption.h"
-
-// [SC:shashchess] begin
-#include "wdl/win_probability.h"  //livebook +shashin theory
-#include "learn/learn.h"          //learning
-#include "mcts/montecarlo.h"      //Montecarlo
-// [SC:livebook] begin
-#include "livebook/BaseLivebook.h"
-#include "livebook/LichessEndgame.h"
-#include "livebook/LichessMaster.h"
-#include "livebook/ChessDb.h"
-#include "livebook/LichessPlayer.h"
-#include "livebook/LichessGames.h"
-#include "livebook/Proxy.h"
-#include "livebook/ChessDBContributor.h"
-// [SC:livebook] end
-// [SC:shashchess] end
+#include "wdl/win_probability.h"
+#include "learn/learn.h"      //learning
+#include "book/book.h"        //book management
+#include "mcts/montecarlo.h"  //mcts
 
 namespace ShashChess {
 
-// [SC:shashin] begin
-using namespace ShashChess::Shashin;
-// [SC:shashin] end
+namespace NN = Eval::NNUE;
 
-// [SC:learning] begin
-bool                                    useLearning          = true;
-bool                                    enabledLearningProbe = false;
-thread_local std::vector<QLearningMove> qLearningTrajectory;
-// [SC:learning] end
+int MaxThreads = std::max(1024, 4 * int(get_hardware_concurrency()));
 
-static constexpr std::array<int, 16> lmrDivisor = {3637, 2787, 2761, 2939, 3171, 3347, 3147, 2762,
-                                                   2772, 3106, 3107, 3060, 3112, 2991, 3090, 3542};
+// The default configuration will attempt to group L3 domains up to 32 threads.
+// This size was found to be a good balance between the Elo gain of increased
+// history sharing and the speed loss from more cross-cache accesses (see
+// PR#6526). The user can always explicitly override this behavior.
+constexpr NumaAutoPolicy DefaultNumaPolicy = BundledL3Policy{32};
 
-namespace TB = Tablebases;
+Engine::Engine(std::optional<std::filesystem::path> path) :
+    binaryDirectory(path ? CommandLine::get_binary_directory(*path) : std::filesystem::path{}),
+    numaContext(NumaConfig::from_system(DefaultNumaPolicy)),
+    states(new std::deque<StateInfo>(1)),
+    threads(),
+    networkFile{std::nullopt, EvalFileDefaultName},
+    networks(numaContext,
+             // Heap-allocate because sizeof(NN::Network) is large
+             std::make_unique<NN::Network>()) {
 
-void syzygy_extend_pv(const OptionsMap&             options,
-                      const Search::LimitsType&     limits,
-                      ShashChess::Position&         pos,
-                      ShashChess::Search::RootMove& rootMove,
-                      Value&                        v,
-                      const usize                   multiPV);
+    pos.set(StartFEN, false, &states->back());
 
-using namespace Search;
+    options.add(  //
+      "Debug Log File", Option("", [](const Option& o) {
+          start_logger(path_from_utf8(std::string(o)));
+          return std::nullopt;
+      }));
 
-namespace {
+    options.add(  //
+      "NumaPolicy", Option("auto", [this](const Option& o) {
+          if (!set_numa_config_from_option(o))
+              return "NumaPolicy: invalid value '" + std::string(o) + "', keeping previous config.";
+          return numa_config_information_as_string() + "\n"
+               + thread_allocation_information_as_string();
+      }));
 
-constexpr u64 NODES_LIMIT_OUTPUT = 10'000'000;
+    options.add(  //
+      "Threads", Option(1, 1, MaxThreads, [this](const Option&) {
+          resize_threads();
+          return thread_allocation_information_as_string();
+      }));
 
-constexpr int SEARCHEDLIST_CAPACITY = 32;
-constexpr int mainHistoryDefault    = 68;
-using SearchedList                  = ValueList<Move, SEARCHEDLIST_CAPACITY>;
+    options.add(  //
+      "Hash", Option(16, 1, MaxHashMB, [this](const Option& o) {
+          set_tt_size(o);
+          return std::nullopt;
+      }));
 
-int correction_value(const Worker& w, const Position& pos, const Stack* const ss) {
-    const Color us     = pos.side_to_move();
-    const auto  m      = (ss - 1)->currentMove;
-    const auto& shared = w.sharedHistory;
-    const int   pcv    = shared.pawn_correction_entry(pos)[us].pawn;
-    const int   micv   = shared.minor_piece_correction_entry(pos)[us].minor;
-    const int   wnpcv  = shared.nonpawn_correction_entry<WHITE>(pos)[us].nonPawnWhite;
-    const int   bnpcv  = shared.nonpawn_correction_entry<BLACK>(pos)[us].nonPawnBlack;
-    const int   cntcv =
-      m.is_ok()
-          ? 8761
-            * ((*(ss - 2)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()]
-               + (*(ss - 4)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()])
-          : 64049;
+    options.add(  //
+      "Clear Hash", Option([this](const Option&) {
+          search_clear();
+          return std::nullopt;
+      }));
 
-    return 15341 * pcv + 10569 * micv + 12906 * (wnpcv + bnpcv) + cntcv;
-}
+    options.add("Ponder", Option(false));
 
-Value to_corrected_static_eval(const Value v, const int cv) {
-    return std::clamp(v + cv / 131072, VALUE_TB_LOSS_IN_MAX_PLY + 1, VALUE_TB_WIN_IN_MAX_PLY - 1);
-}
+    options.add("MultiPV", Option(1, 1, MAX_MOVES));
 
-void update_correction_history(const Position& pos,
-                               Stack* const    ss,
-                               Search::Worker& workerThread,
-                               const int       bonus) {
-    const Move  m  = (ss - 1)->currentMove;
-    const Color us = pos.side_to_move();
+    options.add("Skill Level", Option(20, 0, 20));
 
-    constexpr int nonPawnWeight = 186;
-    auto&         shared        = workerThread.sharedHistory;
+    options.add("Anti Dancing Analysis", Option(false));
 
-    shared.pawn_correction_entry(pos)[us].pawn << bonus;
-    shared.minor_piece_correction_entry(pos)[us].minor << bonus * 150 / 128;
-    shared.nonpawn_correction_entry<WHITE>(pos)[us].nonPawnWhite << bonus * nonPawnWeight / 128;
-    shared.nonpawn_correction_entry<BLACK>(pos)[us].nonPawnBlack << bonus * nonPawnWeight / 128;
+    options.add("Move Overhead", Option(10, 0, 5000));
 
-    if (m.is_ok())
+    options.add("Minimum Thinking Time", Option(100, 0, 5000));
+
+    options.add("Slow Mover", Option(100, 10, 1000));
+
+    options.add("nodestime", Option(0, 0, 10000));
+
+    options.add("UCI_Chess960", Option(false));
+
+    options.add("UCI_LimitStrength", Option(false));
+
+    options.add("UCI_Elo",
+                Option(ShashChess::Search::Skill::LowestElo, ShashChess::Search::Skill::LowestElo,
+                       ShashChess::Search::Skill::HighestElo));
+
+    options.add("UCI_ShowWDL", Option(true));
+
+    // Book management
+    for (int i = 0; i < BookManager::NumberOfBooks; ++i)
     {
-        const Square to = m.to_sq();
-        const Piece  pc = pos.piece_on(to);
-        (*(ss - 2)->continuationCorrectionHistory)[pc][to] << bonus * 130 / 128;
-        (*(ss - 4)->continuationCorrectionHistory)[pc][to] << bonus * 70 / 128;
+        options.add(Util::format_string("CTG/BIN Book %d File", i + 1),
+                    Option(EMPTY, [this, i](const Option&) {
+                        init_bookMan(i);
+                        return std::nullopt;
+                    }));
+
+        options.add(Util::format_string("Book %d Width", i + 1), Option(1, 1, 20));
+
+        options.add(Util::format_string("Book %d Depth", i + 1), Option(255, 1, 255));
+
+        options.add(Util::format_string("(CTG) Book %d Only Green", i + 1), Option(true));
     }
-}
 
-Value value_draw(usize nodes) { return VALUE_DRAW - 1 + Value(nodes & 0x2); }
-int   variety;
+    options.add(  //
+      "SyzygyPath", Option("", [](const Option& o) {
+          Tablebases::init(o);
+          return std::nullopt;
+      }));
 
-Value value_to_tt(Value v, int ply);
-Value value_from_tt(Value v, int ply, int r50c);
-void  update_pv(Move* pv, Move move, const Move* childPv);
-void  update_continuation_histories(Stack* ss, Piece pc, Square to, int bonus);
-void  update_quiet_histories(
-   const Position& pos, Stack* ss, Search::Worker& workerThread, Move move, int bonus);
-void update_all_stats(const Position& pos,
-                      Stack*          ss,
-                      Search::Worker& workerThread,
-                      Move            bestMove,
-                      Square          prevSq,
-                      SearchedList&   quietsSearched,
-                      SearchedList&   capturesSearched,
-                      Depth           depth,
-                      Move            ttMove,
-                      bool            PvNode);
+    options.add("SyzygyProbeDepth", Option(1, 1, 100));
 
-bool is_shuffling(Move move, Stack* const ss, const Position& pos) {
-    if (pos.capture_stage(move) || pos.rule50_count() < 10)
-        return false;
-    if (pos.state()->pliesFromNull < 6 || ss->ply < 20)
-        return false;
-    return move.from_sq() == (ss - 2)->currentMove.to_sq()
-        && (ss - 2)->currentMove.from_sq() == (ss - 4)->currentMove.to_sq();
-}
+    options.add("Syzygy50MoveRule", Option(true));
 
-}  // namespace
+    options.add("SyzygyProbeLimit", Option(7, 0, 7));
 
+    options.add(  //
+      "EvalFile", Option(EvalFileDefaultName, [this](const Option& o) {
+          load_big_network(path_from_utf8(std::string(o)));
+          return std::nullopt;
+      }));
 
-// [SC:livebook] begin
+    options.add(  //
+      "Full depth threads", Option(0, 0, 1024, [this](const Option& o) {
+          resize_full(o);
+          return thread_binding_information_as_string();
+      }));
+
+    // From learning
+    options.add("Persisted learning", Option("Off var Off var Standard var Self", "Off",
+                                             [this](const Option& o) -> std::optional<std::string> {
+                                                 if (!(o == "Off"))
+                                                 {
+                                                     LD.set_learning_mode(get_options(), o);
+                                                 }
+                                                 return std::optional<std::string>{};
+                                             }));
+
+    options.add("Read only learning", Option(false, [](const Option& o) {
+                    LD.set_readonly(o);
+                    return std::nullopt;
+                }));
+
+    options.add("Experience Book", Option(false, [this](const Option&) {
+                    LD.init(get_options());
+                    return std::nullopt;
+                }));
+
+    options.add("Experience Book Max Moves", Option(100, 1, 100));
+
+    options.add("Experience Book Min Depth", Option(4, 1, 255));
+
+    // From MCTS
+    options.add("MCTS by Shashin", Option(false));
+
+    options.add("MCTSThreads", Option(1, 1, 512));
+
+    options.add("MCTS Multi Strategy", Option(20, 0, 100));
+
+    options.add("MCTS Multi MinVisits", Option(5, 0, 1000));
+
+    options.add("MCTS Explore", Option(false));
+
+    // LiveBook options
 #ifdef USE_LIVEBOOK
-int livebook_depth_count = 0;
-int max_book_depth       = 255;
+    options.add("LiveBook Proxy Url", Option("", [](const Option& o) -> std::optional<std::string> {
+                    Search::set_proxy_url(o);
+                    return std::optional<std::string>{};
+                }));
 
-std::vector<Livebook::BaseLivebook*> opening_livebooks, endgame_livebooks;
+    options.add("LiveBook Lichess Games", Option(false, [](const Option& o) {
+                    Search::set_use_lichess_games(o);
+                    return std::nullopt;
+                }));
 
-std::string _proxy_url;
-bool        _use_lichess_games   = false;
-bool        _use_lichess_masters = false;
-std::string _lichess_player;
-std::string _lichess_player_color;
-bool        _use_chess_db = false;
+    options.add("LiveBook Lichess Masters", Option(false, [](const Option& o) {
+                    Search::set_use_lichess_masters(o);
+                    return std::nullopt;
+                }));
 
-bool _use_chess_db_tablebase = false;
-bool _use_lichess_tablebase  = false;
+    options.add("LiveBook Lichess Player",
+                Option("", [](const Option& o) -> std::optional<std::string> {
+                    Search::set_lichess_player(o);
+                    return std::optional<std::string>{};
+                }));
 
-bool _chess_db_contribute = false;
-bool _proxy_diversity     = false;
+    options.add("LiveBook Lichess Player Color",
+                Option("White var Both var White var Black", "White",
+                       [](const Option& o) -> std::optional<std::string> {
+                           std::string str = o;
+                           std::transform(str.begin(), str.end(), str.begin(),
+                                          [](const unsigned char c) { return std::tolower(c); });
+                           Search::set_lichess_player_color(str);
+                           return std::optional<std::string>{};
+                       }));
 
-auto contributor = Livebook::ChessDBContributor();
+    options.add("LiveBook ChessDB", Option(false, [](const Option& o) {
+                    Search::set_use_chess_db(o);
+                    return std::nullopt;
+                }));
 
-void Search::set_livebook_depth(const int book_depth) { max_book_depth = book_depth; }
+    options.add("LiveBook Depth", Option(255, 1, 255, [](const Option& o) {
+                    Search::set_livebook_depth(o);
+                    return std::nullopt;
+                }));
 
-void Search::set_proxy_url(const std::string& proxy_url) {
-    _proxy_url = proxy_url;
-    update_livebooks();
-}
+    options.add("ChessDB Tablebase", Option(false, [](const Option& o) {
+                    Search::set_use_chess_db_tablebase(o);
+                    return std::nullopt;
+                }));
 
-void Search::set_use_lichess_games(const bool lichess_games) {
-    _use_lichess_games = lichess_games;
-    update_livebooks();
-}
+    options.add("Lichess Tablebase", Option(false, [](const Option& o) {
+                    Search::set_use_lichess_tablebase(o);
+                    return std::nullopt;
+                }));
 
-void Search::set_use_lichess_masters(const bool lichess_masters) {
-    _use_lichess_masters = lichess_masters;
-    update_livebooks();
-}
-
-void Search::set_lichess_player(const std::string& lichess_player) {
-    _lichess_player = lichess_player;
-    update_livebooks();
-}
-
-void Search::set_lichess_player_color(const std::string& lichess_player_color) {
-    _lichess_player_color = lichess_player_color;
-    update_livebooks();
-}
-
-void Search::set_use_chess_db(const bool chess_db) {
-    _use_chess_db = chess_db;
-    update_livebooks();
-}
-
-void Search::set_use_chess_db_tablebase(const bool chess_db) {
-    _use_chess_db_tablebase = chess_db;
-    update_online_tablebases();
-}
-
-void Search::set_use_lichess_tablebase(const bool lichess_tablebase) {
-    _use_lichess_tablebase = lichess_tablebase;
-    update_online_tablebases();
-}
-
-void Search::update_livebooks() {
-    opening_livebooks.clear();
-
-    if (!_proxy_url.empty())
-    {
-        Livebook::Proxy* proxy = new Livebook::Proxy(_proxy_url);
-        if (_proxy_diversity)
-            proxy->set_action(Livebook::Action::QUERY);
-        else
-            proxy->set_action(Livebook::Action::QUERY_BEST);
-        opening_livebooks.push_back(proxy);
-    }
-
-    if (!_lichess_player.empty())
-    {
-        if (_lichess_player_color.empty())
-            _lichess_player_color = "white";
-
-        opening_livebooks.push_back(
-          new Livebook::LichessPlayer(_lichess_player, _lichess_player_color));
-    }
-
-    if (_use_lichess_games)
-        opening_livebooks.push_back(new Livebook::LichessGames());
-
-    if (_use_lichess_masters)
-        opening_livebooks.push_back(new Livebook::LichessMaster());
-
-    if (_use_chess_db)
-        opening_livebooks.push_back(new Livebook::ChessDb());
-}
-
-void Search::update_online_tablebases() {
-    endgame_livebooks.clear();
-
-    if (_use_chess_db_tablebase)
-        endgame_livebooks.push_back(new Livebook::ChessDb());
-
-    if (_use_lichess_tablebase)
-        endgame_livebooks.push_back(new Livebook::LichessEndgame());
-}
-
-void Search::set_chess_db_contribute(const bool chess_db_contribute) {
-    _chess_db_contribute = chess_db_contribute;
-}
-
-void Search::set_proxy_diversity(const bool proxy_diversity) {
-    _proxy_diversity = proxy_diversity;
-    update_livebooks();
-}
-#endif
-// [SC:livebook] end
-
-// [SC:variety] begin
-void Search::set_variety(const std::string& varietyOption) {
-    if (varietyOption == "Off")
-        variety = 0;
-    if (varietyOption == "Standard")
-        variety = 1;
-    if (varietyOption == "Psychological")
-        variety = 2;
-}
-// [SC:variety] end
-
-// [SC:learning] begin
-inline bool is_game_decided(const Position& pos, Value lastScore) {
-    static constexpr const Value DecidedGameEvalThreeshold = PawnValue * 5;
-    static constexpr const int   DecidedGameMaxPly         = 150;
-    static constexpr const int   DecidedGameMaxPieceCount  = 5;
-
-    if (is_valid(lastScore) && std::abs(lastScore) > DecidedGameEvalThreeshold)
-        return true;
-    if (pos.game_ply() > DecidedGameMaxPly)
-        return true;
-    if (pos.count<ALL_PIECES>() < DecidedGameMaxPieceCount)
-        return true;
-
-    return false;
-}
-// [SC:learning] end
-
-
-Search::Worker::Worker(SharedState&                    sharedState,
-                       std::unique_ptr<ISearchManager> sm,
-                       usize                           threadId,
-                       usize                           numaThreadId,
-                       usize                           numaTotalThreads,
-                       NumaReplicatedAccessToken       token) :
-    sharedHistory(sharedState.sharedHistories.at(token.get_numa_index())),
-    continuationHistory(sharedHistory.continuationHistory()),
-    threadIdx(threadId),
-    numaThreadIdx(numaThreadId),
-    numaTotal(numaTotalThreads),
-    numaAccessToken(token),
-    manager(std::move(sm)),
-    bookMan(sharedState.bookMan),  // from book management
-    options(sharedState.options),
-    threads(sharedState.threads),
-    tt(sharedState.tt),
-    network(sharedState.network),
-    refreshTable(network[token]),
-    shashinManager(std::make_unique<ShashinManager>()),
-    shConfig(sharedState.shashinConfig) {
-    clear();
-}
-
-Search::Worker::~Worker() = default;
-ShashinManager& Worker::getShashinManager() { return *shashinManager; }
-
-void Search::Worker::ensure_network_replicated() { (void) (network[numaAccessToken]); }
-
-void Search::Worker::start_searching() {
-
-    accumulatorStack.reset();
-
-    if (!is_mainthread())
-    {
-        iterative_deepening();
-        return;
-    }
-    else
-    {
-        shashinManager->setStaticState(rootPos);
-    }
-
-    main_manager()->tm.init(limits, rootPos.side_to_move(), rootPos.game_ply(), options,
-                            main_manager()->originalTimeAdjust);
-    tt.new_search();
-    main_manager()->updates.onStart();
-
-    enabledLearningProbe = false;
-    useLearning          = true;
-    set_variety(options["Variety"]);
-
-    Move bookMove = Move::none();
-
-    if (rootMoves.empty())
-    {
-        main_manager()->updates.onUpdateNoMoves(
-          {0, {rootPos.checkers() ? -VALUE_MATE : VALUE_DRAW, rootPos}});
-        main_manager()->updates.onBestmove(UCIEngine::move(Move::none()), "");
-        return;
-    }
-    else
-    {
-        bool think = true;
-        if (!(limits.infinite || limits.mate || limits.depth || limits.nodes || limits.perft)
-            && !main_manager()->ponder)
-        {
-            bookMove = bookMan.probe(rootPos, options);
-
-            if (bookMove == Move::none() && (bool) options["Experience Book"]
-                && rootPos.game_ply() / 2 < (int) options["Experience Book Max Moves"])
-            {
-                Depth expBookMinDepth = (Depth) options["Experience Book Min Depth"];
-                std::vector<LearningMove*> learningMoves = LD.probe(rootPos.key());
-                if (!learningMoves.empty())
-                {
-                    LD.sortLearningMoves(learningMoves);
-                    std::vector<LearningMove*> bestMoves;
-                    Depth                      bestDepth = learningMoves[0]->depth;
-                    if (bestDepth >= expBookMinDepth)
-                    {
-                        int   bestPerformance = learningMoves[0]->performance;
-                        Value bestScore       = learningMoves[0]->score;
-                        if (bestPerformance >= 50)
-                        {
-                            for (const auto& move : learningMoves)
-                            {
-                                if (move->depth == bestDepth && move->performance == bestPerformance
-                                    && move->score == bestScore)
-                                    bestMoves.push_back(move);
-                                else
-                                    break;
-                            }
-                            if (!bestMoves.empty())
-                            {
-                                std::random_device              rd;
-                                std::mt19937                    gen(rd());
-                                std::uniform_int_distribution<> distr(0, bestMoves.size() - 1);
-                                bookMove = bestMoves[distr(gen)]->move;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (bookMove != Move::none()
-                && std::find(rootMoves.begin(), rootMoves.end(), bookMove) != rootMoves.end())
-            {
-                think = false;
-                for (auto&& th : threads)
-                    std::swap(th->worker->rootMoves[0],
-                              *std::find(th->worker->rootMoves.begin(), th->worker->rootMoves.end(),
-                                         bookMove));
-            }
-        }
-
-#ifdef USE_LIVEBOOK
-        if (think && !bookMove)
-        {
-            if (!limits.infinite && !limits.mate)
-            {
-                livebook_depth_count = rootPos.game_ply();
-                std::vector<Livebook::BaseLivebook*> livebooks;
-
-                const std::string& syzygyPath = static_cast<std::string>(options["SyzygyPath"]);
-                int                totalUnits = rootPos.count<ALL_PIECES>();
-
-                if ((totalUnits <= 7)
-                    && (syzygyPath.empty()
-                        || ((!syzygyPath.empty())
-                            && ((int(options["SyzygyProbeLimit"]) < totalUnits)))))
-                {
-                    livebooks = endgame_livebooks;
-                }
-                else if (livebook_depth_count < max_book_depth)
-                {
-                    livebooks = opening_livebooks;
-                }
-
-                for (const auto livebook : livebooks)
-                {
-                    if (std::vector<std::pair<std::string, Analysis>> output =
-                          livebook->lookup(rootPos);
-                        !output.empty())
-                    {
-                        std::string     uci;
-                        const Analysis* best = nullptr;
-
-                        for (auto& [move, analysis] : output)
-                        {
-                            if (best == nullptr || analysis > *best)
-                            {
-                                best = &analysis;
-                                uci  = move;
-                            }
-                        }
-
-                        if (best != nullptr)
-                        {
-                            bookMove = UCIEngine::to_move(rootPos, uci);
-                            if (bookMove)
-                                livebook_depth_count++;
-                        }
-                        break;
-                    }
-                }
-            }
-
-            if (bookMove && std::count(rootMoves.begin(), rootMoves.end(), bookMove))
-            {
-                think            = false;
-                auto best_thread = threads.get_best_thread()->worker.get();
-                std::swap(best_thread->rootMoves[0],
-                          *std::find(best_thread->rootMoves.begin(), best_thread->rootMoves.end(),
-                                     bookMove));
-            }
-            else
-            {
-                bookMove = Move::none();
-            }
-        }
+    options.add("ChessDB Contribute", Option(false, [](const Option& o) {
+                    Search::set_chess_db_contribute(o);
+                    return std::nullopt;
+                }));
 #endif
 
-        bool uciPvSent = false;
-        if (!bookMove && think)
-        {
-            mctsThreads        = size_t(int(options["MCTSThreads"]));
-            mctsMultiStrategy  = size_t(int(options["MCTS Multi Strategy"]));
-            mctsMultiMinVisits = double(int(options["MCTS Multi MinVisits"]));
+    options.add("Variety", Option("Off var Off var Standard var Psychological", "Off",
+                                  [](const Option& o) -> std::optional<std::string> {
+                                      Search::set_variety(o);
+                                      return std::optional<std::string>{};
+                                  }));
 
-            threads.start_searching();
-            uciPvSent = iterative_deepening();
-        }
+    options.add("Concurrent Experience", Option(false));
 
-        while (!threads.stop && (main_manager()->ponder || limits.infinite))
-        {}
-        threads.stop = true;
-        threads.wait_for_search_finished();
+    // Shashin personalities begin
+    options.add("High Tal",
+                Option(false, [this](const Option&) noexcept -> std::optional<std::string> {
+                    resize_threads();
+                    return std::nullopt;
+                }));
+    options.add("Middle Tal",
+                Option(false, [this](const Option&) noexcept -> std::optional<std::string> {
+                    resize_threads();
+                    return std::nullopt;
+                }));
+    options.add("Low Tal",
+                Option(false, [this](const Option&) noexcept -> std::optional<std::string> {
+                    resize_threads();
+                    return std::nullopt;
+                }));
+    options.add("Capablanca",
+                Option(false, [this](const Option&) noexcept -> std::optional<std::string> {
+                    resize_threads();
+                    return std::nullopt;
+                }));
+    options.add("Low Petrosian",
+                Option(false, [this](const Option&) noexcept -> std::optional<std::string> {
+                    resize_threads();
+                    return std::nullopt;
+                }));
+    options.add("Middle Petrosian",
+                Option(false, [this](const Option&) noexcept -> std::optional<std::string> {
+                    resize_threads();
+                    return std::nullopt;
+                }));
+    options.add("High Petrosian",
+                Option(false, [this](const Option&) noexcept -> std::optional<std::string> {
+                    resize_threads();
+                    return std::nullopt;
+                }));
+    // Shashin personalities end
+    threads.clear();
 
-        if (limits.npmsec)
-            main_manager()->tm.advance_nodes_time(threads.nodes_searched()
-                                                  - limits.inc[rootPos.side_to_move()]);
+    // FORZATURA CARICAMENTO RETE (Cruciale per Stockfish 19)
+    load_networks();
 
-        Worker* bestThread = this;
-        Skill   skill =
-          Skill(options["Skill Level"], options["UCI_LimitStrength"] ? int(options["UCI_Elo"]) : 0);
-
-        if (!limits.depth && !skill.enabled() && !bookMove)
-            bestThread = threads.get_best_thread()->worker.get();
-
-        main_manager()->bestPreviousScore        = bestThread->rootMoves[0].score;
-        main_manager()->bestPreviousAverageScore = bestThread->rootMoves[0].averageScore;
-
-        if (!bookMove)
-        {
-            if (bestThread->completedDepth > 4 && LD.is_enabled() && !LD.is_paused())
-            {
-                PersistedLearningMove plm;
-                plm.key                = rootPos.key();
-                plm.learningMove.depth = bestThread->completedDepth;
-                plm.learningMove.move  = bestThread->rootMoves[0].pv[0];
-                plm.learningMove.score = bestThread->rootMoves[0].score;
-                plm.learningMove.performance =
-                  WDLModel::get_win_probability(bestThread->rootMoves[0].score, rootPos);
-
-                if (LD.learning_mode() == LearningMode::Self)
-                {
-                    const LearningMove* existingMove =
-                      LD.probe_move(plm.key, plm.learningMove.move);
-                    if (existingMove)
-                        plm.learningMove.score = existingMove->score;
-                    QLearningMove qLearningMove;
-                    qLearningMove.persistedLearningMove = plm;
-                    const int qLearningMoveMaterial =
-                      rootPos.count<PAWN>() + 3 * rootPos.count<KNIGHT>()
-                      + 3 * rootPos.count<BISHOP>() + 5 * rootPos.count<ROOK>()
-                      + 9 * rootPos.count<QUEEN>();
-                    qLearningMove.materialClamp = std::clamp(qLearningMoveMaterial, 17, 78);
-                    qLearningTrajectory.push_back(qLearningMove);
-                }
-                else
-                {
-                    LD.add_new_learning(plm.key, plm.learningMove);
-                }
-            }
-            if (!enabledLearningProbe)
-                useLearning = false;
-
-            if (is_game_decided(rootPos, (bestThread->rootMoves[0].score)) && LD.is_enabled()
-                && !LD.is_paused())
-            {
-                if (LD.learning_mode() == LearningMode::Self)
-                    putQLearningTrajectoryIntoLearningTable();
-
-                if (!LD.is_readonly())
-                    LD.persist(options);
-                LD.pause();
-            }
-        }
-
-        if (!bookMove && (!uciPvSent || bestThread != this))
-        {
-            main_manager()->output_pv(*bestThread, threads, tt, bestThread->rootDepth);
-        }
-
-        std::string ponder;
-        if (bestThread->rootMoves[0].pv.size() > 1)
-            ponder = UCIEngine::move(bestThread->rootMoves[0].pv[1], rootPos.is_chess960());
-        else if (bestThread->rootMoves[0].extract_ponder_from_tt(tt, rootPos))
-            ponder = UCIEngine::move(bestThread->rootMoves[0].pv[1], rootPos.is_chess960());
-
-        auto bestmove = UCIEngine::move(bestThread->rootMoves[0].pv[0], rootPos.is_chess960());
-        main_manager()->updates.onBestmove(bestmove, ponder);
-
-#ifdef USE_LIVEBOOK
-        if (_chess_db_contribute && !bookMove)
-            contributor.contribute(rootPos, bestThread->rootMoves[0].pv[0]);
-#endif
-    }
+    threads.ensure_network_replicated();
+    resize_threads();
 }
 
-bool Search::Worker::iterative_deepening() {
-    auto&          localShashinManager = *this->shashinManager;
-    SearchManager* mainThread          = (is_mainthread() ? main_manager() : nullptr);
-
-    PVMoves pv;
-
-    RootPVMoves lastBestMovePV;
-    Depth       lastBestMoveDepth = 0;
-    Value       lastBestMoveScore = -VALUE_INFINITE;
-
-    Value  alpha, beta;
-    Value  bestValue     = -VALUE_INFINITE;
-    Color  us            = rootPos.side_to_move();
-    double timeReduction = 1, totBestMoveChanges = 0;
-    int    delta, iterIdx                        = 0;
-
-    Stack  stack[MAX_PLY + 10] = {};
-    Stack* ss                  = stack + 7;
-
-    for (int i = 7; i > 0; --i)
-    {
-        (ss - i)->continuationHistory           = &continuationHistory[0][0][NO_PIECE][0];
-        (ss - i)->continuationCorrectionHistory = &continuationCorrectionHistory[NO_PIECE][0];
-        (ss - i)->staticEval                    = VALUE_NONE;
-    }
-
-    for (int i = 0; i <= MAX_PLY + 2; ++i)
-        (ss + i)->ply = i;
-
-    ss->pv = &pv;
-
-    localShashinManager.initDynamicRootShashinState(network[numaAccessToken], accumulatorStack,
-                                                    refreshTable, rootPos, ss, VALUE_ZERO, shConfig,
-                                                    rootDepth);
-
-    const RootShashinState& rootShashinState = localShashinManager.getState();
-    const auto&             dynamicDerived   = rootShashinState.dynamicDerived;
-    bool                    isAggressive     = localShashinManager.isAggressive();
-    bool                    isHighTal        = dynamicDerived.isHighTal;
-
-    if (mainThread)
-    {
-        if (mainThread->bestPreviousScore == VALUE_INFINITE)
-            mainThread->iterValue.fill(VALUE_ZERO);
-        else
-            mainThread->iterValue.fill(mainThread->bestPreviousScore);
-    }
-
-    usize multiPV   = usize(options["MultiPV"]);
-    antiDancingMode = bool(options["Anti Dancing Analysis"]);
-
-    Skill skill(options["Skill Level"], options["UCI_LimitStrength"] ? int(options["UCI_Elo"]) : 0);
-
-    if (skill.enabled())
-        multiPV = std::max(multiPV, usize(4));
-
-    multiPV = std::min(multiPV, rootMoves.size());
-
-    int  searchAgainCounter = 0;
-    bool uciPvSent          = false;
-
-    lowPlyHistory.fill(102);
-
-    for (Color c : {WHITE, BLACK})
-        for (int i = 0; i < UINT_16_HISTORY_SIZE; i++)
-            mainHistory[c][i] = mainHistory[c][i] * 729 / 1024;
-
-    optimism[WHITE] = optimism[BLACK] = VALUE_ZERO;
-
-    if (bool(options["MCTS by Shashin"]))
-    {
-        bool  maybeDraw = rootPos.rule50_count() >= 90 || rootPos.upcoming_repetition(2);
-        Value rootPosValue =
-          localShashinManager.static_value(network[numaAccessToken], accumulatorStack, refreshTable,
-                                           rootPos, ss, optimism[rootPos.side_to_move()]);
-        bool isMCTSExplorationApplicable = localShashinManager.isMCTSExplorationApplicable();
-        bool mctsExplore                 = options["MCTS Explore"]
-                        && (isMCTSExplorationApplicable
-                            || localShashinManager.isHighPieceDensityCapablancaPosition());
-
-        bool possibleMCTSByValue = localShashinManager.isMCTSApplicableByValue();
-        if (!mainThread && multiPV == 1 && !maybeDraw && (possibleMCTSByValue || mctsExplore)
-            && (rootPos.count<ALL_PIECES>() > 7) && (this->threadIdx) <= (usize) (mctsThreads)
-            && !is_game_decided(rootPos, rootPosValue))
-        {
-            MonteCarlo* monteCarlo = new MonteCarlo(rootPos, this, tt);
-            if (monteCarlo)
-            {
-                monteCarlo->search(threads, limits, is_mainthread(), this);
-                if ((this->threadIdx) == 1 && limits.infinite
-                    && threads.stop.load(std::memory_order_relaxed))
-                    monteCarlo->print_children();
-                delete monteCarlo;
-                return uciPvSent;
-            }
-        }
-    }
-
-    while (rootDepth + 1 < MAX_PLY && !threads.stop
-           && !(limits.depth && mainThread && rootDepth >= limits.depth))
-    {
-        rootDepth++;
-
-        if (mainThread)
-        {
-            totBestMoveChanges /= 2;
-            uciPvSent = false;
-        }
-
-        for (usize i = 0; i < rootMoves.size(); ++i)
-        {
-            rootMoves[i].previousScore      = rootMoves[i].score;
-            rootMoves[i].previousPV         = rootMoves[i].pv;
-            rootMoves[i].previousScoreExact = i < multiPV;
-        }
-
-        usize pvFirst = 0;
-        pvLast        = 0;
-
-        if (!threads.increaseDepth)
-            searchAgainCounter++;
-
-        for (pvIdx = 0; pvIdx < multiPV; ++pvIdx)
-        {
-            if (pvIdx == pvLast)
-            {
-                pvFirst = pvLast;
-                for (pvLast++; pvLast < rootMoves.size(); pvLast++)
-                    if (rootMoves[pvLast].tbRank != rootMoves[pvFirst].tbRank)
-                        break;
-            }
-
-            lastIterationIdxPV = rootMoves[pvIdx].previousPV;
-
-            selDepth = 0;
-
-            delta = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 10193;
-
-            if (localShashinManager.isStrategical())
-            {
-                delta = std::max(6, (delta * 9) / 10);
-                if (MoveConfig::isFortress)
-                    delta = std::max(5, delta - 2);
-            }
-            else if (isAggressive || isHighTal)
-            {
-                delta = (delta * 9) / 8;
-            }
-            if (rootDepth < 10)
-                delta = std::min(delta, 15);
-
-            Value avg = rootMoves[pvIdx].averageScore;
-            alpha     = std::max(avg - delta, -VALUE_INFINITE);
-            beta      = std::min(avg + delta, VALUE_INFINITE);
-
-            optimism[us]  = 114 * avg / (std::abs(avg) + 85);
-            optimism[~us] = -optimism[us];
-
-            int failedHighCnt = 0;
-            while (true)
-            {
-                Depth adjustedDepth =
-                  std::max(1, rootDepth - failedHighCnt - 3 * (searchAgainCounter + 1) / 4);
-                rootDelta = beta - alpha;
-                bestValue = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
-
-                std::stable_sort(rootMoves.begin() + pvIdx, rootMoves.begin() + pvLast);
-
-                if (threads.stop)
-                    break;
-
-                if (mainThread && multiPV == 1 && (bestValue <= alpha || bestValue >= beta)
-                    && nodes > NODES_LIMIT_OUTPUT)
-                    main_manager()->output_pv(*this, threads, tt, rootDepth);
-
-                if (bestValue <= alpha)
-                {
-                    beta  = alpha;
-                    alpha = std::max(bestValue - delta, -VALUE_INFINITE);
-
-                    failedHighCnt = 0;
-                    if (mainThread)
-                        mainThread->stopOnPonderhit = false;
-                }
-                else if (bestValue >= beta)
-                {
-                    alpha = std::max(beta - delta, alpha);
-                    beta  = std::min(bestValue + delta, VALUE_INFINITE);
-                    ++failedHighCnt;
-                }
-                else
-                    break;
-
-                delta += 47 * delta / 128;
-
-                assert(alpha >= -VALUE_INFINITE && beta <= VALUE_INFINITE);
-            }
-
-            if (threads.stop && pvIdx)
-            {
-                if ((is_loss(rootMoves[pvIdx - 1].score) && rootMoves[pvIdx] < rootMoves[pvIdx - 1])
-                    || rootMoves[pvIdx].is_exact_loss())
-                {
-                    if (rootMoves[pvIdx].previousScore != -VALUE_INFINITE
-                        && rootMoves[pvIdx].previousScoreExact
-                        && rootMoves[pvIdx].previousScore <= rootMoves[pvIdx - 1].score)
-                    {
-                        rootMoves[pvIdx].score = rootMoves[pvIdx].uciScore =
-                          rootMoves[pvIdx].previousScore;
-                        rootMoves[pvIdx].previousScore = -VALUE_INFINITE;
-                        rootMoves[pvIdx].pv            = rootMoves[pvIdx].previousPV;
-                        rootMoves[pvIdx].unset_inexact();
-                    }
-                    else
-                    {
-                        if (is_loss(rootMoves[pvIdx - 1].score))
-                        {
-                            rootMoves[pvIdx].score = rootMoves[pvIdx].uciScore =
-                              rootMoves[pvIdx - 1].score;
-                            rootMoves[pvIdx].previousScore = -VALUE_INFINITE;
-                            rootMoves[pvIdx].pv.resize(1);
-                            rootMoves[pvIdx].inexactUpper = true;
-                        }
-                        else
-                            rootMoves[pvIdx].inexactUpper = false;
-
-                        rootMoves[pvIdx].inexactLower = !rootMoves[pvIdx].inexactUpper;
-                    }
-                }
-
-                for (usize i = pvIdx + 1; i < multiPV; ++i)
-                    if (rootMoves[i].is_exact_loss())
-                        rootMoves[i].inexactLower = true;
-            }
-
-            std::stable_sort(rootMoves.begin() + pvFirst, rootMoves.begin() + pvIdx + 1);
-
-            if (mainThread && !threads.stop && (pvIdx + 1 == multiPV || nodes > NODES_LIMIT_OUTPUT))
-            {
-                main_manager()->output_pv(*this, threads, tt, rootDepth);
-                uciPvSent = (pvIdx + 1 == multiPV);
-            }
-
-            if (threads.stop)
-                break;
-        }
-
-        const bool forgottenMate = lastBestMoveScore != -VALUE_INFINITE
-                                && is_mate_or_mated(lastBestMoveScore)
-                                && (std::abs(rootMoves[0].score) < std::abs(lastBestMoveScore)
-                                    || rootMoves[0].is_inexact());
-
-        if (!threads.stop)
-        {
-            if (lastBestMovePV.empty() || lastBestMovePV[0] != rootMoves[0].pv[0])
-                lastBestMoveDepth = rootDepth;
-
-            if (!forgottenMate)
-            {
-                lastBestMovePV    = rootMoves[0].pv;
-                lastBestMoveScore = rootMoves[0].score;
-            }
-        }
-
-        const bool abortedLossSearch = threads.stop && !pvIdx && rootMoves[0].is_exact_loss();
-
-        if (abortedLossSearch || (rootMoves[0].score != -VALUE_INFINITE && forgottenMate))
-        {
-            if (!lastBestMovePV.empty())
-            {
-                Utility::move_to_front(rootMoves, [&lastPV = std::as_const(lastBestMovePV)](
-                                                    const auto& rm) { return rm == lastPV[0]; });
-                rootMoves[0].score = rootMoves[0].uciScore = lastBestMoveScore;
-                rootMoves[0].pv                            = lastBestMovePV;
-                rootMoves[0].unset_inexact();
-
-                if (mainThread)
-                    uciPvSent = false;
-            }
-            else if (abortedLossSearch)
-                rootMoves[0].inexactLower = true;
-        }
-
-        if (limits.mate && !threads.stop && is_mate_or_mated(rootMoves[0].score)
-            && VALUE_MATE - std::abs(rootMoves[0].score) <= 2 * limits.mate)
-            threads.stop = true;
-
-        if (!mainThread)
-            continue;
-
-        if (skill.enabled() && skill.time_to_pick(rootDepth))
-            skill.pick_best(rootMoves, multiPV);
-
-        for (auto&& th : threads)
-        {
-            totBestMoveChanges += th->worker->bestMoveChanges;
-            th->worker->bestMoveChanges = 0;
-        }
-
-        if (limits.use_time_management() && !threads.stop && !mainThread->stopOnPonderhit)
-        {
-            u64 nodesEffort = rootMoves[0].effort * 100000 / std::max(u64(1), u64(nodes));
-
-            double fallingEval = (11.48 + 2.30 * (mainThread->bestPreviousAverageScore - bestValue)
-                                  + 1.1 * (mainThread->iterValue[iterIdx] - bestValue))
-                               / 100.0;
-            fallingEval = std::clamp(fallingEval, 0.576, 1.728);
-
-            timeReduction = std::clamp(
-              interpolate(double(rootDepth - lastBestMoveDepth), 4.96, 18.79, 0.639, 1.712), 0.629,
-              1.544);
-
-            double reduction =
-              (1.468 + mainThread->previousTimeReduction) / (2.284 * timeReduction);
-
-            double bestMoveInstability = 1.077 + 2.229 * totBestMoveChanges / threads.size();
-
-            double highBestMoveEffort = std::clamp(
-              interpolate(i64(nodesEffort), i64(75800), i64(104510), 0.969, 0.714), 0.693, 0.838);
-
-            double totalTime = mainThread->tm.optimum() * fallingEval * reduction
-                             * bestMoveInstability * highBestMoveEffort;
-
-            if (rootMoves.size() == 1)
-                totalTime = std::min(500.0, totalTime);
-
-            auto elapsedTime = elapsed();
-
-            if (elapsedTime > std::min(totalTime, double(mainThread->tm.maximum()))
-                || rootMoves[multiPV - 1].score >= mate_in(3) || rootMoves[0].score == mated_in(2))
-            {
-                if (mainThread->ponder)
-                    mainThread->stopOnPonderhit = true;
-                else
-                    threads.stop = true;
-            }
-            else
-                threads.increaseDepth = mainThread->ponder || elapsedTime <= totalTime * 0.50;
-        }
-
-        mainThread->iterValue[iterIdx] = bestValue;
-        iterIdx                        = (iterIdx + 1) & 3;
-    }
-
-    if (!mainThread)
-        return false;
-
-    mainThread->previousTimeReduction = timeReduction;
-
-    if (skill.enabled())
-        std::swap(rootMoves[0],
-                  *std::find(rootMoves.begin(), rootMoves.end(),
-                             skill.best ? skill.best : skill.pick_best(rootMoves, multiPV)));
-
-    return uciPvSent;
+std::variant<u64, PositionSetError>
+Engine::perft(const std::string& fen, Depth depth, bool isChess960) {
+    verify_networks();
+
+    return Benchmark::perft(fen, depth, isChess960);
 }
 
-void Search::Worker::do_move(Position& pos, const Move move, StateInfo& st, Stack* const ss) {
-    do_move(pos, move, st, pos.gives_check(move), ss);
+void Engine::go(Search::LimitsType& limits) {
+    assert(limits.perft == 0);
+    verify_networks();
+
+    threads.start_thinking(options, pos, states, limits);
+}
+void Engine::stop() { threads.stop = true; }
+
+void Engine::search_clear() {
+    wait_for_search_finished();
+
+    MCTS.clear();  //mcts
+    tt.clear(threads);
+    threads.clear();
+
+    // @TODO wont work with multiple instances
+    Tablebases::init(options["SyzygyPath"]);  // Free mapped files
 }
 
-void Search::Worker::do_move(
-  Position& pos, const Move move, StateInfo& st, const bool givesCheck, Stack* const ss) {
+void Engine::set_on_update_no_moves(std::function<void(const Engine::InfoShort&)>&& f) {
+    updateContext.onUpdateNoMoves = std::move(f);
+}
 
-    prefetch(tt.first_entry(pos.prefetch_key(move)));
+void Engine::set_on_update_full(std::function<void(const Engine::InfoFull&)>&& f) {
+    updateContext.onUpdateFull = std::move(f);
+}
 
-    bool capture = pos.capture_stage(move);
+void Engine::set_on_iter(std::function<void(const Engine::InfoIter&)>&& f) {
+    updateContext.onIter = std::move(f);
+}
 
-    if (ss != nullptr)
+void Engine::set_on_bestmove(std::function<void(std::string_view, std::string_view)>&& f) {
+    updateContext.onBestmove = std::move(f);
+}
+
+void Engine::set_on_start(std::function<void()>&& f) { updateContext.onStart = std::move(f); }
+
+void Engine::set_on_verify_networks(std::function<void(std::string_view)>&& f) {
+    onVerifyNetworks = std::move(f);
+}
+
+void Engine::wait_for_search_finished() { threads.main_thread()->wait_for_search_finished(); }
+
+std::optional<PositionSetError> Engine::set_position(const std::string&              fen,
+                                                     const std::vector<std::string>& moves) {
+    // Drop the old state and create a new one
+    states   = StateListPtr(new std::deque<StateInfo>(1));
+    auto err = pos.set(fen, options["UCI_Chess960"], &states->back());
+    if (err.has_value())
+        return err;
+
+    for (const auto& move : moves)
     {
-        const Piece  pc = pos.moved_piece(move);
-        const Square to = move.to_sq();
+        auto m = UCIEngine::to_move(pos, move);
 
-        prefetch(&(*(ss - 1)->continuationCorrectionHistory)[pc][to]);
-        prefetch(&(*(ss - 3)->continuationCorrectionHistory)[pc][to]);
-    }
+        if (m == Move::none())
+            return PositionSetError("Illegal move: " + move);
 
-    ++nodes;
-
-    Dirties& dirties = accumulatorStack.push();
-    pos.do_move(move, st, givesCheck, dirties, &tt, &sharedHistory);
-
-    if (ss != nullptr)
-    {
-        auto& dirtyPiece = dirties.dirtyPiece;
-        ss->currentMove  = move;
-        ss->continuationHistory =
-          &continuationHistory[ss->inCheck][capture][dirtyPiece.pc][move.to_sq()];
-        ss->continuationCorrectionHistory =
-          &continuationCorrectionHistory[dirtyPiece.pc][move.to_sq()];
-    }
-}
-
-void Search::Worker::do_null_move(Position& pos, StateInfo& st, Stack* const ss) {
-    pos.do_null_move(st);
-    ss->currentMove                   = Move::null();
-    ss->continuationHistory           = &continuationHistory[0][0][NO_PIECE][0];
-    ss->continuationCorrectionHistory = &continuationCorrectionHistory[NO_PIECE][0];
-}
-
-void Search::Worker::undo_move(Position& pos, const Move move) {
-    pos.undo_move(move);
-    accumulatorStack.pop();
-}
-
-void Search::Worker::undo_null_move(Position& pos) { pos.undo_null_move(); }
-
-
-void Search::Worker::clear() {
-    mainHistory.fill(-5);
-    captureHistory.fill(-742);
-
-    sharedHistory.correctionHistory.clear_range(-5, numaThreadIdx, numaTotal);
-    sharedHistory.pawnHistory.clear_range(-1338, numaThreadIdx, numaTotal);
-
-    if (numaThreadIdx == 0)
-        for (bool inCheck : {false, true})
-            for (StatsType c : {NoCaptures, Captures})
-                for (auto& to : continuationHistory[inCheck][c])
-                    for (auto& h : to)
-                        h.fill(-586);
-
-    ttMoveHistory = 0;
-
-    for (auto& to : continuationCorrectionHistory)
-        for (auto& h : to)
-            h.fill(5);
-
-    for (usize i = 1; i < reductions.size(); ++i)
-        reductions[i] = int(2872 / 128.0 * std::log(i));
-
-    refreshTable.clear(network[numaAccessToken]);
-}
-
-
-template<NodeType nodeType>
-Value Search::Worker::search(
-  Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, const bool cutNode) {
-
-    constexpr bool PvNode   = nodeType != NonPV;
-    constexpr bool rootNode = nodeType == Root;
-    const bool     allNode  = !(PvNode || cutNode);
-    const bool     seekMate = rootDepth >= 16 && std::abs(rootMoves[pvIdx].score) >= 2000;
-
-    auto&                   localShashinManager = *this->shashinManager;
-    const RootShashinState& rootShashinState    = localShashinManager.getState();
-    bool                    isFortressNode      = localShashinManager.isFortress(rootPos);
-
-    if (depth <= 0)
-        return qsearch<PvNode ? PV : NonPV>(pos, ss, alpha, beta);
-
-    depth = std::min(depth, MAX_PLY - 1);
-
-    const bool antiDancing = antiDancingMode;
-
-    if (!rootNode && (alpha < VALUE_DRAW || (antiDancing && true))
-        && pos.upcoming_repetition(ss->ply))
-    {
-        if (antiDancing && alpha >= VALUE_DRAW) [[unlikely]]
+        //learning begin
+        if (LD.is_enabled() && LD.learning_mode() != LearningMode::Self && !LD.is_paused())
         {
-            return value_draw(nodes);
-        }
+            PersistedLearningMove persistedLearningMove;
 
-        if (alpha < VALUE_DRAW)
-        {
-            alpha = value_draw(nodes);
-            if (alpha >= beta)
-                return alpha;
+            persistedLearningMove.key                      = pos.key();
+            persistedLearningMove.learningMove.depth       = 0;
+            persistedLearningMove.learningMove.move        = m;
+            persistedLearningMove.learningMove.score       = VALUE_NONE;
+            persistedLearningMove.learningMove.performance = WDLModel::get_win_probability(0, pos);
+            LD.add_new_learning(persistedLearningMove.key, persistedLearningMove.learningMove);
         }
+        //learning end
+        states->emplace_back();
+        pos.do_move(m, states->back());
     }
 
-    assert(-VALUE_INFINITE <= alpha && alpha < beta && beta <= VALUE_INFINITE);
-    assert(PvNode || (alpha == beta - 1));
-    assert(0 < depth && depth < MAX_PLY);
-    assert(!(PvNode && cutNode));
+    return std::nullopt;
+}
 
-    PVMoves   pv;
-    StateInfo st;
+// modifiers
 
-    Key   posKey;
-    Move  move, excludedMove, bestMove, expTTMove = Move::none();
-    Depth extension, newDepth;
-    Value bestValue, value, eval, maxValue, probCutBeta, expTTValue = VALUE_NONE;
-    bool  givesCheck, improving, priorCapture, opponentWorsening, expTTHit = false;
-    bool  capture, ttCapture, gameCycle = false, updatedLearning = false;
-    int   priorReduction;
-    Piece movedPiece;
-
-    bool disableNMAndPC = false;
-    bool expectedPVNode = false;
-    int  sibs           = 0;
-    bool ourMove        = !(ss->ply & 1);
-
-    SearchedList capturesSearched;
-    SearchedList quietsSearched;
-
-    ss->inCheck       = pos.checkers();
-    priorCapture      = pos.captured_piece();
-    Color us          = pos.side_to_move();
-    ss->moveCount     = 0;
-    bestValue         = -VALUE_INFINITE;
-    maxValue          = VALUE_INFINITE;
-    ss->secondaryLine = false;
-    ss->mainLine      = false;
-
-    if (fullSearch)
-        improving = true;
-
-    ss->followPV = rootNode
-                || ((ss - 1)->followPV
-                    && (static_cast<usize>(ss->ply - 1) < lastIterationIdxPV.size()
-                        && (ss - 1)->currentMove == lastIterationIdxPV[ss->ply - 1]));
-
-    if (is_mainthread())
-        main_manager()->check_time(*this);
-
-    if (PvNode && selDepth < ss->ply + 1)
-        selDepth = ss->ply + 1;
-
-    const auto& dynamicDerived      = rootShashinState.dynamicDerived;
-    const auto& staticState         = rootShashinState.staticState;
-    bool        isStrategical       = localShashinManager.isStrategical();
-    bool        isTacticalReactive  = dynamicDerived.isTacticalReactive;
-    bool        stmKingExposed      = staticState.stmKingExposed;
-    bool        opponentKingExposed = staticState.opponentKingExposed;
-    bool        isSacrificial       = staticState.isSacrificial;
-    bool        quietKingSafe       = !isSacrificial && (!stmKingExposed);
-    bool        isTal               = localShashinManager.isTal();
-    bool        isPetrosian         = localShashinManager.isPetrosian();
-    bool        isCapablanca        = localShashinManager.isCapablanca();
-    bool        isAggressive        = localShashinManager.isAggressive();
-    bool        isTactical          = localShashinManager.isTactical();
-    bool        isComplex           = localShashinManager.isComplexPosition();
-    uint8_t     legalMoveCount      = staticState.legalMoveCount;
-    (void) legalMoveCount;
-
-    if (!rootNode)
+bool Engine::set_numa_config_from_option(const std::string& o) {
+    if (o == "auto" || o == "system")
     {
-        bool allowCycleDetection =
-          (isStrategical && isComplex)
-          || (localShashinManager.isTacticalDefensive() && localShashinManager.isLowActivity());
-
-        if (allowCycleDetection && !ss->excludedMove)
-        {
-            if (pos.upcoming_repetition(ss->ply))
-                gameCycle = true;
-        }
-
-        if (threads.stop.load(std::memory_order_relaxed) || pos.is_draw(ss->ply)
-            || ss->ply >= MAX_PLY)
-            return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos) : value_draw(nodes);
-
-        alpha = std::max(mated_in(ss->ply), alpha);
-        beta  = std::min(mate_in(ss->ply + 1), beta);
-        if (alpha >= beta)
-            return alpha;
+        numaContext.set_numa_config(NumaConfig::from_system(DefaultNumaPolicy));
     }
-
-    assert(0 <= ss->ply && ss->ply < MAX_PLY);
-
-    Square prevSq  = ((ss - 1)->currentMove).is_ok() ? ((ss - 1)->currentMove).to_sq() : SQ_NONE;
-    bestMove       = Move::none();
-    priorReduction = (ss - 1)->reduction;
-    (ss - 1)->reduction = 0;
-    ss->statScore       = 0;
-    (ss + 2)->cutoffCnt = 0;
-
-    const auto correctionValue = correction_value(*this, pos, ss);
-
-    excludedMove                   = ss->excludedMove;
-    posKey                         = pos.key();
-    auto [ttHit, ttData, ttWriter] = tt.probe(posKey);
-
-    ss->ttHit    = ttHit;
-    ttData.move  = rootNode ? rootMoves[pvIdx].pv[0] : ttHit ? ttData.move : Move::none();
-    ttData.value = ttHit ? value_from_tt(ttData.value, ss->ply, pos.rule50_count()) : VALUE_NONE;
-    ss->ttPv     = excludedMove ? ss->ttPv : PvNode || (ttHit && ttData.is_pv);
-    ttCapture    = ttData.move && pos.capture_stage(ttData.move);
-
-    Value unadjustedStaticEval = VALUE_NONE;
-
-    if (ss->inCheck)
-        ss->staticEval = eval = (ss - 2)->staticEval;
-    else if (excludedMove)
-        unadjustedStaticEval = eval = ss->staticEval;
-    else if (ss->ttHit)
+    else if (o == "hardware")
     {
-        unadjustedStaticEval = ttData.eval;
-        if (!is_valid(unadjustedStaticEval))
-            unadjustedStaticEval = evaluate(pos);
-
-        ss->staticEval = eval = to_corrected_static_eval(unadjustedStaticEval, correctionValue);
-
-        if (is_valid(ttData.value)
-            && (ttData.bound & (ttData.value > eval ? BOUND_LOWER : BOUND_UPPER)))
-            eval = ttData.value;
+        // Don't respect affinity set in the system.
+        numaContext.set_numa_config(NumaConfig::from_system(DefaultNumaPolicy, false));
+    }
+    else if (o == "none")
+    {
+        numaContext.set_numa_config(NumaConfig{});
     }
     else
     {
-        unadjustedStaticEval = evaluate(pos);
-        if (!LD.is_enabled() || !expTTHit || !updatedLearning)
+        auto parsed = NumaConfig::from_string(o);
+        if (!parsed.has_value())
+            return false;
+        numaContext.set_numa_config(std::move(*parsed));
+    }
+
+    // Force reallocation of threads in case affinities need to change.
+    resize_threads();
+    threads.ensure_network_replicated();
+    return true;
+}
+
+void Engine::resize_threads() {
+    threads.wait_for_search_finished();
+    //from shashin begin
+    ShashinConfig shCfg;
+    shCfg.highTal         = options["High Tal"];
+    shCfg.middleTal       = options["Middle Tal"];
+    shCfg.lowTal          = options["Low Tal"];
+    shCfg.capablanca      = options["Capablanca"];
+    shCfg.highPetrosian   = options["High Petrosian"];
+    shCfg.middlePetrosian = options["Middle Petrosian"];
+    shCfg.lowPetrosian    = options["Low Petrosian"];
+    threads.set(numaContext.get_numa_config(),
+                {bookMan, options, threads, tt, sharedHists, networks, shCfg},
+                updateContext);  //book management
+    //from shashin end
+    // Reallocate the hash with the new threadpool size
+    set_tt_size(options["Hash"]);
+    threads.ensure_network_replicated();
+}
+
+void Engine::init_bookMan(int bookIndex) { bookMan.init(bookIndex, options); }  //book management
+void Engine::resize_full(usize requested) { threads.setFull(requested); }       //full threads patch
+
+void Engine::set_tt_size(usize mb) {
+    wait_for_search_finished();
+    tt.resize(mb, threads);
+}
+
+void Engine::set_ponderhit(bool b) { threads.main_manager()->ponder = b; }
+
+// network related
+
+void Engine::verify_networks() const {
+    const auto fileBig = path_from_utf8(std::string(options["EvalFile"]));
+
+    networks->verify(onVerifyNetworks, networkFile, fileBig);
+
+    auto statuses = networks.get_status_and_errors();
+    for (usize i = 0; i < statuses.size(); ++i)
+    {
+        const auto [status, error] = statuses[i];
+        std::string message        = "Network replica " + std::to_string(i + 1) + ": ";
+        if (status == SystemWideSharedConstantAllocationStatus::NoAllocation)
         {
-            ss->staticEval = eval = to_corrected_static_eval(unadjustedStaticEval, correctionValue);
-            ttWriter.write(posKey, VALUE_NONE, ss->ttPv, BOUND_NONE, DEPTH_UNSEARCHED, Move::none(),
-                           unadjustedStaticEval, tt.generation());
+            message += "No allocation.";
+        }
+        else if (status == SystemWideSharedConstantAllocationStatus::LocalMemory)
+        {
+            message += "Local memory.";
+        }
+        else if (status == SystemWideSharedConstantAllocationStatus::SharedMemory)
+        {
+            message += "Shared memory.";
         }
         else
         {
-            ss->staticEval = eval = expTTValue;
-            if (!is_valid(eval))
-                ss->staticEval = eval =
-                  to_corrected_static_eval(unadjustedStaticEval, correctionValue);
-            if (eval == VALUE_DRAW)
-                eval = value_draw(this->nodes);
-            if (is_valid(expTTValue))
-                eval = expTTValue;
+            message += "Unknown status.";
         }
-    }
 
-    if (!expectedPVNode)
-        improving = ss->staticEval > (ss - 2)->staticEval;
-
-    opponentWorsening = ss->staticEval > -(ss - 1)->staticEval;
-
-    if (priorReduction >= 3 && !opponentWorsening)
-        depth++;
-    if (priorReduction >= 2 && depth >= 2 && ss->staticEval + (ss - 1)->staticEval > 166)
-        depth--;
-
-    if (!PvNode && !excludedMove && ttData.depth > depth - (ttData.value <= beta)
-        && is_valid(ttData.value)
-        && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER))
-        && (cutNode == (ttData.value >= beta) || depth > 4))
-    {
-        if (ttData.move && ttData.value >= beta)
+        if (error.has_value())
         {
-            if (!ttCapture)
-                update_quiet_histories(pos, ss, *this, ttData.move, std::min(112 * depth, 695));
-
-            if (prevSq != SQ_NONE && (ss - 1)->moveCount < 5 && !priorCapture)
-                update_continuation_histories(ss - 1, pos.piece_on(prevSq), prevSq, -2210);
+            message += " " + *error;
         }
 
-        if (pos.rule50_count() < 96)
-        {
-            if (depth >= 7 && ttData.move && pos.pseudo_legal(ttData.move) && pos.legal(ttData.move)
-                && !is_decisive(ttData.value))
-            {
-                pos.do_move(ttData.move, st);
-                Key nextPosKey                             = pos.key();
-                auto [ttHitNext, ttDataNext, ttWriterNext] = tt.probe(nextPosKey);
-                pos.undo_move(ttData.move);
-
-                if (!is_valid(ttDataNext.value))
-                    return ttData.value;
-
-                if ((ttData.value >= beta) == (-ttDataNext.value >= beta))
-                    return ttData.value;
-            }
-            else
-                return ttData.value;
-        }
-    }
-    else if (!PvNode && !excludedMove && ttData.depth > depth - (ttData.value <= beta)
-             && is_valid(ttData.value) && ttData.bound != BOUND_EXACT
-             && ttData.bound & (ttData.value >= beta ? BOUND_UPPER : BOUND_LOWER) && depth > 5)
-    {
-        ttWriter.penalize(1);
-    }
-
-    // [SC:learning] begin
-    expTTHit        = false;
-    updatedLearning = false;
-
-    if (!excludedMove && LD.is_enabled() && useLearning)
-    {
-        const LearningMove* learningMove = nullptr;
-        sibs                             = LD.probeByMaxDepthAndScore(posKey, learningMove);
-        if (learningMove)
-        {
-            assert(sibs);
-
-            enabledLearningProbe = true;
-            expTTHit             = true;
-            if (!ttData.move)
-                ttData.move = learningMove->move;
-
-            if (learningMove->depth >= depth)
-            {
-                expTTMove       = learningMove->move;
-                expTTValue      = learningMove->score;
-                updatedLearning = true;
-            }
-
-            if ((learningMove->depth == 0))
-                updatedLearning = false;
-
-            if (updatedLearning && is_valid(expTTValue))
-            {
-                if (expTTValue < alpha)
-                    disableNMAndPC = true;
-                if (expTTValue > alpha && expTTValue < beta)
-                {
-                    expectedPVNode = true;
-                    improving      = true;
-                }
-            }
-            bool expTTCapture = learningMove->move && pos.capture_stage(expTTMove);
-
-            if (!PvNode && !excludedMove && updatedLearning
-                && learningMove->depth > depth - (expTTValue <= beta) && is_valid(expTTValue)
-                && (cutNode == (expTTValue >= beta) || depth > 5)
-                && (depth > 8 || expTTMove == Move::none() || pos.rule50_count() < 80
-                    || (!expTTCapture && type_of(pos.moved_piece(expTTMove)) != PAWN)))
-            {
-                if (expTTMove && expTTValue >= beta)
-                {
-                    if (!expTTCapture)
-                        update_quiet_histories(pos, ss, *this, ttData.move,
-                                               std::min(130 * depth - 71, 1043));
-
-                    if (prevSq != SQ_NONE && (ss - 1)->moveCount < 4 && !priorCapture)
-                        update_continuation_histories(ss - 1, pos.piece_on(prevSq), prevSq, -2142);
-                }
-
-                if (pos.rule50_count() < 96)
-                {
-                    if (depth >= 8 && ttData.move && pos.pseudo_legal(ttData.move)
-                        && pos.legal(ttData.move) && !is_decisive(expTTValue))
-                    {
-                        do_move(pos, ttData.move, st, nullptr);
-                        Key nextPosKey                             = pos.key();
-                        auto [ttHitNext, ttDataNext, ttWriterNext] = tt.probe(nextPosKey);
-                        undo_move(pos, ttData.move);
-
-                        if (!is_valid(ttDataNext.value))
-                            return expTTValue;
-                        if ((expTTValue >= beta) == (-ttDataNext.value >= beta))
-                            return expTTValue;
-                    }
-                    else
-                        return expTTValue;
-                }
-            }
-        }
-    }
-    // [SC:learning] end
-
-    if (!rootNode && !excludedMove && tbConfig.cardinality)
-    {
-        int piecesCount = pos.count<ALL_PIECES>();
-
-        if (piecesCount <= tbConfig.cardinality
-            && (piecesCount < tbConfig.cardinality || depth >= tbConfig.probeDepth)
-            && pos.rule50_count() == 0 && !pos.can_castle(ANY_CASTLING))
-        {
-            TB::ProbeState err;
-            TB::WDLScore   wdl = TB::probe_wdl(pos, &err);
-
-            if (is_mainthread())
-                main_manager()->callsCnt = 0;
-
-            if (err != TB::ProbeState::FAIL)
-            {
-                ++tbHits;
-
-                int drawScore = tbConfig.useRule50 ? 1 : 0;
-
-                Value tbValue = VALUE_TB - ss->ply;
-
-                value = wdl < -drawScore ? -tbValue
-                      : wdl > drawScore  ? tbValue
-                                         : VALUE_DRAW + 2 * wdl * drawScore;
-
-                Bound b = wdl < -drawScore ? BOUND_UPPER
-                        : wdl > drawScore  ? BOUND_LOWER
-                                           : BOUND_EXACT;
-
-                if (b == BOUND_EXACT || (b == BOUND_LOWER ? value >= beta : value <= alpha))
-                {
-                    ttWriter.write(posKey, value_to_tt(value, ss->ply), ss->ttPv, b,
-                                   std::min(MAX_PLY - 1, depth + 6), Move::none(), VALUE_NONE,
-                                   tt.generation());
-
-                    return value;
-                }
-
-                if (PvNode)
-                {
-                    if (b == BOUND_LOWER)
-                        bestValue = value, alpha = std::max(alpha, bestValue);
-                    else
-                        maxValue = value;
-                }
-            }
-        }
-    }
-
-    if (ss->inCheck)
-        goto moves_loop;
-
-    if (((ss - 1)->currentMove).is_ok() && !(ss - 1)->inCheck && !priorCapture)
-    {
-        int evalDiff = std::clamp(-int((ss - 1)->staticEval + ss->staticEval), -189, 194) + 60;
-        mainHistory[~us][((ss - 1)->currentMove).raw()] << evalDiff * 11;
-        if (!ttHit && type_of(pos.piece_on(prevSq)) != PAWN
-            && ((ss - 1)->currentMove).type_of() != PROMOTION)
-            sharedHistory.pawn_entry(pos)[pos.piece_on(prevSq)][prevSq] << evalDiff * 13;
-    }
-
-    if (fullSearch)
-        goto moves_loop;
-
-    // Razoring
-    if (!PvNode)
-    {
-        Value razorThreshold = alpha - 482 * depth * depth;
-
-        if (isAggressive)
-            razorThreshold -= 50;
-
-        if (isFortressNode)
-            razorThreshold -= 60;
-
-        if (legalMoveCount > 30 && !isStrategical)
-            razorThreshold -= 20;
-
-        if (eval < razorThreshold)
-            return qsearch<NonPV>(pos, ss, alpha, beta);
-    }
-
-    // Futility pruning
-    {
-        int marginMultiplier = 100;
-
-        if (isAggressive)
-            marginMultiplier = 90;
-        else if (isStrategical)
-            marginMultiplier = 100;
-
-        if (staticState.kingDanger)
-            marginMultiplier = std::min(marginMultiplier, 85);
-
-        if (isFortressNode)
-            marginMultiplier = 60;
-
-        if (isStrategical && legalMoveCount > 30)
-            marginMultiplier = std::min(marginMultiplier + 5, 115);
-
-        auto futility_margin = [&](Depth d) {
-            Value futilityMult = std::min(45 + depth * 4, 85);
-            futilityMult -= 20 * !ss->ttHit;
-
-            futilityMult = (futilityMult * marginMultiplier) / 100;
-
-            return futilityMult * d
-                 - (2789 * improving + 335 * opponentWorsening) * futilityMult / 1024
-                 + std::abs(correctionValue) / 198435;
-        };
-
-        if (!ss->ttPv && depth < (seekMate ? 6 : 19) && eval - futility_margin(depth) >= beta
-            && eval >= beta && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval))
-        {
-            return (661 * beta + 363 * eval) / 1024;
-        }
-    }
-
-    // Null move search
-    if (cutNode && !disableNMAndPC && ss->staticEval >= beta - 13 * depth - 47 * improving + 365
-        && !excludedMove && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && beta >= -2000)
-    {
-        bool skipNullMove = false;
-        bool nodeHot = staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial;
-
-        if (nodeHot || (isAggressive && staticState.kingDanger && depth < 10))
-            skipNullMove = true;
-
-        if (isPetrosian && staticState.stmKingDanger)
-            skipNullMove = true;
-
-        if (!skipNullMove)
-        {
-            assert((ss - 1)->currentMove != Move::null());
-
-            Depth R = 7 + depth / 3 + std::max((ss->staticEval - beta) / 256, 0);
-
-            ss->currentMove                   = Move::none();
-            ss->continuationHistory           = &continuationHistory[0][0][NO_PIECE][0];
-            ss->continuationCorrectionHistory = &continuationCorrectionHistory[NO_PIECE][0];
-
-            do_null_move(pos, st, ss);
-            Value nullValue = -search<NonPV>(pos, ss + 1, -beta, -beta + 1, depth - R, false);
-            undo_null_move(pos);
-
-            if (nullValue >= beta && !is_win(nullValue))
-            {
-                if (nmpMinPly || depth < 16)
-                    return nullValue;
-
-                assert(!nmpMinPly);
-
-                nmpMinPly = ss->ply + 3 * (depth - R) / 4;
-                Value v   = search<NonPV>(pos, ss, beta - 1, beta, depth - R, false);
-                nmpMinPly = 0;
-
-                if (v >= beta)
-                    return nullValue;
-            }
-        }
-    }
-
-    improving |= ss->staticEval >= beta;
-
-    // Internal iterative reductions
-    if (!ss->followPV && !allNode && depth >= 6 && !ttData.move && priorReduction <= 3)
-    {
-        Depth originalDepth = depth;
-        depth--;
-
-        const bool avoidStep10 = localShashinManager.avoidStep10();
-        if (quietKingSafe && !avoidStep10 && originalDepth >= 6)
-        {
-            const bool ttReduction = cutNode && ttData.move && ttData.bound == BOUND_UPPER;
-            if (ttReduction)
-            {
-                int reduction = 0;
-
-                if (isStrategical)
-                    reduction = 2;
-                else if (isAggressive || isTacticalReactive || isTactical || isSacrificial)
-                {
-                    if (depth > 12)
-                        reduction = 1;
-                    else
-                        reduction = 0;
-                }
-                else
-                    reduction = 1;
-
-                if (isFortressNode)
-                    reduction = std::min(reduction + 1, 3);
-
-                if (gameCycle)
-                    reduction = std::max(reduction - 1, 0);
-
-                depth = std::max(originalDepth - reduction, 1);
-            }
-        }
-    }
-
-    // ProbCut
-    probCutBeta = beta + 241 - 64 * improving;
-    if (depth >= 3 && !disableNMAndPC && !ss->inCheck && !is_decisive(beta)
-        && !(is_valid(ttData.value) && ttData.value < probCutBeta))
-    {
-        bool skipProbCut = isFortressNode || (isStrategical && !staticState.kingDanger);
-
-        if (!skipProbCut)
-        {
-            assert(probCutBeta < VALUE_INFINITE && probCutBeta > beta);
-
-            MovePicker mp(pos, ttData.move, probCutBeta - ss->staticEval, &captureHistory);
-            Depth probCutDepth = std::clamp(depth - 5 - (ss->staticEval - beta) / 315, 0, depth);
-
-            if (isCapablanca && depth > 8)
-                probCutDepth = std::clamp(depth - 7 - (ss->staticEval - beta) / 315, 0, depth);
-            else
-            {
-                if (isStrategical)
-                    probCutDepth = std::clamp(probCutDepth - 1, 0, depth);
-                else if (isAggressive)
-                    probCutDepth = std::clamp(probCutDepth + 1, 0, depth);
-            }
-
-            while ((move = mp.next_move()) != Move::none())
-            {
-                assert(move.is_ok());
-
-                if (move == excludedMove || !pos.legal(move))
-                    continue;
-
-                assert(pos.capture_stage(move));
-
-                do_move(pos, move, st, ss);
-
-                value = -qsearch<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1);
-
-                if (value >= probCutBeta && probCutDepth > 0)
-                    value = -search<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1,
-                                           probCutDepth, !cutNode);
-
-                undo_move(pos, move);
-
-                if (value >= probCutBeta)
-                {
-                    ttWriter.write(posKey, value_to_tt(value, ss->ply), ss->ttPv, BOUND_LOWER,
-                                   probCutDepth + 1, move, unadjustedStaticEval, tt.generation());
-
-                    if (!is_decisive(value))
-                        return value - (probCutBeta - beta);
-                }
-            }
-        }
-    }
-
-moves_loop:
-
-    probCutBeta              = beta + 428;
-    const bool commonProbcut = (ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 4
-                            && ttData.value >= probCutBeta && !is_decisive(beta)
-                            && is_valid(ttData.value) && !is_decisive(ttData.value);
-
-    if (commonProbcut)
-    {
-        bool tacticalRisk = staticState.kingDanger || staticState.pawnsNearPromotion
-                         || isSacrificial || stmKingExposed || opponentKingExposed;
-
-        if (!tacticalRisk || ttData.depth >= depth - 2)
-            return probCutBeta;
-    }
-
-    const PieceToHistory* contHist[] = {
-      (ss - 1)->continuationHistory, (ss - 2)->continuationHistory, (ss - 3)->continuationHistory,
-      (ss - 4)->continuationHistory, (ss - 5)->continuationHistory, (ss - 6)->continuationHistory};
-
-
-    MovePicker mp(pos, ttData.move, depth, &mainHistory, &lowPlyHistory, &captureHistory, contHist,
-                  &sharedHistory, ss->ply);
-
-    value         = bestValue;
-    int moveCount = 0;
-
-    while ((move = mp.next_move()) != Move::none())
-    {
-        assert(move.is_ok());
-
-        if (move == excludedMove)
-            continue;
-
-        if (!pos.legal(move))
-            continue;
-
-        if (rootNode && !std::count(rootMoves.begin() + pvIdx, rootMoves.begin() + pvLast, move))
-            continue;
-
-        ss->moveCount = ++moveCount;
-
-        if (rootNode && is_mainthread() && nodes > NODES_LIMIT_OUTPUT)
-        {
-            main_manager()->updates.onIter(
-              {depth, UCIEngine::move(move, pos.is_chess960()), moveCount + pvIdx});
-        }
-        if (PvNode)
-            (ss + 1)->pv = nullptr;
-
-        extension  = 0;
-        capture    = pos.capture_stage(move);
-        movedPiece = pos.moved_piece(move);
-        givesCheck = pos.gives_check(move);
-        ss->secondaryLine =
-          ((rootNode && moveCount > 1)
-           || (!ourMove && (ss - 1)->secondaryLine && !excludedMove && moveCount == 1)
-           || (ourMove && (ss - 1)->secondaryLine));
-
-        newDepth = depth - 1;
-
-        int delta = beta - alpha;
-        int r     = reduction(improving, depth, moveCount, delta);
-
-        if (ss->ttPv)
-            r += 929;
-
-        if (fullSearch)
-            goto skipExtensionAndPruning;
-
-        if (!rootNode && pos.non_pawn_material(us) && !is_loss(bestValue))
-        {
-            int moveCountThreshold = (3 + depth * depth) / (2 - improving);
-
-            if (depth > 8)
-            {
-                if (isStrategical)
-                {
-                    int extraReduction = 1;
-                    moveCountThreshold -= extraReduction;
-                }
-                else if (isAggressive || isPetrosian)
-                {
-                    int extraExtension = 1;
-                    if (staticState.pawnsNearPromotion || staticState.kingDanger)
-                        extraExtension = 2;
-                    moveCountThreshold += extraExtension;
-                }
-            }
-
-            if (moveCount >= moveCountThreshold)
-                mp.skip_quiet_moves();
-
-            int lmrDepth = newDepth - r / 1024;
-
-            if (capture || givesCheck)
-            {
-                Piece capturedPiece = pos.piece_on(move.to_sq());
-                int   captHist = captureHistory[movedPiece][move.to_sq()][type_of(capturedPiece)];
-
-                if (!givesCheck && lmrDepth < 8)
-                {
-                    Value futilityValue = ss->staticEval + 234 + 247 * lmrDepth
-                                        + PieceValue[capturedPiece] + 134 * captHist / 1024;
-
-                    if (futilityValue <= alpha)
-                        continue;
-                }
-
-                int margin = 177 * depth + captHist * 34 / 1024;
-                if ((alpha >= VALUE_DRAW || pos.non_pawn_material(us) != PieceValue[movedPiece])
-                    && !pos.see_ge(move, -margin))
-                    continue;
-            }
-            else if (!ss->followPV || !PvNode)
-            {
-                int dIndex  = std::min(int(depth), int(lmrDivisor.size())) - 1;
-                int history = (*contHist[0])[movedPiece][move.to_sq()]
-                            + (*contHist[1])[movedPiece][move.to_sq()]
-                            + sharedHistory.pawn_entry(pos)[movedPiece][move.to_sq()];
-
-                if (history < -4136 * depth)
-                    continue;
-
-                history += 69 * mainHistory[us][move.raw()] / 32;
-
-                lmrDepth += history / lmrDivisor[dIndex];
-
-                Value futilityValue =
-                  ss->staticEval + 119 * lmrDepth + 90 * (ss->staticEval > alpha) + 164;
-
-                if (!ss->inCheck && lmrDepth < 12 && futilityValue <= alpha)
-                {
-                    if (bestValue <= futilityValue && !is_decisive(bestValue)
-                        && !is_win(futilityValue))
-                        bestValue = futilityValue;
-                    continue;
-                }
-
-                lmrDepth = std::max(lmrDepth, 0);
-
-                if (!pos.see_ge(move, -23 * lmrDepth * lmrDepth))
-                    continue;
-            }
-        }
-
-        if (!rootNode && move == ttData.move && !excludedMove && depth >= 6 + ss->ttPv
-            && is_valid(ttData.value) && !is_decisive(ttData.value) && (ttData.bound & BOUND_LOWER)
-            && ttData.depth >= depth - 3 && !is_shuffling(move, ss, pos) && !seekMate)
-        {
-            Value singularBeta  = ttData.value - (59 + 66 * (ss->ttPv && !PvNode)) * depth / 63;
-            Depth singularDepth = newDepth / 2;
-
-            if ((isAggressive || isSacrificial) && staticState.kingDanger && depth > 8)
-                singularDepth += std::max(1, singularDepth / 4);
-
-            ss->excludedMove = move;
-            value = search<NonPV>(pos, ss, singularBeta - 1, singularBeta, singularDepth, cutNode);
-            ss->excludedMove = Move::none();
-
-            if (value < singularBeta)
-            {
-                int corrValAdj   = std::abs(correctionValue) / 198368;
-                int doubleMargin = -2 + 204 * PvNode - 152 * !ttCapture - corrValAdj
-                                 - 1175 * ttMoveHistory / 114178 - (ss->ply > rootDepth) * 38;
-                int tripleMargin = 70 + 279 * PvNode - 188 * !ttCapture + 81 * ss->ttPv - corrValAdj
-                                 - (ss->ply > rootDepth) * 43;
-
-                extension =
-                  1 + (value < singularBeta - doubleMargin) + (value < singularBeta - tripleMargin);
-
-                depth++;
-            }
-            else if (value >= beta && !is_decisive(value))
-            {
-                ttMoveHistory << -421 - 110 * depth;
-
-                if (!ss->inCheck && value > ss->staticEval)
-                {
-                    const int bonus =
-                      std::clamp(int(value - ss->staticEval) * singularDepth * 177 / 1024,
-                                 -CORRECTION_HISTORY_LIMIT / 4, CORRECTION_HISTORY_LIMIT / 4);
-                    update_correction_history(pos, ss, *this, bonus);
-                }
-
-                return value;
-            }
-            else if (ttData.value >= beta || cutNode)
-                extension = -3;
-        }
-
-skipExtensionAndPruning:
-
-        u64 nodeCount = rootNode ? u64(nodes) : 0;
-
-        do_move(pos, move, st, givesCheck, ss);
-        bool doLMRStep = !fullSearch;
-
-        newDepth += extension;
-
-        if (ss->ttPv)
-            r -= 3023 + PvNode * 1004 + (ttData.value > alpha) * 885
-               + (ttData.depth >= depth) * (816 + cutNode * 940);
-
-        if (!fullSearch)
-        {
-            if ((isTactical || isSacrificial) && depth > 8)
-                r -= 256;
-            else if (isStrategical && !ss->inCheck && depth > 6)
-                r += 256;
-        }
-
-        r += 697;
-        r -= moveCount * 65;
-        r -= std::abs(correctionValue) / 26310;
-
-        if (cutNode)
-            r += 4026 + 933 * !ttData.move;
-
-        if (ttCapture)
-            r += 1079;
-
-        if ((ss + 1)->cutoffCnt > 1)
-        {
-            if (dynamicDerived.isHighTal || isTacticalReactive || staticState.isSacrificial)
-                r += 120 + 1024 * ((ss + 1)->cutoffCnt > 2) + 100 * ((ss + 1)->cutoffCnt > 3)
-                   + 1024 * allNode;
-            else if (isStrategical)
-                r += 264 + 1095 * ((ss + 1)->cutoffCnt > 2) + 1138 * allNode;
-            else
-                r += 180 + 1024 * ((ss + 1)->cutoffCnt > 2) + 75 * ((ss + 1)->cutoffCnt > 3)
-                   + 1024 * allNode;
-        }
-        else if (move == ttData.move)
-            r -= 2179;
-
-        if (capture)
-            ss->statScore = 873 * int(PieceValue[pos.captured_piece()]) / 128
-                          + captureHistory[movedPiece][move.to_sq()][type_of(pos.captured_piece())];
-        else
-            ss->statScore =
-              (2252 * mainHistory[us][move.raw()] + 1126 * (*contHist[0])[movedPiece][move.to_sq()]
-               + 1093 * (*contHist[1])[movedPiece][move.to_sq()])
-              / 1024;
-
-        r -= ss->statScore * 439 / 4096;
-
-        if (!capture && !is_decisive(alpha))
-            r += 3 * std::clamp(alpha - eval, -64, 96);
-
-        if (allNode)
-            r += r * 276 / (256 * depth + 268);
-
-        if (depth >= 2 && moveCount > std::max(sibs, 1) && doLMRStep)
-        {
-            int   original_r = r;
-            Depth d          = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
-
-            if (depth > 5 && ss->ply > 1)
-            {
-                if (isAggressive && (givesCheck || capture))
-                    r -= 50;
-                else if (isPetrosian && !capture && !givesCheck)
-                    r -= 50;
-                else if (isStrategical && !capture && !givesCheck && depth > 8)
-                    r += 45;
-
-                if (r != original_r)
-                    d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
-            }
-
-            if (isFortressNode)
-                d = std::max(1, d - 1);
-
-            ss->reduction = newDepth - d;
-            value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
-            ss->reduction = 0;
-
-            if (value > alpha)
-            {
-                const bool doDeeperSearch    = d < newDepth && value > bestValue + 53;
-                const bool doShallowerSearch = value < bestValue + 8;
-
-                newDepth += doDeeperSearch - doShallowerSearch;
-
-                if (newDepth > d)
-                    value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, newDepth, !cutNode);
-
-                int bonus = 1334;
-                if (isAggressive)
-                    bonus += 25;
-                else if (isStrategical)
-                    bonus += 12;
-                if (isFortressNode)
-                    bonus += 30;
-
-                update_continuation_histories(ss, movedPiece, move.to_sq(), bonus);
-            }
-        }
-        else if (!PvNode || moveCount > 1)
-        {
-            if (!ttData.move)
-                r += 1127;
-
-            value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha,
-                                   newDepth - (r > 5234) - (r > 5487 && newDepth > 2), !cutNode);
-        }
-
-        if (PvNode && (moveCount == 1 || value > alpha))
-        {
-            (ss + 1)->pv = &pv;
-            (ss + 1)->pv->clear();
-
-            if (move == ttData.move
-                && ((is_valid(ttData.value) && is_decisive(ttData.value) && ttData.depth > 0)
-                    || ttData.depth > 1))
-                newDepth = std::max(newDepth, 1);
-
-            value = -search<PV>(pos, ss + 1, -beta, -alpha, newDepth, false);
-        }
-
-        undo_move(pos, move);
-
-        assert(value > -VALUE_INFINITE && value < VALUE_INFINITE);
-
-        if (threads.stop.load(std::memory_order_relaxed))
-            return VALUE_ZERO;
-
-        if (rootNode)
-        {
-            RootMove& rm = *std::find(rootMoves.begin(), rootMoves.end(), move);
-
-            rm.effort += nodes - nodeCount;
-
-            u64 N      = nodes - nodeCount;
-            u64 E_prev = std::max(u64(1), rm.effort - N);
-
-            constexpr u64 Scale          = 32;
-            constexpr u64 ChiNumerator   = 3;
-            constexpr u64 ChiDenominator = 2;
-            constexpr u64 MinWeight      = 12;
-            constexpr u64 MaxWeight      = 24;
-
-            u64 w     = std::clamp((Scale * N * ChiDenominator)
-                                     / (N * ChiDenominator + ChiNumerator * E_prev),
-                                   MinWeight, MaxWeight);
-            u64 w_mss = std::min(w, u64(16));
-            i64 v2    = i64(value) * std::abs(value);
-
-            if (rm.averageScore == -VALUE_INFINITE)
-                rm.averageScore = value;
-            else
-                rm.averageScore = Value((value * w + rm.averageScore * (Scale - w)) / Scale);
-
-            if (rm.meanSquaredScore == -VALUE_INFINITE * VALUE_INFINITE)
-                rm.meanSquaredScore = value * std::abs(value);
-            else
-                rm.meanSquaredScore =
-                  Value((v2 * w_mss + int64_t(rm.meanSquaredScore) * (Scale - w_mss)) / Scale);
-
-            if (moveCount == 1 || value > alpha)
-            {
-                rm.score = rm.uciScore = value;
-                rm.selDepth            = selDepth;
-                rm.unset_inexact();
-
-                if (value >= beta)
-                {
-                    rm.inexactLower = true;
-                    rm.uciScore     = beta;
-                }
-                else if (value <= alpha)
-                {
-                    rm.inexactUpper = true;
-                    rm.uciScore     = alpha;
-                }
-
-                rm.pv.resize(1);
-
-                assert((ss + 1)->pv);
-
-                for (Move pvMove : *(ss + 1)->pv)
-                    rm.pv.push_back(pvMove);
-
-                if (moveCount > 1 && !pvIdx)
-                    ++bestMoveChanges;
-            }
-            else
-                rm.score = -VALUE_INFINITE;
-        }
-
-        int inc = (value == bestValue && ss->ply + 2 >= rootDepth && (int(nodes) & 14) == 0
-                   && !is_win(std::abs(value) + 1));
-
-        if (value + inc > bestValue)
-        {
-            bestValue = value;
-
-            if (value + inc > alpha)
-            {
-                bestMove = move;
-
-                if (PvNode && !rootNode)
-                    ss->pv->update(move, (ss + 1)->pv);
-
-                if (value >= beta)
-                {
-                    ss->cutoffCnt += (extension < 2) || PvNode;
-                    assert(value >= beta);
-                    break;
-                }
-
-                if (depth > 2 && depth < 14 && !is_decisive(value))
-                {
-                    const int baseReduction = 2;
-                    int       reduction     = baseReduction;
-
-                    const bool criticalTactical =
-                      (opponentKingExposed && isTal) || (stmKingExposed && isPetrosian);
-
-                    if (criticalTactical)
-                        reduction = 1;
-                    else if (isStrategical && !stmKingExposed && !opponentKingExposed)
-                    {
-                        reduction = (depth > 8) ? 3 : 2;
-                        if (staticState.allPiecesCount > 20)
-                            reduction = std::min(reduction, 2);
-                    }
-                    else if (gameCycle)
-                        reduction = (pos.rule50_count() > 20) ? 3 : 1;
-
-                    reduction = std::clamp(reduction, 1, depth - 1);
-                    depth -= reduction;
-                }
-
-                assert(depth > 0);
-                alpha = value;
-            }
-        }
-
-        if (move != bestMove && moveCount <= SEARCHEDLIST_CAPACITY)
-        {
-            if (capture)
-                capturesSearched.push_back(move);
-            else
-                quietsSearched.push_back(move);
-        }
-    }
-
-    assert(moveCount || !ss->inCheck || excludedMove || !MoveList<LEGAL>(pos).size());
-
-    if (bestValue >= beta && !is_decisive(bestValue) && !is_decisive(alpha))
-        bestValue = (bestValue * depth + beta) / (depth + 1);
-
-    if (!moveCount)
-        bestValue = excludedMove ? alpha : ss->inCheck ? mated_in(ss->ply) : VALUE_DRAW;
-
-    else if (bestMove)
-    {
-        update_all_stats(pos, ss, *this, bestMove, prevSq, quietsSearched, capturesSearched, depth,
-                         ttData.move, PvNode);
-        if (!PvNode)
-            ttMoveHistory << (bestMove == ttData.move ? 918 : -747);
-    }
-
-    else if (!priorCapture && prevSq != SQ_NONE)
-    {
-        int bonusScale = -241;
-        bonusScale -= (ss - 1)->statScore / 98;
-        bonusScale += std::min(59 * depth, 420);
-        bonusScale += 186 * ((ss - 1)->moveCount > 9);
-        bonusScale += 142 * (!ss->inCheck && bestValue <= ss->staticEval - 106);
-        bonusScale += 159 * (!(ss - 1)->inCheck && bestValue <= -(ss - 1)->staticEval - 68);
-
-        bonusScale = std::max(bonusScale, 0);
-
-        const int scaledBonus = std::min(150 * depth - 85, 1337) * bonusScale;
-
-        update_continuation_histories(ss - 1, pos.piece_on(prevSq), prevSq,
-                                      scaledBonus * 263 / 16384);
-
-        mainHistory[~us][((ss - 1)->currentMove).raw()] << scaledBonus * 215 / 32768;
-
-        if (type_of(pos.piece_on(prevSq)) != PAWN && ((ss - 1)->currentMove).type_of() != PROMOTION)
-            sharedHistory.pawn_entry(pos)[pos.piece_on(prevSq)][prevSq] << scaledBonus * 324 / 8192;
-    }
-
-    else if (priorCapture && prevSq != SQ_NONE)
-    {
-        Piece capturedPiece = pos.captured_piece();
-        assert(capturedPiece != NO_PIECE);
-        captureHistory[pos.piece_on(prevSq)][prevSq][type_of(capturedPiece)] << 892;
-    }
-
-    if (PvNode)
-        bestValue = std::min(bestValue, maxValue);
-
-    if (bestValue <= alpha)
-        ss->ttPv = ss->ttPv || (ss - 1)->ttPv;
-
-    if (!excludedMove && !(rootNode && pvIdx))
-        ttWriter.write(posKey, value_to_tt(bestValue, ss->ply), ss->ttPv,
-                       bestValue >= beta    ? BOUND_LOWER
-                       : PvNode && bestMove ? BOUND_EXACT
-                                            : BOUND_UPPER,
-                       moveCount != 0 ? depth : std::min(MAX_PLY - 1, depth + 6), bestMove,
-                       unadjustedStaticEval, tt.generation());
-
-    if (!ss->inCheck && !(bestMove && pos.capture(bestMove))
-        && (bestValue > ss->staticEval) == bool(bestMove))
-    {
-        auto bonus =
-          std::clamp(int(bestValue - ss->staticEval) * depth * (bestMove ? 12 : 18) / 128,
-                     -CORRECTION_HISTORY_LIMIT / 4, CORRECTION_HISTORY_LIMIT / 4);
-        update_correction_history(pos, ss, *this, 1061 * bonus / 1024);
-    }
-
-    assert(-VALUE_INFINITE < bestValue && bestValue < VALUE_INFINITE);
-    return bestValue;
-}
-
-template<NodeType nodeType>
-Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta) {
-
-    static_assert(nodeType != Root);
-    const RootShashinState& rootShashinState = shashinManager->getState();
-    constexpr bool          PvNode           = nodeType == PV;
-
-    assert(alpha >= -VALUE_INFINITE && alpha < beta && beta <= VALUE_INFINITE);
-    assert(PvNode || (alpha == beta - 1));
-
-    const bool antiDancing = antiDancingMode;
-
-    if ((alpha < VALUE_DRAW || (antiDancing && true)) && pos.upcoming_repetition(ss->ply))
-    {
-        if (antiDancing && alpha >= VALUE_DRAW) [[unlikely]]
-        {
-            return value_draw(nodes);
-        }
-
-        if (alpha < VALUE_DRAW)
-        {
-            alpha = value_draw(nodes);
-            if (alpha >= beta)
-                return alpha;
-        }
-    }
-
-    PVMoves   pv;
-    StateInfo st;
-
-    Key   posKey;
-    Move  move, bestMove, expTTMove = Move::none();
-    Value bestValue, value, futilityBase, expTTValue = VALUE_NONE;
-    bool  pvHit, givesCheck, capture, expTTHit = false, updatedLearning = false;
-    int   moveCount;
-
-    if (PvNode)
-    {
-        (ss + 1)->pv = &pv;
-        ss->pv->clear();
-    }
-
-    bestMove    = Move::none();
-    ss->inCheck = pos.checkers();
-    moveCount   = 0;
-
-    if (PvNode && selDepth < ss->ply + 1)
-        selDepth = ss->ply + 1;
-
-    if (pos.is_draw(ss->ply) || ss->ply >= MAX_PLY)
-        return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos) : VALUE_DRAW;
-
-    assert(0 <= ss->ply && ss->ply < MAX_PLY);
-
-    posKey                         = pos.key();
-    auto [ttHit, ttData, ttWriter] = tt.probe(posKey);
-
-    ss->ttHit    = ttHit;
-    ttData.move  = ttHit ? ttData.move : Move::none();
-    ttData.value = ttHit ? value_from_tt(ttData.value, ss->ply, pos.rule50_count()) : VALUE_NONE;
-    pvHit        = ttHit && ttData.is_pv;
-
-    const auto& staticState    = rootShashinState.staticState;
-    const auto& dynamicDerived = rootShashinState.dynamicDerived;
-    const bool  isStrategical  = dynamicDerived.isStrategical;
-    const bool  isAggressive   = dynamicDerived.isAggressive;
-
-    if (!PvNode && is_valid(ttData.value)
-        && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER)))
-    {
-        if (ttData.depth >= DEPTH_QS)
-            return ttData.value;
-
-        if (staticState.legalMoveCount < 35 && std::abs(ttData.value) > 60)
-        {
-            const bool areQuietKings =
-              !staticState.stmKingExposed && !staticState.opponentKingExposed;
-            if (!isStrategical && areQuietKings)
-            {
-                const bool depthCondition =
-                  ttData.depth >= ADJUSTED_QS_DEPTH && ttData.depth > MIN_DEPTH_FOR_QS_CUTOFF;
-                const bool kingSafety =
-                  (!staticState.stmKingExposed && !staticState.opponentKingExposed)
-                  || ttData.depth > DEPTH_QS + 4;
-
-                if (depthCondition && kingSafety)
-                    return ttData.value;
-            }
-        }
-    }
-
-    // [SC:learning] begin
-    expTTHit        = false;
-    updatedLearning = false;
-
-    if (useLearning && LD.is_enabled())
-    {
-        const LearningMove* learningMove = nullptr;
-        int                 siblings     = LD.probeByMaxDepthAndScore(posKey, learningMove);
-        (void) siblings;
-        if (learningMove)
-        {
-            expTTHit   = true;
-            expTTMove  = learningMove->move;
-            expTTValue = learningMove->score;
-
-            if (!ttHit)
-                ttData.move = expTTMove;
-
-            const bool canUseExpTTValue = !PvNode && is_valid(expTTValue);
-            if (canUseExpTTValue)
-            {
-                if (learningMove->depth >= DEPTH_QS)
-                {
-                    updatedLearning = true;
-                    return expTTValue;
-                }
-                if (staticState.legalMoveCount < 35 && std::abs(expTTValue) > 60)
-                {
-                    const bool areQuietKings =
-                      !staticState.stmKingExposed && !staticState.opponentKingExposed;
-                    if (!isStrategical && areQuietKings)
-                    {
-                        const bool depthCondition = learningMove->depth >= ADJUSTED_QS_DEPTH
-                                                 && learningMove->depth > MIN_DEPTH_FOR_QS_CUTOFF;
-                        const bool kingSafety =
-                          (!staticState.stmKingExposed && !staticState.opponentKingExposed)
-                          || learningMove->depth > DEPTH_QS + 4;
-                        if (depthCondition && kingSafety)
-                        {
-                            updatedLearning = true;
-                            return expTTValue;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    // [SC:learning] end
-
-    Value unadjustedStaticEval = VALUE_NONE;
-    if (ss->inCheck)
-        bestValue = futilityBase = -VALUE_INFINITE;
-    else
-    {
-        const auto correctionValue = correction_value(*this, pos, ss);
-
-        if (ss->ttHit)
-        {
-            unadjustedStaticEval = ttData.eval;
-
-            if (!is_valid(unadjustedStaticEval))
-                unadjustedStaticEval = evaluate(pos);
-
-            ss->staticEval = bestValue =
-              to_corrected_static_eval(unadjustedStaticEval, correctionValue);
-
-            if (is_valid(ttData.value) && !is_decisive(ttData.value)
-                && (ttData.bound & (ttData.value > bestValue ? BOUND_LOWER : BOUND_UPPER)))
-                bestValue = ttData.value;
-        }
-        else
-        {
-            if (expTTHit && updatedLearning && is_valid(expTTValue))
-            {
-                ss->staticEval = bestValue = expTTValue;
-            }
-            else
-            {
-                unadjustedStaticEval = evaluate(pos);
-                ss->staticEval       = bestValue =
-                  to_corrected_static_eval(unadjustedStaticEval, correctionValue);
-            }
-        }
-
-        if (bestValue >= beta)
-        {
-            if (!is_decisive(bestValue))
-                bestValue = (441 * bestValue + 583 * beta) / 1024;
-
-            if (!ss->ttHit)
-                ttWriter.write(posKey, VALUE_NONE, false, BOUND_LOWER, DEPTH_UNSEARCHED,
-                               Move::none(), unadjustedStaticEval, tt.generation());
-            return bestValue;
-        }
-
-        if (bestValue > alpha)
-            alpha = bestValue;
-
-        futilityBase = ss->staticEval + 306;
-        if (dynamicDerived.isHighTal)
-            futilityBase += 30;
-        else if (isStrategical)
-            futilityBase -= 20;
-    }
-
-    const PieceToHistory* contHist[] = {(ss - 1)->continuationHistory};
-
-    Square prevSq = ((ss - 1)->currentMove).is_ok() ? ((ss - 1)->currentMove).to_sq() : SQ_NONE;
-
-    MovePicker mp(pos, ttData.move, DEPTH_QS, &mainHistory, &lowPlyHistory, &captureHistory,
-                  contHist, &sharedHistory, ss->ply);
-
-    int moveCountThreshold = 2;
-    if (dynamicDerived.isHighTal)
-        moveCountThreshold += PvNode ? 1 : 0;
-    else if (isStrategical)
-        moveCountThreshold = 1;
-    if (staticState.kingDanger)
-        moveCountThreshold++;
-    if (MoveConfig::isFortress)
-        moveCountThreshold++;
-
-    int seeMargin = -80;
-    if (isAggressive || dynamicDerived.isHighTal)
-        seeMargin = staticState.kingDanger ? -110 : -90;
-    else if (isStrategical)
-        seeMargin = -50;
-    else if (MoveConfig::isFortress)
-        seeMargin = -10;
-
-    const bool extremelyVolatile = dynamicDerived.isHighTal && staticState.kingDanger;
-
-    while ((move = mp.next_move()) != Move::none())
-    {
-        assert(move.is_ok());
-        Piece movedPiece = pos.moved_piece(move);
-
-        if (!pos.legal(move))
-            continue;
-
-        givesCheck = pos.gives_check(move);
-        capture    = pos.capture_stage(move);
-
-        moveCount++;
-
-        if (!is_loss(bestValue))
-        {
-            if (!givesCheck && move.to_sq() != prevSq && !is_loss(futilityBase)
-                && move.type_of() != PROMOTION)
-            {
-                if (moveCount > moveCountThreshold)
-                    continue;
-
-                Value futilityValue = futilityBase + PieceValue[pos.piece_on(move.to_sq())];
-
-                if (futilityValue <= alpha)
-                {
-                    bestValue = std::max(bestValue, futilityValue);
-                    continue;
-                }
-
-                if (!pos.see_ge(move, alpha - futilityBase))
-                {
-                    const bool useTacticalLogic = dynamicDerived.isHighTal
-                                               || dynamicDerived.isTacticalReactive
-                                               || (staticState.kingDanger && !isStrategical);
-                    if (useTacticalLogic)
-                        bestValue = std::min(alpha, futilityBase);
-                    else
-                        bestValue = std::max(bestValue, std::min(alpha, futilityBase));
-                    continue;
-                }
-            }
-
-            if (!capture)
-            {
-                if (extremelyVolatile)
-                {
-                    int historyScore =
-                      sharedHistory.pawn_entry(pos)[pos.moved_piece(move)][move.to_sq()];
-                    if (historyScore < 4000)
-                        continue;
-                }
-                else
-                {
-                    continue;
-                }
-            }
-
-            bool forceCheckSearch = false;
-            if (givesCheck
-                && (dynamicDerived.isHighTal || (isAggressive && staticState.kingDanger)))
-            {
-                if (pos.see_ge(move, -200))
-                {
-                    if (type_of(movedPiece) != QUEEN || type_of(pos.piece_on(move.to_sq())) != PAWN)
-                        forceCheckSearch = true;
-                }
-            }
-
-            if (!forceCheckSearch && !pos.see_ge(move, seeMargin))
-                continue;
-        }
-
-        do_move(pos, move, st, givesCheck, ss);
-
-        value = -qsearch<nodeType>(pos, ss + 1, -beta, -alpha);
-        undo_move(pos, move);
-
-        assert(value > -VALUE_INFINITE && value < VALUE_INFINITE);
-
-        if (value > bestValue)
-        {
-            bestValue = value;
-
-            if (value > alpha)
-            {
-                bestMove = move;
-
-                if (PvNode)
-                    ss->pv->update(move, (ss + 1)->pv);
-
-                if (value < beta)
-                    alpha = value;
-                else
-                    break;
-            }
-        }
-    }
-
-    // [SC:variety] begin
-    if (std::abs(bestValue) == VALUE_INFINITE)
-        variety = 0;
-
-    if (variety != 0)
-    {
-        Value       maxIncrement = (variety == 1) ? 13 : 309;
-        static PRNG rng(now());
-        if (((variety == 2) && (bestValue <= 309) && (bestValue >= -309))
-            || ((variety == 1) && (bestValue <= 13) && (bestValue >= -13)))
-        {
-            int maxValidIncrement = maxIncrement - std::abs(bestValue);
-            if (maxValidIncrement < 0)
-                maxValidIncrement = 0;
-            int increment = static_cast<int>(rng.rand<uint64_t>() % (maxValidIncrement + 1));
-            bestValue += increment;
-        }
-    }
-    // [SC:variety] end
-
-    if (!moveCount)
-    {
-        if (ss->inCheck)
-        {
-            assert(!MoveList<LEGAL>(pos).size());
-            return mated_in(ss->ply);
-        }
-
-        Color us = pos.side_to_move();
-        if (!(pawn_single_push_bb(us, pos.pieces(us, PAWN)) & ~pos.pieces())
-            && !pos.non_pawn_material(us) && type_of(pos.captured_piece()) >= KNIGHT
-            && !MoveList<LEGAL>(pos).size())
-            bestValue = VALUE_DRAW;
-    }
-
-    if (!is_decisive(bestValue) && bestValue > beta)
-        bestValue = (462 * bestValue + 562 * beta) / 1024;
-
-    ttWriter.write(posKey, value_to_tt(bestValue, ss->ply), pvHit,
-                   bestValue >= beta ? BOUND_LOWER : BOUND_UPPER, DEPTH_QS, bestMove,
-                   unadjustedStaticEval, tt.generation());
-
-    assert(-VALUE_INFINITE < bestValue && bestValue < VALUE_INFINITE);
-    return bestValue;
-}
-
-int Search::Worker::reduction(bool i, Depth d, int mn, int delta) const {
-    int reductionScale = reductions[d] * reductions[mn];
-    if (shashinManager->isAggressive())
-        reductionScale = (reductionScale * 98) / 100;
-    else if (shashinManager->isStrategical())
-        reductionScale = (reductionScale * 104) / 100;
-    else if (shashinManager->isPetrosian())
-        reductionScale = (reductionScale * 99) / 100;
-
-    if (rootDelta != 0)
-        return reductionScale - delta * 577 / rootDelta + !i * reductionScale * 197 / 512 + 982;
-    else
-        return reductionScale - delta * 577 + !i * reductionScale * 197 / 512 + 982;
-}
-
-TimePoint Search::Worker::elapsed() const {
-    return main_manager()->tm.elapsed([this]() { return threads.nodes_searched(); });
-}
-
-Value Search::Worker::evaluate(const Position& pos) {
-    return Eval::evaluate(network[numaAccessToken], pos, accumulatorStack, refreshTable,
-                          optimism[pos.side_to_move()]);
-}
-
-namespace {
-
-Value value_to_tt(Value v, int ply) { return is_win(v) ? v + ply : is_loss(v) ? v - ply : v; }
-
-Value value_from_tt(Value v, int ply, int r50c) {
-
-    if (!is_valid(v))
-        return VALUE_NONE;
-
-    if (is_win(v))
-    {
-        if (is_mate(v) && VALUE_MATE - v > 100 - r50c)
-            return VALUE_TB_WIN_IN_MAX_PLY - 1;
-
-        if (VALUE_TB - v > 100 - r50c)
-            return VALUE_TB_WIN_IN_MAX_PLY - 1;
-
-        return v - ply;
-    }
-
-    if (is_loss(v))
-    {
-        if (is_mated(v) && VALUE_MATE + v > 100 - r50c)
-            return VALUE_TB_LOSS_IN_MAX_PLY + 1;
-
-        if (VALUE_TB + v > 100 - r50c)
-            return VALUE_TB_LOSS_IN_MAX_PLY + 1;
-
-        return v + ply;
-    }
-
-    return v;
-}
-
-void update_all_stats(const Position& pos,
-                      Stack*          ss,
-                      Search::Worker& workerThread,
-                      Move            bestMove,
-                      Square          prevSq,
-                      SearchedList&   quietsSearched,
-                      SearchedList&   capturesSearched,
-                      Depth           depth,
-                      Move            ttMove,
-                      bool            PvNode) {
-
-    CapturePieceToHistory& captureHistory = workerThread.captureHistory;
-    Piece                  movedPiece     = pos.moved_piece(bestMove);
-    PieceType              capturedPiece;
-
-    int bonus =
-      std::min(133 * depth - 81, 1487) + 364 * (bestMove == ttMove) + (ss - 1)->statScore / 28;
-    int malus = std::min(968 * depth - 235, 2244);
-
-    if (!PvNode)
-        bonus += int(bonus * u64(quietsSearched.size() + capturesSearched.size()) / 256);
-
-    if (!pos.capture_stage(bestMove))
-    {
-        update_quiet_histories(pos, ss, workerThread, bestMove, bonus * 899 / 1024);
-
-        int actualMalus = malus * 1159 / 1024;
-        for (Move move : quietsSearched)
-        {
-            actualMalus = actualMalus * 921 / 1024;
-            update_quiet_histories(pos, ss, workerThread, move, -actualMalus);
-        }
-    }
-    else
-    {
-        capturedPiece = type_of(pos.piece_on(bestMove.to_sq()));
-        captureHistory[movedPiece][bestMove.to_sq()][capturedPiece] << bonus * 1427 / 1024;
-    }
-
-    if (prevSq != SQ_NONE && ((ss - 1)->moveCount == 1 + (ss - 1)->ttHit) && !pos.captured_piece())
-        update_continuation_histories(ss - 1, pos.piece_on(prevSq), prevSq, -malus * 713 / 1024);
-
-    for (Move move : capturesSearched)
-    {
-        movedPiece    = pos.moved_piece(move);
-        capturedPiece = type_of(pos.piece_on(move.to_sq()));
-        captureHistory[movedPiece][move.to_sq()][capturedPiece] << -malus * 1489 / 1024;
+        onVerifyNetworks(message);
     }
 }
 
-void update_continuation_histories(Stack* ss, Piece pc, Square to, int bonus) {
-    static constexpr std::array<ConthistBonus, 6> conthist_bonuses = {
-      {{1, 520}, {2, 390}, {3, 145}, {4, 251}, {5, 66}, {6, 209}}};
-
-    constexpr int CMHCMultipliers[] = {94, 103, 110, 106, 119, 126, 121};
-    int           positiveCount     = 0;
-
-    for (const auto [i, weight] : conthist_bonuses)
-    {
-        if (ss->inCheck && i > 2)
-            break;
-
-        if (((ss - i)->currentMove).is_ok())
-        {
-            auto& historyEntry = (*(ss - i)->continuationHistory)[pc][to];
-            if (historyEntry > 0)
-                positiveCount++;
-
-            int multiplier = CMHCMultipliers[positiveCount];
-            historyEntry << bonus * weight * multiplier / 65536 + 73 * (i < 2);
-        }
-    }
+void Engine::load_networks() {
+    networks.modify_and_replicate([this](NN::Network& network_) {
+        // Usa la rete singola
+        network_.load(binaryDirectory, path_from_utf8(std::string(options["EvalFile"])),
+                      networkFile);
+    });
+    threads.clear();
+    threads.ensure_network_replicated();
 }
 
-void update_quiet_histories(
-  const Position& pos, Stack* ss, Search::Worker& workerThread, Move move, int bonus) {
-
-    Color us = pos.side_to_move();
-    workerThread.mainHistory[us][move.raw()] << bonus;
-
-    if (ss->ply < LOW_PLY_HISTORY_SIZE)
-        workerThread.lowPlyHistory[ss->ply][move.raw()] << bonus * 712 / 1024;
-
-    update_continuation_histories(ss, pos.moved_piece(move), move.to_sq(), bonus * 750 / 1024);
-
-    workerThread.sharedHistory.pawn_entry(pos)[pos.moved_piece(move)][move.to_sq()]
-      << bonus * (bonus > -4 ? 1104 : 459) / 1024;
-}
+void Engine::load_big_network(const std::filesystem::path& file) {
+    networks.modify_and_replicate(
+      [this, &file](NN::Network& network_) { network_.load(binaryDirectory, file, networkFile); });
+    threads.clear();
+    threads.ensure_network_replicated();
 }
 
-Move Skill::pick_best(const RootMoves& rootMoves, usize multiPV) {
-    static PRNG rng(now());
-
-    Value topScore = rootMoves[0].score;
-    Value minScore = rootMoves[0].score;
-    for (usize i = 1; i < multiPV; ++i)
-    {
-        topScore = std::max(topScore, rootMoves[i].score);
-        minScore = std::min(minScore, rootMoves[i].score);
-    }
-    int    delta    = std::min(topScore - minScore, int(PawnValue));
-    int    maxScore = -VALUE_INFINITE;
-    double weakness = 120 - 2 * level;
-
-    for (usize i = 0; i < multiPV; ++i)
-    {
-        int push = int(weakness * int(topScore - rootMoves[i].score)
-                       + delta * (rng.rand<unsigned>() % int(weakness)))
-                 / 128;
-
-        if (rootMoves[i].score + push >= maxScore)
-        {
-            maxScore = rootMoves[i].score + push;
-            best     = rootMoves[i].pv[0];
-        }
-    }
-
-    return best;
+void Engine::save_network(const std::pair<std::optional<std::filesystem::path>,
+                                          std::optional<std::filesystem::path>> files) {
+    networks.modify_and_replicate(
+      [&files, this](NN::Network& network_) { network_.save(networkFile, files.first); });
 }
 
-void SearchManager::check_time(Search::Worker& worker) {
+// utility functions
 
-    if (--callsCnt > 0)
-        return;
+void Engine::trace_eval() const {
+    StateListPtr trace_states(new std::deque<StateInfo>(1));
+    Position     p;
+    p.set(pos.fen(), options["UCI_Chess960"], &trace_states->back());
 
-    callsCnt = worker.limits.nodes ? std::min(512, int(worker.limits.nodes / 1024)) : 512;
+    verify_networks();
 
-    static TimePoint lastInfoTime = now();
-
-    TimePoint elapsed = tm.elapsed([&worker]() { return worker.threads.nodes_searched(); });
-    TimePoint tick    = worker.limits.startTime + elapsed;
-
-    if (tick - lastInfoTime >= 1000)
-    {
-        lastInfoTime = tick;
-        dbg_print();
-    }
-
-    if (ponder)
-        return;
-
-    if ((worker.limits.use_time_management() && (elapsed > tm.maximum() || stopOnPonderhit))
-        || (worker.limits.movetime && elapsed >= worker.limits.movetime)
-        || (worker.limits.nodes && worker.threads.nodes_searched() >= worker.limits.nodes))
-        worker.threads.stop = true;
+    // Passa l'opzione UCI_ShowWDL alla funzione trace
+    sync_cout << "\n" << Eval::trace(p, *networks, options["UCI_ShowWDL"]) << sync_endl;
 }
 
-void syzygy_extend_pv(const OptionsMap&         options,
-                      const Search::LimitsType& limits,
-                      Position&                 pos,
-                      RootMove&                 rootMove,
-                      Value&                    v,
-                      const usize               multiPV) {
+const OptionsMap& Engine::get_options() const { return options; }
+OptionsMap&       Engine::get_options() { return options; }
 
-    auto t_start      = std::chrono::steady_clock::now();
-    int  moveOverhead = int(options["Move Overhead"]);
-    bool rule50       = bool(options["Syzygy50MoveRule"]);
+std::string Engine::fen() const { return pos.fen(); }
 
-    auto time_abort = [&t_start, &moveOverhead, &limits, &multiPV]() -> bool {
-        auto t_end = std::chrono::steady_clock::now();
-        return !limits.npmsec && limits.use_time_management()
-            && 2 * multiPV * std::chrono::duration<double, std::milli>(t_end - t_start).count()
-                 >= moveOverhead;
-    };
+std::optional<PositionSetError> Engine::flip() { return pos.flip(); }
+void                            Engine::show_moves_bookMan(const Position& position) {
+    bookMan.show_moves(position, options);
+}  //book management
+std::string Engine::visualize() const {
+    std::stringstream ss;
+    ss << pos;
+    return ss.str();
+}
 
-    if (time_abort())
-        return;
+int Engine::get_hashfull(int maxAge) const { return tt.hashfull(maxAge); }
 
-    std::list<StateInfo> sts;
+std::vector<std::pair<usize, usize>> Engine::get_bound_thread_count_by_numa_node() const {
+    auto                                 counts = threads.get_bound_thread_count_by_numa_node();
+    const NumaConfig&                    cfg    = numaContext.get_numa_config();
+    std::vector<std::pair<usize, usize>> ratios;
+    NumaIndex                            n = 0;
+    for (; n < counts.size(); ++n)
+        ratios.emplace_back(counts[n], cfg.num_cpus_in_numa_node(n));
+    if (!counts.empty())
+        for (; n < cfg.num_numa_nodes(); ++n)
+            ratios.emplace_back(0, cfg.num_cpus_in_numa_node(n));
+    return ratios;
+}
 
-    auto& stRoot = sts.emplace_back();
-    pos.do_move(rootMove.pv[0], stRoot);
-    int ply = 1;
+std::string Engine::get_numa_config_as_string() const {
+    return numaContext.get_numa_config().to_string();
+}
 
-    while (usize(ply) < rootMove.pv.size())
+std::string Engine::numa_config_information_as_string() const {
+    auto cfgStr = get_numa_config_as_string();
+    return "Available processors: " + cfgStr;
+}
+
+std::string Engine::thread_binding_information_as_string() const {
+    auto              boundThreadsByNode = get_bound_thread_count_by_numa_node();
+    std::stringstream ss;
+    if (boundThreadsByNode.empty())
+        return ss.str();
+
+    bool isFirst = true;
+
+    for (auto&& [current, total] : boundThreadsByNode)
     {
-        Move& pvMove = rootMove.pv[ply];
-
-        RootMoves legalMoves;
-        for (const auto& m : MoveList<LEGAL>(pos))
-            legalMoves.emplace_back(m);
-
-        TB::Config config = TB::rank_root_moves(options, pos, legalMoves, false, time_abort);
-        RootMove&  rm     = *std::find(legalMoves.begin(), legalMoves.end(), pvMove);
-
-        if (legalMoves[0].tbRank != rm.tbRank)
-            break;
-
-        ply++;
-
-        auto& st = sts.emplace_back();
-        pos.do_move(pvMove, st);
-
-        if (config.rootInTB && ((rule50 && pos.is_draw(ply)) || pos.is_repetition(ply)))
-        {
-            pos.undo_move(pvMove);
-            ply--;
-            break;
-        }
-
-        if (config.rootInTB && time_abort())
-            break;
+        if (!isFirst)
+            ss << ":";
+        ss << current << "/" << total;
+        isFirst = false;
     }
 
-    rootMove.pv.resize(ply);
-
-    while (!(rule50 && pos.is_draw(0)))
-    {
-        if (time_abort())
-            break;
-
-        RootMoves legalMoves;
-        for (const auto& m : MoveList<LEGAL>(pos))
-        {
-            auto&     rm = legalMoves.emplace_back(m);
-            StateInfo tmpSI;
-            pos.do_move(m, tmpSI);
-            for (const auto& mOpp : MoveList<LEGAL>(pos))
-                rm.tbRank -= pos.capture(mOpp) ? 100 : 1;
-            pos.undo_move(m);
-        }
-
-        if (legalMoves.empty())
-            break;
-
-        std::stable_sort(
-          legalMoves.begin(), legalMoves.end(),
-          [](const Search::RootMove& a, const Search::RootMove& b) { return a.tbRank > b.tbRank; });
-
-        TB::Config config = TB::rank_root_moves(options, pos, legalMoves, true, time_abort);
-
-        if (!config.rootInTB || config.cardinality > 0)
-            break;
-
-        ply++;
-
-        Move& pvMove = legalMoves[0].pv[0];
-        rootMove.pv.push_back(pvMove);
-        auto& st = sts.emplace_back();
-        pos.do_move(pvMove, st);
-    }
-
-    if (pos.is_draw(0))
-        v = VALUE_DRAW;
-
-    for (usize i = rootMove.pv.size(); i > 0; --i)
-        pos.undo_move(rootMove.pv[i - 1]);
-
-    if (time_abort())
-        sync_cout
-          << "info string Syzygy based PV extension requires more time, increase Move Overhead as needed."
-          << sync_endl;
+    return ss.str();
 }
 
-void SearchManager::output_pv(Search::Worker&           worker,
-                              const ThreadPool&         threads,
-                              const TranspositionTable& tt,
-                              Depth                     depth) {
+std::string Engine::thread_allocation_information_as_string() const {
+    std::stringstream ss;
 
-    const auto nodes     = threads.nodes_searched();
-    auto&      rootMoves = worker.rootMoves;
-    auto&      pos       = worker.rootPos;
-    usize      multiPV   = std::min(usize(worker.options["MultiPV"]), rootMoves.size());
-    u64        tbHits    = threads.tb_hits() + (worker.tbConfig.rootInTB ? rootMoves.size() : 0);
+    usize threadsSize = threads.size();
+    ss << "Using " << threadsSize << (threadsSize > 1 ? " threads" : " thread");
 
-    for (usize i = 0; i < multiPV; ++i)
-    {
-        bool usePreviousScore = rootMoves[i].score == -VALUE_INFINITE;
+    auto boundThreadsByNodeStr = thread_binding_information_as_string();
+    if (boundThreadsByNodeStr.empty())
+        return ss.str();
 
-        if (depth == 1 && usePreviousScore && i > 0)
-            continue;
+    ss << " with NUMA node thread binding: ";
+    ss << boundThreadsByNodeStr;
 
-        Depth d = usePreviousScore ? std::max(1, depth - 1) : depth;
-        Value v = usePreviousScore ? rootMoves[i].previousScore : rootMoves[i].uciScore;
-
-        if (v == -VALUE_INFINITE)
-            v = VALUE_ZERO;
-
-        bool isTBScore = worker.tbConfig.rootInTB && !is_mate_or_mated(v);
-        v              = isTBScore ? rootMoves[i].tbScore : v;
-
-        if (is_decisive(v) && !is_mate_or_mated(v) && !usePreviousScore
-            && (!rootMoves[i].is_inexact() || isTBScore))
-            syzygy_extend_pv(worker.options, worker.limits, pos, rootMoves[i], v, multiPV);
-
-        // [SC:shashin] begin
-        if ((i == 0) && d > worker.lastShashinUpdatedDepth)
-        {
-            worker.getShashinManager().updateRootShashinState(v, pos, d, worker.rootDepth);
-            worker.lastShashinUpdatedDepth = d;
-        }
-        // [SC:shashin] end
-
-        std::string pv;
-        for (Move m : usePreviousScore ? rootMoves[i].previousPV : rootMoves[i].pv)
-            pv += UCIEngine::move(m, pos.is_chess960()) + " ";
-
-        if (!pv.empty())
-            pv.pop_back();
-
-        auto wdl = worker.options["UCI_ShowWDL"] ? UCIEngine::wdl(v, pos) : "";
-
-        assert(!(rootMoves[i].inexactLower && rootMoves[i].inexactUpper));
-        auto bound = rootMoves[i].inexactLower ? "lowerbound"
-                   : rootMoves[i].inexactUpper ? "upperbound"
-                                               : "";
-
-        InfoFull info;
-
-        info.depth    = d;
-        info.selDepth = rootMoves[i].selDepth;
-        info.multiPV  = i + 1;
-        info.score    = {v, pos};
-        info.wdl      = wdl;
-
-        if (!(isTBScore || usePreviousScore))
-            info.bound = bound;
-
-        TimePoint time = std::max(TimePoint(1), tm.elapsed_time());
-        info.timeMs    = time;
-        info.nodes     = nodes;
-        info.nps       = nodes * 1000 / time;
-        info.tbHits    = tbHits;
-        info.pv        = pv;
-        info.hashfull  = tt.hashfull();
-
-        updates.onUpdateFull(info);
-    }
+    return ss.str();
 }
 
-bool RootMove::extract_ponder_from_tt(const TranspositionTable& tt, Position& pos) {
-
-    assert(pv.size() == 1 && pv[0] != Move::none());
-
-    StateInfo st;
-    pos.do_move(pv[0], st, &tt);
-
-    if (!pos.is_draw(1))
-    {
-        auto [ttHit, ttData, ttWriter] = tt.probe(pos.key());
-        if (ttHit && MoveList<LEGAL>(pos).contains(ttData.move))
-            pv.push_back(ttData.move);
-    }
-
-    pos.undo_move(pv[0]);
-    return pv.size() > 1;
 }
-
-// [SC:learning] begin
-void putQLearningTrajectoryIntoLearningTable() {
-    const double learning_rate = 0.5;
-    const double gamma         = 0.99;
-
-    if (qLearningTrajectory.size() <= 1)
-        return;
-
-    for (size_t index = qLearningTrajectory.size() - 1; index > 0; --index)
-    {
-        LearningMove prevLearningMove =
-          qLearningTrajectory[index - 1].persistedLearningMove.learningMove;
-        const LearningMove currentLearningMove =
-          qLearningTrajectory[index].persistedLearningMove.learningMove;
-
-        prevLearningMove.score = prevLearningMove.score * (1 - learning_rate)
-                               + learning_rate * (gamma * currentLearningMove.score);
-        prevLearningMove.performance = WDLModel::get_win_probability_by_material(
-          prevLearningMove.score, qLearningTrajectory[index - 1].materialClamp);
-
-        LD.add_new_learning(qLearningTrajectory[index - 1].persistedLearningMove.key,
-                            prevLearningMove);
-    }
-
-    qLearningTrajectory.clear();
-}
-
-void setStartPoint() {
-    useLearning = true;
-    LD.resume();
-    qLearningTrajectory.clear();
-}
-// [SC:learning] end
-
-// [SC:shashin] begin
-Value ShashinManager::static_value(const Eval::NNUE::Networks&    networks,
-                                   Eval::NNUE::AccumulatorStack&  accumulators,
-                                   Eval::NNUE::AccumulatorCaches& refreshTable,
-                                   Position&                      rootPos,
-                                   Search::Stack*                 ss,
-                                   Value                          optimism) {
-    if (ss->ply >= MAX_PLY || rootPos.is_draw(ss->ply))
-        return VALUE_DRAW;
-
-    MoveList<LEGAL> legalMoves(rootPos);
-    if (legalMoves.size() == 0)
-        return rootPos.checkers() ? VALUE_MATE : VALUE_DRAW;
-
-    if (!rootPos.checkers())
-        return Eval::evaluate(networks, rootPos, accumulators, refreshTable, optimism);
-
-    Value bestValue = -VALUE_INFINITE;
-    for (const auto& move : legalMoves)
-    {
-        StateInfo st;
-        auto [dp, dts] = accumulators.push();
-        rootPos.do_move(move, st, rootPos.gives_check(move), dp, dts, nullptr, nullptr);
-
-        (ss + 1)->ply = ss->ply + 1;
-
-        Value val = -static_value(networks, accumulators, refreshTable, rootPos, ss + 1, -optimism);
-
-        rootPos.undo_move(move);
-        accumulators.pop();
-
-        if (val > bestValue)
-        {
-            bestValue = val;
-            if (bestValue == VALUE_MATE)
-                break;
-        }
-    }
-
-    return bestValue;
-}
-
-Value Worker::minimax_value(Position& pos, Search::Stack* ss, Depth depth) {
-    Value   alpha = -VALUE_INFINITE;
-    Value   beta  = VALUE_INFINITE;
-    PVMoves pv;
-    ss->pv = &pv;
-
-    Value value = search<PV>(pos, ss, alpha, beta, depth, false);
-
-    if (limits.mate && value >= VALUE_MATE_IN_MAX_PLY && VALUE_MATE - value <= 2 * limits.mate)
-        threads.stop = true;
-
-    return value;
-}
-
-Value Worker::minimax_value(
-  Position& pos, Search::Stack* ss, Depth depth, Value alpha, Value beta) {
-
-    PVMoves pv;
-    ss->pv = &pv;
-
-    Value value = VALUE_ZERO;
-    Value delta = Value(18);
-
-    while (!threads.stop.load(std::memory_order_relaxed))
-    {
-        value = search<PV>(pos, ss, alpha, beta, depth, false);
-        if (value <= alpha)
-        {
-            beta  = (alpha + beta) / 2;
-            alpha = std::max(value - delta, -VALUE_INFINITE);
-        }
-        else if (value >= beta)
-        {
-            beta = std::min(value + delta, VALUE_INFINITE);
-        }
-        else
-        {
-            break;
-        }
-    }
-
-    if (limits.mate && value >= VALUE_MATE_IN_MAX_PLY && VALUE_MATE - value <= 2 * limits.mate)
-        threads.stop = true;
-
-    return value;
-}
-// [SC:shashin] end
-
-}  // namespace ShashChess

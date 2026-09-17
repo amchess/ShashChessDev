@@ -25,8 +25,6 @@
 #include <atomic>
 #include <cassert>
 #include <cstring>
-#include <cstddef>
-#include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
@@ -36,7 +34,6 @@
 
 #include "history.h"
 #include "misc.h"
-#include "nnue/network.h"
 #include "nnue/nnue_accumulator.h"
 #include "numa.h"
 #include "position.h"
@@ -54,7 +51,7 @@
 
 namespace ShashChess {
 
-class ShashinManager;  // shashin
+class ShashinManager;
 
 // Different node types, used as a template parameter
 enum NodeType {
@@ -148,7 +145,6 @@ struct Stack {
     // [SC:shashin-crystal] end
 };
 
-
 // RootMove struct is used for moves at the root of the tree. For each root move
 // we store a score and a PV (really a refutation in the case of moves which
 // fail low). Score is normally set at -VALUE_INFINITE for all non-pv moves.
@@ -167,14 +163,14 @@ struct RootMove {
         return m.score != score ? m.score < score : m.previousScore < previousScore;
     }
 
-    u64         effort           = 0;
-    Value       score            = -VALUE_INFINITE;
-    Value       previousScore    = -VALUE_INFINITE;
-    Value       averageScore     = -VALUE_INFINITE;
-    Value       meanSquaredScore = -VALUE_INFINITE * VALUE_INFINITE;
-    Value       uciScore         = -VALUE_INFINITE;
-    bool        inexactLower     = false;  // By default root scores are exact, unless flagged as a
-    bool        inexactUpper     = false;  // one-sided bound here. See also `enum Bound` in types.h
+    u64         effort             = 0;
+    Value       score              = -VALUE_INFINITE;
+    Value       previousScore      = -VALUE_INFINITE;
+    Value       averageScore       = -VALUE_INFINITE;
+    Value       meanSquaredScore   = -VALUE_INFINITE * VALUE_INFINITE;
+    Value       uciScore           = -VALUE_INFINITE;
+    bool        inexactLower       = false;
+    bool        inexactUpper       = false;
     bool        previousScoreExact = false;
     int         selDepth           = 0;
     int         tbRank             = 0;
@@ -205,18 +201,16 @@ struct LimitsType {
     bool                     ponderMode;
 };
 
-
 // The UCI stores the uci options, thread pool, and transposition table.
 // This struct is used to easily forward data to the Search::Worker class.
 struct SharedState {
-    // [SC:book] begin
     SharedState(BookManager&                                             bm,
                 const OptionsMap&                                        optionsMap,
                 ThreadPool&                                              threadPool,
                 TranspositionTable&                                      transpositionTable,
                 std::map<NumaIndex, SharedHistories>&                    sharedHists,
                 const LazyNumaReplicatedSystemWide<Eval::NNUE::Network>& net,
-                const ShashChess::ShashinConfig&                         shCfg) :  // Shashin
+                const ShashChess::ShashinConfig&                         shCfg) :
         bookMan(bm),
         options(optionsMap),
         threads(threadPool),
@@ -225,14 +219,13 @@ struct SharedState {
         network(net),
         shashinConfig(shCfg) {}
 
-    BookManager& bookMan;
-    // [SC:book] end
+    BookManager&                                             bookMan;
     const OptionsMap&                                        options;
     ThreadPool&                                              threads;
     TranspositionTable&                                      tt;
     std::map<NumaIndex, SharedHistories>&                    sharedHistories;
     const LazyNumaReplicatedSystemWide<Eval::NNUE::Network>& network;
-    const ShashChess::ShashinConfig                          shashinConfig;  // Shashin
+    const ShashinConfig&                                     shashinConfig;
 };
 
 class Worker;
@@ -326,10 +319,10 @@ class SearchManager: public ISearchManager {
                    const TranspositionTable& tt,
                    Depth                     depth);
 
-    ShashChess::TimeManagement tm;
-    double                     originalTimeAdjust;
-    int                        callsCnt;
-    std::atomic_bool           ponder;
+    TimeManagement   tm;
+    double           originalTimeAdjust;
+    int              callsCnt;
+    std::atomic_bool ponder;
 
     std::array<Value, 4> iterValue;
     double               previousTimeReduction;
@@ -350,7 +343,6 @@ class NullSearchManager: public ISearchManager {
 // of the search history, and storing data required for the search.
 class Worker {
    public:
-    usize threadIdx;  // mcts
     Worker(SharedState&,
            std::unique_ptr<ISearchManager>,
            usize,
@@ -358,7 +350,7 @@ class Worker {
            usize,
            NumaReplicatedAccessToken);
 
-    ~Worker();  // shashin
+    ~Worker();
 
     // Called at instantiation to initialize reductions tables.
     // Reset histories, usually before a new game.
@@ -372,10 +364,8 @@ class Worker {
 
     void ensure_network_replicated();
 
-    // [SC:mcts] begin
     Value minimax_value(Position& pos, Search::Stack* ss, Depth depth);
     Value minimax_value(Position& pos, Search::Stack* ss, Depth depth, Value alpha, Value beta);
-    // [SC:mcts] end
 
     // Public because they need to be updatable by the stats
     ButterflyHistory mainHistory;
@@ -386,13 +376,14 @@ class Worker {
 
     TTMoveHistory    ttMoveHistory;
     SharedHistories& sharedHistory;
+    RootMoves        rootMoves;
     ContinuationHistory (&continuationHistory)[2][2];
+    usize threadIdx;
 
-    RootMoves       rootMoves;                          // mcts
-    Depth           completedDepth;                     // mcts
-    bool            nmpGuard = false, nmpSide = false;  // from Crystal-shashin
-    ShashinManager& getShashinManager();                // from crystal-Shashin
-    int             lastShashinUpdatedDepth = 0;        // from shashin
+    Depth           completedDepth;
+    bool            nmpGuard = false, nmpSide = false;
+    ShashinManager& getShashinManager();
+    int             lastShashinUpdatedDepth = 0;
 
    private:
     bool iterative_deepening();
@@ -443,8 +434,8 @@ class Worker {
     usize                     numaThreadIdx, numaTotal;
     NumaReplicatedAccessToken numaAccessToken;
 
-    bool fullSearch      = false;  // full threads patch
-    bool antiDancingMode = false;  // anti dancing option
+    bool fullSearch      = false;
+    bool antiDancingMode = false;
 
     // Reductions lookup table initialized at startup
     std::array<int, MAX_MOVES> reductions;  // [depth or moveNumber]
@@ -454,9 +445,7 @@ class Worker {
 
     Tablebases::Config tbConfig;
 
-    // [SC:book] begin
     BookManager& bookMan;
-    // [SC:book] end
 
     const OptionsMap&                                        options;
     ThreadPool&                                              threads;
@@ -467,10 +456,8 @@ class Worker {
     Eval::NNUE::AccumulatorStack  accumulatorStack;
     Eval::NNUE::AccumulatorCaches refreshTable;
 
-    // [SC:shashin] begin
     std::unique_ptr<ShashinManager>  shashinManager;
     const ShashChess::ShashinConfig& shConfig;
-    // [SC:shashin] end
 
     friend class ShashChess::ThreadPool;
     friend class SearchManager;
@@ -481,7 +468,6 @@ struct ConthistBonus {
     int weight;
 };
 
-// [SC:livebook] begin
 #ifdef USE_LIVEBOOK
 void set_livebook_depth(int book_depth);
 void set_proxy_url(const std::string& proxy_url);
@@ -500,16 +486,14 @@ void update_online_tablebases();
 void set_chess_db_contribute(bool chess_db_contribute);
 void set_proxy_diversity(bool proxy_diversity);
 #endif
-// [SC:livebook] end
 
-void set_variety(const std::string& varietyOption);  // variety
+void set_variety(const std::string& varietyOption);
+
 }  // namespace Search
 
-// [SC:livebook] begin
 #ifdef USE_LIVEBOOK
 size_t cURL_WriteFunc(void* contents, size_t size, size_t nmemb, std::string* s);
 #endif
-// [SC:livebook] end
 
 }  // namespace ShashChess
 

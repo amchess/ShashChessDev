@@ -31,8 +31,8 @@
 #include <variant>
 #include <vector>
 
-#include "history.h"
 #include "misc.h"
+#include "history.h"
 #include "nnue/network.h"
 #include "nnue/nnue_misc.h"
 #include "numa.h"
@@ -98,14 +98,16 @@ class Engine {
     void set_on_iter(std::function<void(const InfoIter&)>&&);
     void set_on_bestmove(std::function<void(std::string_view, std::string_view)>&&);
     void set_on_start(std::function<void()>&&);
-    void set_on_verify_network(std::function<void(std::string_view)>&&);
+    void set_on_verify_networks(std::function<void(std::string_view)>&&);
 
     // network related
 
-    void                                 verify_network() const;
-    std::unique_ptr<Eval::NNUE::Network> get_default_network();
-    void                                 load_network(const std::filesystem::path& file);
-    void save_network(const std::optional<std::filesystem::path>& file);
+    void verify_networks() const;
+    void load_networks();
+    void load_big_network(const std::filesystem::path& file);
+    void load_small_network(const std::filesystem::path& file);
+    void save_network(const std::pair<std::optional<std::filesystem::path>,
+                                      std::optional<std::filesystem::path>> files);
 
     // utility functions
 
@@ -113,7 +115,7 @@ class Engine {
 
     const OptionsMap& get_options() const;
     OptionsMap&       get_options();
-    BookManager       get_bookMan();  // book management
+    BookManager&      get_bookMan() { return bookMan; }  // book management
     int               get_hashfull(int maxAge = 0) const;
 
     std::string                     fen() const;
@@ -139,11 +141,11 @@ class Engine {
     ThreadPool                                        threads;
     TranspositionTable                                tt;
     Eval::NNUE::EvalFile                              networkFile;
-    LazyNumaReplicatedSystemWide<Eval::NNUE::Network> network;
+    LazyNumaReplicatedSystemWide<Eval::NNUE::Network> networks;
     BookManager                                       bookMan;  // book management
 
     Search::SearchManager::UpdateContext  updateContext;
-    std::function<void(std::string_view)> onVerifyNetwork;
+    std::function<void(std::string_view)> onVerifyNetworks;
     std::map<NumaIndex, SharedHistories>  sharedHists;
 };
 

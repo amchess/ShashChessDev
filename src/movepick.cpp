@@ -210,7 +210,7 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
         threatByLesser[ROOK] =
           pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<BISHOP>(~us) | threatByLesser[KNIGHT];
         threatByLesser[QUEEN] = pos.attacks_by<ROOK>(~us) | threatByLesser[ROOK];
-        threatByLesser[KING]  = 0;  // come in Stockfish 19
+        threatByLesser[KING]  = 0;
     }
 
     ExtMove* it = cur;

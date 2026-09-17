@@ -35,7 +35,7 @@
 namespace ShashChess {
 namespace Eval {
 namespace NNUE {
-struct Networks;
+class Network;
 struct AccumulatorCaches;
 struct AccumulatorStack;  // Forward dec necessaria
 }
@@ -76,7 +76,7 @@ class ShashinManager {
     bool isPawnNearPromotion(const Position& rootPos);
 
     // Evaluation - Definita in search.cpp
-    Value static_value(const Eval::NNUE::Networks&    networks,
+    Value static_value(const Eval::NNUE::Network&    networks,
                        Eval::NNUE::AccumulatorStack&  accumulators,
                        Eval::NNUE::AccumulatorCaches& refreshTable,
                        Position&                      rootPos,
@@ -84,7 +84,7 @@ class ShashinManager {
                        Value                          optimism);
 
     // Initialization
-    void initDynamicRootShashinState(const Eval::NNUE::Networks&    networks,
+    void initDynamicRootShashinState(const Eval::NNUE::Network&    networks,
                                      Eval::NNUE::AccumulatorStack&  accumulators,
                                      Eval::NNUE::AccumulatorCaches& refreshTable,
                                      Position&                      rootPos,

@@ -138,6 +138,10 @@ class Position {
     Bitboard attacks_by(Color c) const;
 
     // Properties of moves
+    Value see(Move m) const;
+    bool  is_draw_move(Move m) const;
+    bool  has_game_cycle(int ply) const;
+
     bool  legal(Move m) const;
     bool  pseudo_legal(const Move m) const;
     bool  capture(Move m) const;

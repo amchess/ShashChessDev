@@ -241,7 +241,7 @@ void ShashinManager::setDynamicBaseState(Value           score,
     state.dynamicBase.rootDepth    = rootDepth;
 }
 
-void ShashinManager::initDynamicRootShashinState(const Eval::NNUE::Networks&    networks,
+void ShashinManager::initDynamicRootShashinState(const Eval::NNUE::Network&     networks,
                                                  Eval::NNUE::AccumulatorStack&  accumulators,
                                                  Eval::NNUE::AccumulatorCaches& refreshTable,
                                                  Position&                      rootPos,
@@ -353,7 +353,9 @@ bool ShashinManager::isFortress(const Position& pos) {
     const Square ourKing   = pos.square<KING>(us);
     const Square theirKing = pos.square<KING>(them);
 
-    if (distance(ourKing, theirKing) <= 4)
+    if (std::max(std::abs(file_of(ourKing) - file_of(theirKing)),
+                 std::abs(rank_of(ourKing) - rank_of(theirKing)))
+        <= 4)
         return cacheResult(false);
 
     if (pos.non_pawn_material(them) > 2 * PieceValue[KNIGHT] || pos.count<QUEEN>(them) > 0)
@@ -362,7 +364,7 @@ bool ShashinManager::isFortress(const Position& pos) {
     }
 
     Bitboard ourPawns = pos.pieces(us, PAWN);
-    if (popcount(ourPawns & (shift<NORTH>(ourPawns) | shift<SOUTH>(ourPawns))) < 3)
+    if (popcount(ourPawns & (shift(ourPawns, NORTH) | shift(ourPawns, SOUTH))) < 3)
         return cacheResult(false);
 
     int theirMobility = 0;
@@ -372,7 +374,7 @@ bool ShashinManager::isFortress(const Position& pos) {
         while (pieces)
         {
             Square   s       = pop_lsb(pieces);
-            Bitboard attacks = attacks_bb(pt, s, pos.pieces());
+            Bitboard attacks = Attacks::attacks_bb(pt, s, pos.pieces());
             theirMobility += popcount(attacks & ~pos.pieces(us, KING));
         }
     }

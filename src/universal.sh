@@ -4,26 +4,33 @@
 #  Da lanciare DENTRO la cartella "src" del sorgente.
 #
 #  ARCH=x86-64-universal compila 8 slice
-#  (x86-64, sse41-popcnt, avx2, bmi2, avxvnni, avx512, vnni512, avx512icl)
 #  e le linka in un unico eseguibile che sceglie a runtime quella giusta.
+#
+#  RETE ESTERNA: richiede Makefile e universal/nnue_embed.cpp patchati.
+#  L'eseguibile non contiene la rete: il file nn-*.nnue va tenuto accanto
+#  all'eseguibile oppure indicato con l'opzione UCI EvalFile.
 # ==========================================================================
 
 set -e
 
-# --- Intel SDE: serve SOLO per il PGO -------------------------------------
-# Profile-build esegue il bench di OGNI slice, comprese AVX-512/VNNI/ICL:
-# senza emulatore su CPU vecchie si verifica "Illegal instruction" (SIGILL).
-# Impostare SDE_DIR con il percorso di Intel SDE (es. /opt/sde), 
-# oppure lasciare vuoto per build no-PGO.
-SDE_DIR="${SDE_DIR:-/opt/sde}"
+fallita() {
+    echo ""
+    echo "*** BUILD UNIVERSAL FALLITA: $1 ***"
+    exit 1
+}
 
-# Rilevamento automatico dei core CPU disponibili
+# --- controllo: sorgenti patchati per la rete esterna ---------------------
+grep -q "NNUE_STUB_OBJ" Makefile \
+    || fallita "Makefile non patchato, manca il supporto a NNUE_EMBEDDING_OFF=yes"
+grep -q "defined(NNUE_EMBEDDING_OFF)" universal/nnue_embed.cpp \
+    || fallita "universal/nnue_embed.cpp non patchato"
+
+SDE_DIR="${SDE_DIR:-/opt/sde}"
 NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
 TARGET="build"
 RUN_PREFIX=""
 
-# Cerca l'eseguibile sde nel percorso specificato o nel PATH di sistema
 if [ -x "$SDE_DIR/sde" ]; then
     SDE_BIN="$SDE_DIR/sde"
 elif command -v sde >/dev/null 2>&1; then
@@ -42,28 +49,54 @@ make clean
 
 echo "[universal] Avvio compilazione ARCH=x86-64-universal con -j$NPROC..."
 
+# NNUE_EMBEDDING_OFF=yes: le slice e il loro bench PGO usano ancora la rete
+# incorporata in temp_builds, solo il link finale usa il segnaposto da 1 byte.
+# Non passare CXXFLAGS da riga di comando: sostituisce -O3, -m... e -flto.
 if [ -n "$RUN_PREFIX" ]; then
-    make "\(TARGET" ARCH=x86-64-universal COMP=gcc RUN_PREFIX="\)RUN_PREFIX" -j"$NPROC"
+    make "$TARGET" ARCH=x86-64-universal COMP=gcc NNUE_EMBEDDING_OFF=yes RUN_PREFIX="$RUN_PREFIX" -j"$NPROC"
 else
-    make "\(TARGET" ARCH=x86-64-universal COMP=gcc -j"\)NPROC"
+    make "$TARGET" ARCH=x86-64-universal COMP=gcc NNUE_EMBEDDING_OFF=yes -j"$NPROC"
 fi
 
-if [ ! -f shashchess ]; then
-    echo ""
-    echo "*** BUILD UNIVERSAL FALLITA: eseguibile non generato ***"
-    exit 1
-fi
+[ -f shashchess ] || fallita "eseguibile non generato"
 
 strip shashchess
-mv shashchess ShashChess19-universal
+mv shashchess ShashChess42-universal
+
+# --- nome della rete di default, letto da evaluate.h ----------------------
+NETFILE=$(grep -E '^[[:space:]]*#[[:space:]]*define[[:space:]]+EvalFileDefaultName[[:space:]]' evaluate.h \
+    | grep -oE 'nn-[0-9a-f]+\.nnue' | head -n 1)
+[ -n "$NETFILE" ] || fallita "EvalFileDefaultName non trovato in evaluate.h"
+[ -f "$NETFILE" ] || fallita "rete $NETFILE assente in src, scaricala con: make net"
+
+# --- verifiche in una cartella temporanea, senza toccare src ---------------
+CHECKDIR=$(mktemp -d)
+cp ShashChess42-universal "$CHECKDIR/"
+
+# verifica 1: senza rete accanto all'eseguibile il motore deve fermarsi
+if (cd "$CHECKDIR" && ./ShashChess42-universal bench 16 1 1 >/dev/null 2>&1); then
+    rm -rf "$CHECKDIR"
+    fallita "il bench gira anche senza $NETFILE, la rete e' ancora incorporata"
+fi
+echo "[universal] OK: senza $NETFILE il motore si ferma, la rete non e' incorporata"
+
+# verifica 2: con la rete accanto all'eseguibile il bench deve funzionare
+cp "$NETFILE" "$CHECKDIR/"
+if ! (cd "$CHECKDIR" && ./ShashChess42-universal bench 16 1 1 >/dev/null 2>&1); then
+    rm -rf "$CHECKDIR"
+    fallita "il motore non carica $NETFILE messo accanto all'eseguibile"
+fi
+rm -rf "$CHECKDIR"
+echo "[universal] OK: rete caricata da file esterno"
 
 # --- Verifica: stampa la slice selezionata sulla CPU corrente -------------
 echo ""
 echo "[universal] Test di esecuzione (compiler info):"
-./ShashChess19-universal compiler
+./ShashChess42-universal compiler
 
 make clean
 
 echo ""
-echo "[universal] OK: ShashChess19-universal"
+echo "[universal] OK: ShashChess42-universal"
+echo "[universal] Da distribuire insieme: ShashChess42-universal + $NETFILE"
 exit 0

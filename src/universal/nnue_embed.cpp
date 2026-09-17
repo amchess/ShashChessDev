@@ -68,6 +68,14 @@ static const unsigned char* map_embedded_nnue() {
 extern const unsigned char* const gEmbeddedNNUEData = map_embedded_nnue();
 extern const unsigned int         gEmbeddedNNUESize = static_cast<unsigned int>(gUniversalNNUESize);
 
+#elif defined(NNUE_EMBEDDING_OFF)
+
+// Network not embedded: 1-byte placeholder, same convention used by
+// nnue/network.cpp for non-universal builds. load_internal() fails to parse it,
+// so the engine loads EvalFile from disk (working directory, then binary directory).
+extern const unsigned char gEmbeddedNNUEData[1] = {0x0};
+extern const unsigned int  gEmbeddedNNUESize    = 1;
+
 #else
 
 extern const unsigned char gEmbeddedNNUEData[] =

@@ -454,7 +454,8 @@ ifeq ($(MAKELEVEL),0)
        export ENV_LDFLAGS := $(LDFLAGS)
 endif
 
-CXXFLAGS = $(ENV_CXXFLAGS) -Wall -Wcast-qual -fno-exceptions -std=c++17 $(EXTRACXXFLAGS)
+# AGGIUNTO: Forziamo NNUE_EMBEDDING_OFF globalmente
+CXXFLAGS = $(ENV_CXXFLAGS) -Wall -Wcast-qual -fno-exceptions -std=c++17 -DNNUE_EMBEDDING_OFF $(EXTRACXXFLAGS)
 DEPENDFLAGS = $(ENV_DEPENDFLAGS) -std=c++17
 LDFLAGS = $(ENV_LDFLAGS) $(EXTRALDFLAGS)
 
@@ -848,6 +849,18 @@ endif
 
 ifeq ($(syzygy),no)
 	CXXFLAGS += -DNO_TABLEBASES
+endif
+
+### NNUE network embedding
+# NNUE_EMBEDDING_OFF=yes builds an engine without the embedded network.
+# EXTRACXXFLAGS=-DNNUE_EMBEDDING_OFF is accepted as an alias. The variable is
+# exported because the PGO sub-makes redefine EXTRACXXFLAGS on their command line.
+ifneq ($(filter -DNNUE_EMBEDDING_OFF,$(EXTRACXXFLAGS)),)
+  NNUE_EMBEDDING_OFF := yes
+endif
+ifeq ($(NNUE_EMBEDDING_OFF),yes)
+  export NNUE_EMBEDDING_OFF
+  CXXFLAGS += -DNNUE_EMBEDDING_OFF
 endif
 
 BUILD_SHA_FILE       := .build_sha.txt
@@ -1301,7 +1314,17 @@ ifeq ($(UNIVERSAL_BUILD),true)
 
 UNIVERSAL_SRC_DIR    := $(CURDIR)/universal
 NNUE_EMBED_OBJ       := $(TEMP_DIR)/nnue_embed.o
+NNUE_STUB_OBJ        := $(TEMP_DIR)/nnue_embed_off.o
 NET_SENTINEL         := $(TEMP_DIR)/.net-done
+
+# With NNUE_EMBEDDING_OFF=yes the slices are still built (and PGO-benched) against
+# the full nnue_embed.o, because the bench runs in temp_builds/<arch>/ where no
+# .nnue file exists. Only the final link uses the 1-byte placeholder object.
+ifeq ($(NNUE_EMBEDDING_OFF),yes)
+  NNUE_FINAL_OBJ     := $(NNUE_STUB_OBJ)
+else
+  NNUE_FINAL_OBJ     := $(NNUE_EMBED_OBJ)
+endif
 
 ifeq ($(arch),x86_64)
   UNIVERSAL_ARCHES := x86-64 x86-64-sse41-popcnt x86-64-avx2 x86-64-bmi2 \
@@ -1392,7 +1415,10 @@ $(NET_SENTINEL): | $(TEMP_DIR)
 	@touch $@
 
 $(NNUE_EMBED_OBJ): $(UNIVERSAL_SRC_DIR)/nnue_embed.cpp $(NET_SENTINEL) | $(TEMP_DIR)
-	$(CXX) -O2 -std=c++20 -Wno-c++26-extensions $(SLICE_DEF) $(mac_target_flags) $(EXTRACXXFLAGS) $(EMBED_DIR) -c $< -o $@
+	$(CXX) -O2 -std=c++20 -Wno-c++26-extensions $(SLICE_DEF) $(mac_target_flags) $(filter-out -DNNUE_EMBEDDING_OFF,$(EXTRACXXFLAGS)) $(EMBED_DIR) -c $< -o $@
+
+$(NNUE_STUB_OBJ): $(UNIVERSAL_SRC_DIR)/nnue_embed.cpp | $(TEMP_DIR)
+	$(CXX) -O2 -std=c++20 $(SLICE_DEF) $(mac_target_flags) $(filter-out -DNNUE_EMBEDDING_OFF,$(EXTRACXXFLAGS)) -DNNUE_EMBEDDING_OFF -c $< -o $@
 
 $(UNIVERSAL_ENTRY_OBJ): $(UNIVERSAL_ENTRY_SRC) | $(TEMP_DIR)
 	$(CXX) -O2 -std=c++20 $(mac_target_flags) $(EXTRACXXFLAGS) -c $< -o $@
@@ -1427,8 +1453,8 @@ else
 endif
 endif
 
-$(UNIVERSAL_EXE): $(UNIVERSAL_ENTRY_OBJ) $(NNUE_EMBED_OBJ) $(ARCH_OBJS)
-	$(CXX) -o $@ $(UNIVERSAL_ENTRY_OBJ) $(NNUE_EMBED_OBJ) $(ARCH_OBJS) $(UNIVERSAL_FINAL_FLAGS) $(EXTRALDFLAGS)
+$(UNIVERSAL_EXE): $(UNIVERSAL_ENTRY_OBJ) $(NNUE_FINAL_OBJ) $(ARCH_OBJS)
+	$(CXX) -o $@ $(UNIVERSAL_ENTRY_OBJ) $(NNUE_FINAL_OBJ) $(ARCH_OBJS) $(UNIVERSAL_FINAL_FLAGS) $(EXTRALDFLAGS)
 	@echo "Universal binary built: $@"
 
 endif  # UNIVERSAL_BUILD

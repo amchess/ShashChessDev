@@ -330,9 +330,10 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
         th->run_custom_job([&]() {
             th->worker->limits = limits;
             // [SC:shashin-crystal] begin
-            th->worker->nodes = th->worker->tbHits = th->worker->nmpGuard = th->worker->nmpMinPly =
-              th->worker->bestMoveChanges                                 = 0;
-            th->worker->nmpSide                                           = 0;
+            th->worker->nodes = th->worker->tbHits = th->worker->nmpMinPly =
+              th->worker->bestMoveChanges          = 0;
+            th->worker->nmpGuard                   = false;
+            th->worker->nmpSide                    = 0;
             // [SC:shashin-crystal] end
             th->worker->rootDepth = th->worker->completedDepth = 0;
             th->worker->rootMoves                              = rootMoves;
