@@ -636,6 +636,9 @@ bool Search::Worker::iterative_deepening() {
 
     ss->pv = &pv;
 
+    // Nuova ricerca: la guardia di output_pv() riparte da zero.
+    lastShashinUpdatedDepth = 0;
+
     localShashinManager.initDynamicRootShashinState(network[numaAccessToken], accumulatorStack,
                                                     refreshTable, rootPos, ss, VALUE_ZERO, shConfig,
                                                     rootDepth);
@@ -859,6 +862,9 @@ bool Search::Worker::iterative_deepening() {
 
         if (!threads.stop)
         {
+            // [SC] SF19 ha eliminato completedDepth, ma learning e MCTS lo usano ancora
+            completedDepth = rootDepth;
+
             if (lastBestMovePV.empty() || lastBestMovePV[0] != rootMoves[0].pv[0])
                 lastBestMoveDepth = rootDepth;
 
@@ -2843,7 +2849,8 @@ void SearchManager::output_pv(Search::Worker&           worker,
             syzygy_extend_pv(worker.options, worker.limits, pos, rootMoves[i], v, multiPV);
 
         // [SC:shashin] begin
-        if ((i == 0) && d > worker.lastShashinUpdatedDepth)
+        // Solo punteggi esatti: evita che fail-high/low inquinino lo stato Shashin
+        if ((i == 0) && d > worker.lastShashinUpdatedDepth && !rootMoves[i].is_inexact())
         {
             worker.getShashinManager().updateRootShashinState(v, pos, d, worker.rootDepth);
             worker.lastShashinUpdatedDepth = d;
@@ -2951,7 +2958,7 @@ Value ShashinManager::static_value(const Eval::NNUE::Network&     network,
 
     MoveList<LEGAL> legalMoves(rootPos);
     if (legalMoves.size() == 0)
-        return rootPos.checkers() ? VALUE_MATE : VALUE_DRAW;
+        return rootPos.checkers() ? -VALUE_MATE : VALUE_DRAW;  // il lato che muove e' matto
 
     if (!rootPos.checkers())
         return Eval::evaluate(network, rootPos, accumulators, refreshTable, optimism);
@@ -2987,6 +2994,10 @@ Value Worker::minimax_value(Position& pos, Search::Stack* ss, Depth depth) {
     PVMoves pv;
     ss->pv = &pv;
 
+    // MCTS avanza la posizione con Position::do_move() senza push sullo stack degli
+    // accumulatori: senza reset si valuterebbe con l'accumulatore di un'altra posizione.
+    accumulatorStack.reset();
+
     Value value = search<PV>(pos, ss, alpha, beta, depth, false);
 
     if (limits.mate && value >= VALUE_MATE_IN_MAX_PLY && VALUE_MATE - value <= 2 * limits.mate)
@@ -3003,6 +3014,8 @@ Value Worker::minimax_value(
 
     Value value = VALUE_ZERO;
     Value delta = Value(18);
+
+    accumulatorStack.reset();  // vedi l'overload precedente
 
     while (!threads.stop.load(std::memory_order_relaxed))
     {

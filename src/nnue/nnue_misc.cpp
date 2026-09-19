@@ -196,11 +196,16 @@ trace(Position& pos, const Eval::NNUE::Network& network, Eval::NNUE::Accumulator
     }
 
     // Sezione 5: Inserimento Virtuale (Avamposti Latenti)
+    // Il bucket NNUE vale (pezzi - 1) / 4 e deve restare < LayerStacks: con 32 pezzi
+    // un pezzo fantasma porterebbe il bucket a 8, fuori dagli array della rete
+    // (psqtAccumulation e layer stack) -> lettura fuori dai limiti / crash di 'eval'.
+    // La sezione 7 prova solo le case trovate qui, quindi eredita la protezione.
     std::vector<std::pair<std::string, int>> outpost_impacts;
     Piece                                    ghost_knight = make_piece(pos.side_to_move(), KNIGHT);
     Color                                    stm          = pos.side_to_move();
+    const bool ghostAllowed = pos.count<ALL_PIECES>() < int(LayerStacks) * 4;
 
-    for (Square sq = SQ_A1; sq <= SQ_H8; ++sq)
+    for (Square sq = SQ_A1; ghostAllowed && sq <= SQ_H8; ++sq)
     {
         if (pos.piece_on(sq) == NO_PIECE)
         {
@@ -309,6 +314,9 @@ trace(Position& pos, const Eval::NNUE::Network& network, Eval::NNUE::Accumulator
 
     ss << "5. VIRTUAL PIECE INSERTION (Latent Outposts / Weaknesses)\n";
     ss << "   Highest WP impact on empty squares if a friendly Knight were placed there:\n";
+    if (!ghostAllowed)
+        ss << "    (n/a: " << pos.count<ALL_PIECES>()
+           << " pieces on the board, the network cannot evaluate an extra piece)\n";
     for (size_t i = 0; i < std::min(outpost_impacts.size(), size_t(5)); ++i)
     {
         ss << "    - Square " << outpost_impacts[i].first << " : " << std::showpos
@@ -388,6 +396,8 @@ trace(Position& pos, const Eval::NNUE::Network& network, Eval::NNUE::Accumulator
 
     {
         auto probe_piece_type = [&](Square probe_sq, PieceType pt) -> int {
+            if (!ghostAllowed)
+                return 0;
             Piece ghost = make_piece(stm, pt);
             pos.put_piece(ghost, probe_sq);
             accumulators->reset();

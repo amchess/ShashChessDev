@@ -173,7 +173,8 @@ std::string analyze_piece_activity_horizontal(const Position& pos) {
             continue;
         }
 
-        Bitboard attacks  = Attacks::attacks_bb(pt, sq, pos.pieces());
+        // Overload corretto con Piece per evitare il crash su PAWN
+        Bitboard attacks  = Attacks::attacks_bb(pc, sq, pos.pieces());
         int      activity = popcount(attacks) * 2;
 
         constexpr Bitboard Center = (FileDBB | FileEBB) & (Rank4BB | Rank5BB);
@@ -225,7 +226,8 @@ std::string analyze_piece_activity_horizontal(const Position& pos) {
             continue;
         }
 
-        Bitboard attacks  = Attacks::attacks_bb(pt, sq, pos.pieces());
+        // Overload corretto con Piece per evitare il crash su PAWN
+        Bitboard attacks  = Attacks::attacks_bb(pc, sq, pos.pieces());
         int      activity = popcount(attacks) * 2;
 
         constexpr Bitboard Center = (FileDBB | FileEBB) & (Rank4BB | Rank5BB);
@@ -282,9 +284,6 @@ std::string analyze_legal_moves(const Position& pos, const Eval::NNUE::Network& 
 
     Color side_to_move = pos.side_to_move();
 
-    auto acc_stack = std::make_unique<Eval::NNUE::AccumulatorStack>();
-    auto caches    = std::make_unique<Eval::NNUE::AccumulatorCaches>(network);
-
     for (const auto& move : MoveList<LEGAL>(pos))
     {
         StateListPtr states(new std::deque<StateInfo>(1));
@@ -294,7 +293,21 @@ std::string analyze_legal_moves(const Position& pos, const Eval::NNUE::Network& 
         StateInfo st;
         posCopy.do_move(move, st);
 
-        Value v              = Eval::evaluate(network, posCopy, *acc_stack, *caches, VALUE_ZERO);
+        // Gli accumulatori vanno creati ex novo PER OGNI MOSSA, altrimenti si corrompe la cache!
+        auto acc_stack = std::make_unique<Eval::NNUE::AccumulatorStack>();
+        auto caches    = std::make_unique<Eval::NNUE::AccumulatorCaches>(network);
+
+        // Ogni figlio e' una posizione indipendente (nessun push sullo stack): senza reset,
+        // dalla seconda mossa in poi si riuserebbe l'accumulatore della prima.
+        acc_stack->reset();
+        Value v;
+        if (posCopy.checkers())  // Eval::evaluate() non ammette posizioni sotto scacco
+        {
+            auto [psqt, positional] = network.evaluate(posCopy, *acc_stack, *caches);
+            v                       = psqt + positional;
+        }
+        else
+            v = Eval::evaluate(network, posCopy, *acc_stack, *caches, VALUE_ZERO);
         Value eval_for_mover = -v;
         Value v_white        = posCopy.side_to_move() == WHITE ? v : -v;
 
@@ -450,13 +463,14 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Network& network, bool 
         ss << "--- LEGAL MOVES ANALYSIS ---\n";
         ss << analyze_legal_moves(pos, network) << "\n";
 
-        auto accumulators_syn = std::make_unique<Eval::NNUE::AccumulatorStack>();
-        auto caches_syn       = std::make_unique<Eval::NNUE::AccumulatorCaches>(network);
-        auto t_syn            = network.trace_evaluate(pos, *accumulators_syn, *caches_syn);
+        // FIX DEFINITIVO SF 19: Evitiamo trace_evaluate (che causa crash a causa dell'assenza
+        // del bucket structure). Estraiamo i punteggi nudi e crudi in totale sicurezza.
+        auto [psqt_syn, positional_syn] = network.evaluate(pos, *accumulators, *caches);
 
-        int wp_mat_syn = WDLModel::get_win_probability(t_syn.psqt[t_syn.correctBucket], pos);
-        int wp_tot_syn = WDLModel::get_win_probability(
-          t_syn.psqt[t_syn.correctBucket] + t_syn.positional[t_syn.correctBucket], pos);
+        const int persp_syn  = pos.side_to_move() == WHITE ? 1 : -1;
+        int       wp_mat_syn = WDLModel::get_win_probability(Value(persp_syn * psqt_syn), pos);
+        int       wp_tot_syn =
+          WDLModel::get_win_probability(Value(persp_syn * (psqt_syn + positional_syn)), pos);
         int structural_delta = wp_tot_syn - wp_mat_syn;
 
         ss << "--- STRATEGIC SYNTHESIS ---\n";

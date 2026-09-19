@@ -454,8 +454,21 @@ ifeq ($(MAKELEVEL),0)
        export ENV_LDFLAGS := $(LDFLAGS)
 endif
 
-# AGGIUNTO: Forziamo NNUE_EMBEDDING_OFF globalmente
-CXXFLAGS = $(ENV_CXXFLAGS) -Wall -Wcast-qual -fno-exceptions -std=c++17 -DNNUE_EMBEDDING_OFF $(EXTRACXXFLAGS)
+# (In alto CXXFLAGS torna normale)
+CXXFLAGS = $(ENV_CXXFLAGS) -Wall -Wcast-qual -fno-exceptions -std=c++17 $(EXTRACXXFLAGS)
+
+# (Più in basso nel file, verso riga 851, viene aggiunto questo blocco)
+### NNUE network embedding
+# NNUE_EMBEDDING_OFF=yes builds an engine without the embedded network.
+# EXTRACXXFLAGS=-DNNUE_EMBEDDING_OFF is accepted as an alias. The variable is
+# exported because the PGO sub-makes redefine EXTRACXXFLAGS on their command line.
+ifneq ($(filter -DNNUE_EMBEDDING_OFF,$(EXTRACXXFLAGS)),)
+  NNUE_EMBEDDING_OFF := yes
+endif
+ifeq ($(NNUE_EMBEDDING_OFF),yes)
+  export NNUE_EMBEDDING_OFF
+  CXXFLAGS += -DNNUE_EMBEDDING_OFF
+endif
 DEPENDFLAGS = $(ENV_DEPENDFLAGS) -std=c++17
 LDFLAGS = $(ENV_LDFLAGS) $(EXTRALDFLAGS)
 
