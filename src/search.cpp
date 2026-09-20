@@ -584,11 +584,6 @@ void Search::Worker::start_searching() {
             }
         }
 
-        // SF19: se la mossa di ponder arriva dalla TT, la PV va reinviata per includerla
-        if (bestThread->rootMoves[0].pv.size() == 1
-            && bestThread->rootMoves[0].extract_ponder_from_tt(tt, rootPos))
-            uciPvSent = false;
-
         if (!bookMove && (!uciPvSent || bestThread != this))
         {
             main_manager()->output_pv(*bestThread, threads, tt, bestThread->rootDepth);
@@ -596,6 +591,8 @@ void Search::Worker::start_searching() {
 
         std::string ponder;
         if (bestThread->rootMoves[0].pv.size() > 1)
+            ponder = UCIEngine::move(bestThread->rootMoves[0].pv[1], rootPos.is_chess960());
+        else if (bestThread->rootMoves[0].extract_ponder_from_tt(tt, rootPos))
             ponder = UCIEngine::move(bestThread->rootMoves[0].pv[1], rootPos.is_chess960());
 
         auto bestmove = UCIEngine::move(bestThread->rootMoves[0].pv[0], rootPos.is_chess960());
@@ -639,9 +636,7 @@ bool Search::Worker::iterative_deepening() {
 
     ss->pv = &pv;
 
-    // Nuova ricerca: la guardia di output_pv() riparte da zero. Senza questo reset, dopo la
-    // prima ricerca profonda lo stato Shashin dinamico non si aggiornava piu' finche' una
-    // ricerca successiva non superava quella profondita' (bug gia' presente in 41.2).
+    // Nuova ricerca: la guardia di output_pv() riparte da zero.
     lastShashinUpdatedDepth = 0;
 
     localShashinManager.initDynamicRootShashinState(network[numaAccessToken], accumulatorStack,
@@ -1530,7 +1525,7 @@ Value Search::Worker::search(
     improving |= ss->staticEval >= beta;
 
     // Internal iterative reductions
-    if (!ss->followPV && !allNode && depth >= 6 && !ttData.move)  // SF19: senza priorReduction
+    if (!ss->followPV && !allNode && depth >= 6 && !ttData.move && priorReduction <= 3)
     {
         Depth originalDepth = depth;
         depth--;
@@ -1578,15 +1573,17 @@ Value Search::Worker::search(
             assert(probCutBeta < VALUE_INFINITE && probCutBeta > beta);
 
             MovePicker mp(pos, ttData.move, probCutBeta - ss->staticEval, &captureHistory);
-            // SF19: base depth - (improving ? 5 : 3); scostamenti Shashin invariati (-2/-1/+1)
-            Depth probCutDepth = depth - (improving ? 5 : 3);
+            Depth probCutDepth = std::clamp(depth - 5 - (ss->staticEval - beta) / 315, 0, depth);
 
             if (isCapablanca && depth > 8)
-                probCutDepth -= 2;
-            else if (isStrategical)
-                probCutDepth -= 1;
-            else if (isAggressive)
-                probCutDepth = std::min(probCutDepth + 1, depth);
+                probCutDepth = std::clamp(depth - 7 - (ss->staticEval - beta) / 315, 0, depth);
+            else
+            {
+                if (isStrategical)
+                    probCutDepth = std::clamp(probCutDepth - 1, 0, depth);
+                else if (isAggressive)
+                    probCutDepth = std::clamp(probCutDepth + 1, 0, depth);
+            }
 
             while ((move = mp.next_move()) != Move::none())
             {
@@ -2031,27 +2028,24 @@ skipExtensionAndPruning:
                     break;
                 }
 
-                // SF19: depth > 3 && depth < 12, riduzione base 3 (SF18: 2 < depth < 14, base 2).
-                // Gli scostamenti Shashin restano relativi alla base (-1 / +1).
-                if (depth > 3 && depth < 12 && !is_decisive(value))
+                if (depth > 2 && depth < 14 && !is_decisive(value))
                 {
-                    const int baseReduction = 3;
+                    const int baseReduction = 2;
                     int       reduction     = baseReduction;
 
                     const bool criticalTactical =
                       (opponentKingExposed && isTal) || (stmKingExposed && isPetrosian);
 
                     if (criticalTactical)
-                        reduction = baseReduction - 1;
+                        reduction = 1;
                     else if (isStrategical && !stmKingExposed && !opponentKingExposed)
                     {
-                        reduction = baseReduction + (depth > 8);
+                        reduction = (depth > 8) ? 3 : 2;
                         if (staticState.allPiecesCount > 20)
-                            reduction = std::min(reduction, baseReduction);
+                            reduction = std::min(reduction, 2);
                     }
                     else if (gameCycle)
-                        reduction =
-                          (pos.rule50_count() > 20) ? baseReduction + 1 : baseReduction - 1;
+                        reduction = (pos.rule50_count() > 20) ? 3 : 1;
 
                     reduction = std::clamp(reduction, 1, depth - 1);
                     depth -= reduction;
@@ -2356,7 +2350,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     if (MoveConfig::isFortress)
         moveCountThreshold++;
 
-    int seeMargin = -74;  // SF19 (SF18: -80)
+    int seeMargin = -80;
     if (isAggressive || dynamicDerived.isHighTal)
         seeMargin = staticState.kingDanger ? -110 : -90;
     else if (isStrategical)
@@ -2855,8 +2849,7 @@ void SearchManager::output_pv(Search::Worker&           worker,
             syzygy_extend_pv(worker.options, worker.limits, pos, rootMoves[i], v, multiPV);
 
         // [SC:shashin] begin
-        // Solo punteggi esatti: in 41.2 l'output intermedio di fail-high/low (ricerche oltre
-        // 10M nodi) passava updateShashin = false e non doveva aggiornare lo stato Shashin.
+        // Solo punteggi esatti: evita che fail-high/low inquinino lo stato Shashin
         if ((i == 0) && d > worker.lastShashinUpdatedDepth && !rootMoves[i].is_inexact())
         {
             worker.getShashinManager().updateRootShashinState(v, pos, d, worker.rootDepth);
