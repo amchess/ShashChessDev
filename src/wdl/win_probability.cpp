@@ -24,6 +24,12 @@
 namespace ShashChess {
 namespace WDLModel {
 
+namespace {
+    // Fattorizzazione dei coefficienti del modello WDL di Stockfish 19
+    constexpr double as[] = {-142.72052667, 372.35176398, -340.71073572, 415.23490212};
+    constexpr double bs[] = {5.93832785, 15.61267078, -30.57816876, 69.63866711};
+}
+
 // 8001 * 62 = 496062: WDL array dimension
 #define WIN_PROBABILITY_SIZE 496062
 
@@ -41,10 +47,6 @@ inline size_t index(const ShashChess::Value v, const int m) {
 // Calculate the "a" and "b" parameters of the WDL model for a given material
 WinRateParams win_rate_params(int materialClamp) {
     double m = materialClamp / 58.0;
-    // Coefficienti del modello WDL di Stockfish 19
-    constexpr double as[] = {-142.72052667, 372.35176398, -340.71073572, 415.23490212};
-    constexpr double bs[] = {5.93832785, 15.61267078, -30.57816876, 69.63866711};
-
 
     double a = (((as[0] * m + as[1]) * m + as[2]) * m) + as[3];
     double b = (((bs[0] * m + bs[1]) * m + bs[2]) * m) + bs[3];
@@ -60,10 +62,6 @@ WinRateParams win_rate_params(const Position& pos) {
 
     // The fitted model only uses data for material counts in [17, 78], and is anchored at count 58.
     double m = std::clamp(material, 17, 78) / 58.0;
-
-    // Return a = p_a(material) and b = p_b(material), vedi Stockfish 19 WDL_model
-    constexpr double as[] = {-142.72052667, 372.35176398, -340.71073572, 415.23490212};
-    constexpr double bs[] = {5.93832785, 15.61267078, -30.57816876, 69.63866711};
 
     double a = (((as[0] * m + as[1]) * m + as[2]) * m) + as[3];
     double b = (((bs[0] * m + bs[1]) * m + bs[2]) * m) + bs[3];
