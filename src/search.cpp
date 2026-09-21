@@ -2707,7 +2707,7 @@ void SearchManager::check_time(Search::Worker& worker) {
     if ((worker.limits.use_time_management() && (elapsed > tm.maximum() || stopOnPonderhit))
         || (worker.limits.movetime && elapsed >= worker.limits.movetime)
         || (worker.limits.nodes && worker.threads.nodes_searched() >= worker.limits.nodes))
-        worker.threads.stop = worker.threads.abortedSearch = true;
+        worker.threads.stop = true;
 }
 
 void syzygy_extend_pv(const OptionsMap&         options,

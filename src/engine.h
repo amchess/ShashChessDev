@@ -98,16 +98,15 @@ class Engine {
     void set_on_iter(std::function<void(const InfoIter&)>&&);
     void set_on_bestmove(std::function<void(std::string_view, std::string_view)>&&);
     void set_on_start(std::function<void()>&&);
-    void set_on_verify_networks(std::function<void(std::string_view)>&&);
+
+    // SF19: L'API della rete passa al singolare
+    void set_on_verify_network(std::function<void(std::string_view)>&&);
 
     // network related
 
-    void verify_networks() const;
-    void load_networks();
-    void load_big_network(const std::filesystem::path& file);
-    void load_small_network(const std::filesystem::path& file);
-    void save_network(const std::pair<std::optional<std::filesystem::path>,
-                                      std::optional<std::filesystem::path>> files);
+    void verify_network() const;
+    void load_network(const std::filesystem::path& file);
+    void save_network(const std::optional<std::filesystem::path> file);
 
     // utility functions
 
@@ -131,6 +130,8 @@ class Engine {
     Position pos;  // from learning
 
    private:
+    std::unique_ptr<Eval::NNUE::Network> get_default_network();  // SF19: helper per il costruttore
+
     const std::filesystem::path binaryDirectory;
 
     NumaReplicationContext numaContext;
@@ -141,11 +142,11 @@ class Engine {
     ThreadPool                                        threads;
     TranspositionTable                                tt;
     Eval::NNUE::EvalFile                              networkFile;
-    LazyNumaReplicatedSystemWide<Eval::NNUE::Network> networks;
+    LazyNumaReplicatedSystemWide<Eval::NNUE::Network> network;  // SF19: nome al singolare
     BookManager                                       bookMan;  // book management
 
     Search::SearchManager::UpdateContext  updateContext;
-    std::function<void(std::string_view)> onVerifyNetworks;
+    std::function<void(std::string_view)> onVerifyNetwork;  // SF19: nome al singolare
     std::map<NumaIndex, SharedHistories>  sharedHists;
 };
 

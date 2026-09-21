@@ -62,15 +62,20 @@ int MaxThreads = std::max(1024, 4 * int(get_hardware_concurrency()));
 // PR#6526). The user can always explicitly override this behavior.
 constexpr NumaAutoPolicy DefaultNumaPolicy = BundledL3Policy{32};
 
+// SF19: helper per inizializzare correttamente la rete all'avvio
+std::unique_ptr<Eval::NNUE::Network> Engine::get_default_network() {
+    auto network_ = std::make_unique<Eval::NNUE::Network>();
+    network_->load(binaryDirectory, std::filesystem::path{}, networkFile);
+    return network_;
+}
+
 Engine::Engine(std::optional<std::filesystem::path> path) :
     binaryDirectory(path ? CommandLine::get_binary_directory(*path) : std::filesystem::path{}),
     numaContext(NumaConfig::from_system(DefaultNumaPolicy)),
     states(new std::deque<StateInfo>(1)),
     threads(),
     networkFile{std::nullopt, EvalFileDefaultName},
-    networks(numaContext,
-             // Heap-allocate because sizeof(NN::Network) is large
-             std::make_unique<NN::Network>()) {
+    network(numaContext, get_default_network()) {  // SF19: Rete singola caricata correttamente
 
     pos.set(StartFEN, false, &states->back());
 
@@ -162,7 +167,7 @@ Engine::Engine(std::optional<std::filesystem::path> path) :
 
     options.add(  //
       "EvalFile", Option(EvalFileDefaultName, [this](const Option& o) {
-          load_big_network(path_from_utf8(std::string(o)));
+          load_network(path_from_utf8(std::string(o)));  // SF19: singolare
           return std::nullopt;
       }));
 
@@ -313,8 +318,7 @@ Engine::Engine(std::optional<std::filesystem::path> path) :
     // Shashin personalities end
     threads.clear();
 
-    // FORZATURA CARICAMENTO RETE (Cruciale per Stockfish 19)
-    load_networks();
+    // SF19: Rimossa la vecchia forzatura load_networks() perché get_default_network provvede all'avvio
 
     threads.ensure_network_replicated();
     resize_threads();
@@ -322,14 +326,14 @@ Engine::Engine(std::optional<std::filesystem::path> path) :
 
 std::variant<u64, PositionSetError>
 Engine::perft(const std::string& fen, Depth depth, bool isChess960) {
-    verify_networks();
+    verify_network();
 
     return Benchmark::perft(fen, depth, isChess960);
 }
 
 void Engine::go(Search::LimitsType& limits) {
     assert(limits.perft == 0);
-    verify_networks();
+    verify_network();
 
     threads.start_thinking(options, pos, states, limits);
 }
@@ -364,8 +368,8 @@ void Engine::set_on_bestmove(std::function<void(std::string_view, std::string_vi
 
 void Engine::set_on_start(std::function<void()>&& f) { updateContext.onStart = std::move(f); }
 
-void Engine::set_on_verify_networks(std::function<void(std::string_view)>&& f) {
-    onVerifyNetworks = std::move(f);
+void Engine::set_on_verify_network(std::function<void(std::string_view)>&& f) {  // SF19: singolare
+    onVerifyNetwork = std::move(f);
 }
 
 void Engine::wait_for_search_finished() { threads.main_thread()->wait_for_search_finished(); }
@@ -447,8 +451,8 @@ void Engine::resize_threads() {
     shCfg.middlePetrosian = options["Middle Petrosian"];
     shCfg.lowPetrosian    = options["Low Petrosian"];
     threads.set(numaContext.get_numa_config(),
-                {bookMan, options, threads, tt, sharedHists, networks, shCfg},
-                updateContext);  //book management
+                {bookMan, options, threads, tt, sharedHists, network, shCfg},  // SF19: singolare
+                updateContext);                                                //book management
     //from shashin end
     // Reallocate the hash with the new threadpool size
     set_tt_size(options["Hash"]);
@@ -467,12 +471,12 @@ void Engine::set_ponderhit(bool b) { threads.main_manager()->ponder = b; }
 
 // network related
 
-void Engine::verify_networks() const {
+void Engine::verify_network() const {  // SF19: singolare
     const auto fileBig = path_from_utf8(std::string(options["EvalFile"]));
 
-    networks->verify(onVerifyNetworks, networkFile, fileBig);
+    network->verify(onVerifyNetwork, networkFile, fileBig);
 
-    auto statuses = networks.get_status_and_errors();
+    auto statuses = network.get_status_and_errors();
     for (usize i = 0; i < statuses.size(); ++i)
     {
         const auto [status, error] = statuses[i];
@@ -499,31 +503,23 @@ void Engine::verify_networks() const {
             message += " " + *error;
         }
 
-        onVerifyNetworks(message);
+        onVerifyNetwork(message);
     }
 }
 
-void Engine::load_networks() {
-    networks.modify_and_replicate([this](NN::Network& network_) {
-        // Usa la rete singola
-        network_.load(binaryDirectory, path_from_utf8(std::string(options["EvalFile"])),
-                      networkFile);
-    });
-    threads.clear();
-    threads.ensure_network_replicated();
-}
+// SF19: Rimossa la vecchia load_networks
 
-void Engine::load_big_network(const std::filesystem::path& file) {
-    networks.modify_and_replicate(
+void Engine::load_network(const std::filesystem::path& file) {  // SF19: singolare e ripulita
+    network.modify_and_replicate(
       [this, &file](NN::Network& network_) { network_.load(binaryDirectory, file, networkFile); });
     threads.clear();
     threads.ensure_network_replicated();
 }
 
-void Engine::save_network(const std::pair<std::optional<std::filesystem::path>,
-                                          std::optional<std::filesystem::path>> files) {
-    networks.modify_and_replicate(
-      [&files, this](NN::Network& network_) { network_.save(networkFile, files.first); });
+void Engine::save_network(
+  const std::optional<std::filesystem::path> file) {  // SF19: firma pulita a un solo file
+    network.modify_and_replicate(
+      [&file, this](NN::Network& network_) { network_.save(networkFile, file); });
 }
 
 // utility functions
@@ -533,10 +529,10 @@ void Engine::trace_eval() const {
     Position     p;
     p.set(pos.fen(), options["UCI_Chess960"], &trace_states->back());
 
-    verify_networks();
+    verify_network();
 
     // Passa l'opzione UCI_ShowWDL alla funzione trace
-    sync_cout << "\n" << Eval::trace(p, *networks, options["UCI_ShowWDL"]) << sync_endl;
+    sync_cout << "\n" << Eval::trace(p, *network, options["UCI_ShowWDL"]) << sync_endl;
 }
 
 const OptionsMap& Engine::get_options() const { return options; }

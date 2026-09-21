@@ -25,9 +25,9 @@ namespace ShashChess {
 namespace WDLModel {
 
 namespace {
-    // Fattorizzazione dei coefficienti del modello WDL di Stockfish 19
-    constexpr double as[] = {-142.72052667, 372.35176398, -340.71073572, 415.23490212};
-    constexpr double bs[] = {5.93832785, 15.61267078, -30.57816876, 69.63866711};
+// Fattorizzazione dei coefficienti del modello WDL di Stockfish 19
+constexpr double as[] = {-142.72052667, 372.35176398, -340.71073572, 415.23490212};
+constexpr double bs[] = {5.93832785, 15.61267078, -30.57816876, 69.63866711};
 }
 
 // 8001 * 62 = 496062: WDL array dimension
