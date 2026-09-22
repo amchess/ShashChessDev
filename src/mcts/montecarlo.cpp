@@ -595,8 +595,7 @@ void MonteCarlo::emit_pv(Search::Worker* worker, ShashChess::ThreadPool& threads
         assert(int(rootMoves.size()) == root->number_of_sons);
         assert(ply == 1);
 
-        threads.main_manager()->output_pv(*worker, threads, tt,
-                                          worker->completedDepth);  //shashin //TO CHECK
+        threads.main_manager()->output_pv(*worker, threads, tt, worker->completedDepth);
     }
     else
     {

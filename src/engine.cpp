@@ -74,7 +74,7 @@ Engine::Engine(std::optional<std::filesystem::path> path) :
     numaContext(NumaConfig::from_system(DefaultNumaPolicy)),
     states(new std::deque<StateInfo>(1)),
     threads(),
-    networkFile{std::nullopt, EvalFileDefaultName},
+    networkFile{std::nullopt, ""},
     network(numaContext, get_default_network()) {  // SF19: Rete singola caricata correttamente
 
     pos.set(StartFEN, false, &states->back());

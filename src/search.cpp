@@ -510,11 +510,14 @@ void Search::Worker::start_searching() {
 
             if (bookMove && std::count(rootMoves.begin(), rootMoves.end(), bookMove))
             {
-                think            = false;
-                auto best_thread = threads.get_best_thread()->worker.get();
-                std::swap(best_thread->rootMoves[0],
-                          *std::find(best_thread->rootMoves.begin(), best_thread->rootMoves.end(),
-                                     bookMove));
+                think = false;
+                for (auto&& th : threads)
+                {
+                    auto& rm = th->worker->rootMoves;
+                    auto  it = std::find(rm.begin(), rm.end(), bookMove);
+                    if (it != rm.end())
+                        std::swap(rm[0], *it);
+                }
             }
             else
             {
@@ -1569,7 +1572,7 @@ Value Search::Worker::search(
             marginMultiplier = std::max(marginMultiplier, 130);
 
         if (isFortressNode)
-            marginMultiplier = 60;
+            marginMultiplier = 120;
 
         if (isStrategical && legalMoveCount > 30)
             marginMultiplier = std::min(marginMultiplier + 5, 100);
