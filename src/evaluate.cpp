@@ -280,18 +280,18 @@ std::string analyze_piece_activity_horizontal(const Position& pos) {
 }
 
 std::string analyze_legal_moves(const Position& pos, const Eval::NNUE::Network& network) {
-    std::vector > moves;
+    std::vector<std::tuple<std::string, Value, uint8_t>> moves;
 
     Color side_to_move = pos.side_to_move();
 
     // Allocati una sola volta: AccumulatorCaches non va riusata tra posizioni
     // diverse, ma va resettata. AccumulatorStack invece supporta reset().
-    auto acc_stack = std::make_unique();
-    auto caches    = std::make_unique(network);
+    auto acc_stack = std::make_unique<Eval::NNUE::AccumulatorStack>();
+    auto caches    = std::make_unique<Eval::NNUE::AccumulatorCaches>(network);
 
-    for (const auto& move : MoveList(pos))
+    for (const auto& move : MoveList<LEGAL>(pos))
     {
-        StateListPtr states(new std::deque(1));
+        StateListPtr states(new std::deque<StateInfo>(1));
         Position     posCopy;
         posCopy.set(pos.fen(), pos.is_chess960(), &states->back());
 
