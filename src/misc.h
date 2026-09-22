@@ -152,8 +152,6 @@ void prefetch(const void* addr) {
 
 // Da Stockfish 19
 void start_logger(const std::filesystem::path& fname);
-// Override di ShashChess
-void start_logger(const std::string& fname);
 
 std::optional<usize> str_to_size_t(const std::string& s);
 

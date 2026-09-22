@@ -1198,10 +1198,10 @@ Value Search::Worker::search(
     if (fullSearch)
         improving = true;
 
-    ss->followPV = rootNode
-                || ((ss - 1)->followPV
-                    && (static_cast<usize>(ss->ply - 1) < lastIterationIdxPV.size()
-                        && (ss - 1)->currentMove == lastIterationIdxPV[ss->ply - 1]));
+    ss->followPV =
+      rootNode
+      || ((ss - 1)->followPV && static_cast<usize>(ss->ply - 1) < lastIterationIdxPV.size()
+          && (ss - 1)->currentMove == lastIterationIdxPV[ss->ply - 1]);
 
     // Check for the available remaining time
     if (is_mainthread())

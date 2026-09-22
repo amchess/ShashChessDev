@@ -70,11 +70,9 @@ extern const unsigned int         gEmbeddedNNUESize = static_cast<unsigned int>(
 
 #elif defined(NNUE_EMBEDDING_OFF)
 
-// Network not embedded: 1-byte placeholder, same convention used by
-// nnue/network.cpp for non-universal builds. load_internal() fails to parse it,
-// so the engine loads EvalFile from disk (working directory, then binary directory).
-extern const unsigned char gEmbeddedNNUEData[1] = {0x0};
-extern const unsigned int  gEmbeddedNNUESize    = 1;
+// Network is not embedded. The placeholder is defined in nnue/network.cpp;
+// this translation unit is not linked in this configuration, so we deliberately
+// do not define gEmbeddedNNUEData/gEmbeddedNNUESize here.
 
 #else
 

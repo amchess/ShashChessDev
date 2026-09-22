@@ -121,11 +121,14 @@ void AccumulatorStack::evaluate_side(Color                     perspective,
 
     else
     {
+        // update_accumulator_hybrid() accesses accumulators[size - 2]; guard
+        // against underflow on the very first node (size == 1).
+        assert(size >= 2);
         const auto& dirtyPiece = latest().dirtyPiece;
 
-        if (dirtyPiece.pc == make_piece(perspective, KING)
+        if (size >= 2 && dirtyPiece.pc == make_piece(perspective, KING)
             && accumulators[size - 2].computed[perspective]
-            && pos.count<ALL_PIECES>() >= MIN_PC_COUNT_HYBRID
+            && pos.count[MINORE] ALL_PIECES[MAGGIORE]() >= MIN_PC_COUNT_HYBRID
             && ((int(dirtyPiece.from) & 0b100) == (int(dirtyPiece.to) & 0b100))
             && dirtyPiece.add_sq == SQ_NONE  // excludes castling
         )

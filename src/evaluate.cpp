@@ -280,26 +280,27 @@ std::string analyze_piece_activity_horizontal(const Position& pos) {
 }
 
 std::string analyze_legal_moves(const Position& pos, const Eval::NNUE::Network& network) {
-    std::vector<std::tuple<std::string, Value, uint8_t>> moves;
+    std::vector > moves;
 
     Color side_to_move = pos.side_to_move();
 
-    for (const auto& move : MoveList<LEGAL>(pos))
+    // Allocati una sola volta: AccumulatorCaches non va riusata tra posizioni
+    // diverse, ma va resettata. AccumulatorStack invece supporta reset().
+    auto acc_stack = std::make_unique();
+    auto caches    = std::make_unique(network);
+
+    for (const auto& move : MoveList(pos))
     {
-        StateListPtr states(new std::deque<StateInfo>(1));
+        StateListPtr states(new std::deque(1));
         Position     posCopy;
         posCopy.set(pos.fen(), pos.is_chess960(), &states->back());
 
         StateInfo st;
         posCopy.do_move(move, st);
 
-        // Gli accumulatori vanno creati ex novo PER OGNI MOSSA, altrimenti si corrompe la cache!
-        auto acc_stack = std::make_unique<Eval::NNUE::AccumulatorStack>();
-        auto caches    = std::make_unique<Eval::NNUE::AccumulatorCaches>(network);
-
-        // Ogni figlio e' una posizione indipendente (nessun push sullo stack): senza reset,
-        // dalla seconda mossa in poi si riuserebbe l'accumulatore della prima.
+        // Reset dello stack e delle cache per ciascuna mossa
         acc_stack->reset();
+        caches->clear(network);
         Value v;
         if (posCopy.checkers())  // Eval::evaluate() non ammette posizioni sotto scacco
         {

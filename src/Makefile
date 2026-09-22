@@ -76,6 +76,10 @@ BINDIR = $(PREFIX)/bin
 ### Built-in benchmark for pgo-builds
 PGOBENCH = $(RUN_PREFIX) ./$(EXE) bench
 
+### Build artifacts / universal build temp directory
+TEMP_DIR             := $(CURDIR)/temp_builds
+UNIVERSAL_EXE        := $(CURDIR)/$(EXE)
+
 ### Source and object files
 SRCS = attacks.cpp benchmark.cpp bitboard.cpp evaluate.cpp main.cpp \
 	misc.cpp movegen.cpp movepick.cpp position.cpp \
@@ -1250,7 +1254,9 @@ profileclean:
 universalclean:
 # On Windows "ln -s" to a directory makes a native directory symlink that rm
 # cannot unlink; rmdir unlinks it without following it. No-op elsewhere.
-	@find $(TEMP_DIR) -type l -exec rmdir {} + 2</dev/null || true
+	@if [ -d "$(TEMP_DIR)" ]; then \
+		find "$(TEMP_DIR)" -type l -exec rmdir {} + 2>/dev/null || true; \
+	fi
 	@rm -rf $(TEMP_DIR)
 	@rm -f universal/network_dump.inc
 
@@ -1405,9 +1411,6 @@ endif
 #   make -j ARCH=x86-64-universal build          # non-PGO
 #   make -j ARCH=x86-64-universal profile-build  # PGO (use RUN_PREFIX for intel SDE)
 #   make -j ARCH=arm64-universal build
-
-TEMP_DIR             := $(CURDIR)/temp_builds
-UNIVERSAL_EXE        := $(CURDIR)/$(EXE)
 
 ifeq ($(UNIVERSAL_BUILD),true)
 

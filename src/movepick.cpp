@@ -101,7 +101,7 @@ struct MoveSorter {
             const isize   storeCount = count - offset;
 
             if (storeCount > 0)
-                _mm512_mask_storeu_epi64(moves + offset, (1 << storeCount) - 1, extMoves);
+                _mm512_mask_storeu_epi64(moves + offset, (u32(1) << storeCount) - 1, extMoves);
         };
 
         write(0, _mm512_setr_epi32(0, 16, 1, 17, 2, 18, 3, 19, 4, 20, 5, 21, 6, 22, 7, 23));

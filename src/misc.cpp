@@ -502,7 +502,6 @@ u64 hash_bytes(const char* data, usize size) {
 
 // Trampoline helper to avoid moving Logger to misc.h
 void start_logger(const fs::path& fname) { Logger::start(fname); }
-void start_logger(const std::string& fname) { Logger::start(path_from_utf8(fname)); }
 
 
 // Convert a wide string to an UTF8 string
