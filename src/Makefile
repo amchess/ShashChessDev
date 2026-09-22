@@ -512,10 +512,30 @@ ifeq ($(MAKELEVEL),0)
        export ENV_LDFLAGS := $(LDFLAGS)
 endif
 
-CXXFLAGS = $(ENV_CXXFLAGS) -Wall -Wcast-qual -fno-exceptions -std=c++17 $(EXTRACXXFLAGS)
+CXXFLAGS = $(ENV_CXXFLAGS) -Wall -Wcast-qual -fexceptions -std=c++17 $(EXTRACXXFLAGS)
 
 DEPENDFLAGS = $(ENV_DEPENDFLAGS) -std=c++17
 LDFLAGS = $(ENV_LDFLAGS) $(EXTRALDFLAGS)
+
+ifneq ($(OS),Android)
+	CXXFLAGS += -DUSE_LIVEBOOK
+	ifeq ($(target_windows),yes)
+		CURL_LDFLAGS := --static $(shell pkg-config --static --libs libcurl)
+	else
+		CURL_LDFLAGS := -lcurl	
+	endif
+	LDFLAGS += $(CURL_LDFLAGS)
+endif
+
+ifeq ($(KERNEL),Linux)
+    # Soppressione warning ABI e impostazioni vettoriali per Linux
+    CXXFLAGS += -Wno-psabi -mprefer-vector-width=256 -mno-avx512f
+    
+    # Flag specifiche per architetture AVX2
+    ifeq ($(avx2),yes)
+        CXXFLAGS += -mavx2 -mbmi2 -mfma
+    endif
+endif
 
 ifeq ($(GOLD_DIGGER),yes)
 	CXXFLAGS += -DGOLD_DIGGER
@@ -768,7 +788,7 @@ ifeq ($(optimize),yes)
 
 	ifeq ($(comp),clang)
 		clangmajorversion := $(shell $(CXX) -dumpversion 2>/dev/null | cut -f1 -d.)
-		ifeq ($(shell expr $(clangmajorversion) < 16),1)
+		ifeq ($(shell expr $(clangmajorversion) \< 16),1)
 			CXXFLAGS += -fexperimental-new-pass-manager
 		endif
 	endif
@@ -1395,7 +1415,7 @@ icx-profile-use:
 	all
 
 .depend: $(SRCS)
-	-@$(CXX) $(DEPENDFLAGS) -MM $(SRCS) > $@ 2</dev/null
+	-@$(CXX) $(DEPENDFLAGS) -MM $(SRCS) > $@ 2> /dev/null
 
 ifeq (, $(filter $(MAKECMDGOALS), help strip install clean net objclean profileclean format config-sanity))
 ifeq ($(UNIVERSAL_BUILD),false)
@@ -1454,7 +1474,7 @@ TRACKED_TOP := $(sort $(foreach f,$(SRCS) $(HEADERS) Makefile incbin,$(firstword
 ARCH_OBJS := $(TEMP_DIR)/$(BASELINE_ARCH)/shashchess.o \
              $(patsubst %,$(TEMP_DIR)/%/shashchess.o,$(filter-out $(BASELINE_ARCH),$(UNIVERSAL_ARCHES)))
 
-UNIVERSAL_FINAL_FLAGS := -fno-exceptions -Os \
+UNIVERSAL_FINAL_FLAGS := -fexceptions -Os \
 			 -Wno-c++26-extensions -Wno-c23-extensions
 
 ifeq ($(TARGET_KERNEL),Darwin)
@@ -1547,11 +1567,14 @@ $(TEMP_DIR)/%/.setup: | $(TEMP_DIR)
 # Per-arch shashchess.o
 .SECONDARY: $(patsubst %,$(TEMP_DIR)/%/.setup,$(UNIVERSAL_ARCHES))
 
+# The slices never see NNUE_EMBEDDING_OFF (neither the variable nor the EXTRACXXFLAGS
+# alias): they always reference the full nnue_embed.o, see NNUE_FINAL_OBJ above.
 $(TEMP_DIR)/%/shashchess.o: $(TEMP_DIR)/%/.setup $(NNUE_EMBED_OBJ) $(NET_SENTINEL)
 	+ENV_CXXFLAGS='$(ENV_CXXFLAGS) $(call arch-cxxflags,$*)' \
 	    $(MAKE) -C $(TEMP_DIR)/$* $(UOBJ_TGT) \
 	        ARCH=$* CXX=$(CXX) COMP=$(COMP) \
-	        NNUE_EMBED_OBJ=$(NNUE_EMBED_OBJ)
+	        NNUE_EMBED_OBJ=$(NNUE_EMBED_OBJ) \
+	        NNUE_EMBEDDING_OFF=no EXTRACXXFLAGS='$(filter-out -DNNUE_EMBEDDING_OFF,$(EXTRACXXFLAGS))'
 ifeq ($(TARGET_KERNEL),Darwin)
 # Rename the initializer section
 	ld -r -rename_section __DATA __mod_init_func __DATA $(call arch-mac-section,$*) $@ -o $@.tmp
@@ -1569,11 +1592,13 @@ else
 	$(OBJCOPY) --rename-section .ctors=$(call arch-suffix,$*)_init $@
 # Make the array inert
 	$(OBJCOPY) --set-section-flags $(call arch-suffix,$*)_init=alloc,data $@
+# Delete per-arch main alias so it doesn't conflict with entry_x86.o's main
+	$(OBJCOPY) -N main $@
 endif
 endif
 
 $(UNIVERSAL_EXE): $(UNIVERSAL_ENTRY_OBJ) $(NNUE_FINAL_OBJ) $(ARCH_OBJS)
-	$(CXX) -o $@ $(UNIVERSAL_ENTRY_OBJ) $(NNUE_FINAL_OBJ) $(ARCH_OBJS) $(UNIVERSAL_FINAL_FLAGS) $(EXTRALDFLAGS)
+	$(CXX) -o $@ $(UNIVERSAL_ENTRY_OBJ) $(NNUE_FINAL_OBJ) $(ARCH_OBJS) $(UNIVERSAL_FINAL_FLAGS) $(EXTRALDFLAGS) $(CURL_LDFLAGS)
 	@echo "Universal binary built: $@"
 
 endif  # UNIVERSAL_BUILD

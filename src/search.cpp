@@ -1220,7 +1220,6 @@ Value Search::Worker::search(
     bool        isSacrificial       = staticState.isSacrificial;
     bool        isTal               = localShashinManager.isTal();
     bool        isPetrosian         = localShashinManager.isPetrosian();
-    bool        isCapablanca        = localShashinManager.isCapablanca();
     bool        isAggressive        = localShashinManager.isAggressive();
     bool        isTactical          = localShashinManager.isTactical();
     bool        isComplex           = localShashinManager.isComplexPosition();

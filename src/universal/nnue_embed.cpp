@@ -70,9 +70,16 @@ extern const unsigned int         gEmbeddedNNUESize = static_cast<unsigned int>(
 
 #elif defined(NNUE_EMBEDDING_OFF)
 
-// Network is not embedded. The placeholder is defined in nnue/network.cpp;
-// this translation unit is not linked in this configuration, so we deliberately
-// do not define gEmbeddedNNUEData/gEmbeddedNNUESize here.
+// Universal build with an external network (NNUE_EMBEDDING_OFF=yes).
+// The slices are built and PGO-benched against the full nnue_embed.o, but the
+// final link uses this object (temp_builds/nnue_embed_off.o), so it MUST define
+// the symbols the slices reference. The 1-byte placeholder makes the internal
+// load fail, and the engine then loads the .nnue file (EvalFile).
+// "extern" is required: in C++ a namespace-scope const without it has internal
+// linkage, the symbol would not be exported and the final link would fail with
+// "undefined reference to gEmbeddedNNUEData / gEmbeddedNNUESize".
+extern const unsigned char gEmbeddedNNUEData[] = {0x0};
+extern const unsigned int  gEmbeddedNNUESize   = 1;
 
 #else
 
