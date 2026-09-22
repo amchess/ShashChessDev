@@ -51,7 +51,7 @@
 #if defined(_WIN32)
     #if _WIN32_WINNT < 0x0601
         #undef _WIN32_WINNT
-        #define _WIN32_WINNT 0x0601
+        #define _WIN32_WINNT 0x0601  // Force to include needed API prototypes
     #endif
 
     #if !defined(NOMINMAX)
@@ -84,6 +84,14 @@
 
 namespace ShashChess {
 
+// argv[0] CANNOT be used because we need to identify the executable.
+// argv[0] contains the command used to invoke it, which does not involve the full path.
+// Just using a path is not fully resilient either, as the executable could
+// have changed if it wasn't locked by the OS. Ideally we would hash the executable
+// but it's not really that important at this point.
+// If the path is longer than 4095 bytes the hash will be computed from an unspecified
+// amount of bytes of the path; in particular it can a hash of an empty string.
+
 inline std::string getExecutablePathHash() {
     char  executable_path[4096] = {0};
     usize path_length           = 0;
@@ -98,7 +106,7 @@ inline std::string getExecutablePathHash() {
         path_length = std::strlen(executable_path);
     }
 
-#elif defined(__sun)
+#elif defined(__sun)  // Solaris
     const char* path = getexecname();
     if (path)
     {
@@ -132,6 +140,7 @@ inline std::string getExecutablePathHash() {
 
 #endif
 
+    // In case of any error the path will be empty.
     return std::string(executable_path, path_length);
 }
 
@@ -144,26 +153,32 @@ enum class SystemWideSharedConstantAllocationStatus {
 #if defined(_WIN32)
 
 inline std::string GetLastErrorAsString(DWORD error) {
+    //Get the error message ID, if any.
     DWORD errorMessageID = error;
     if (errorMessageID == 0)
     {
-        return std::string();
+        return std::string();  //No error message has been recorded
     }
 
     LPSTR messageBuffer = nullptr;
 
+    //Ask Win32 to give us the string version of that message ID.
+    //The parameters we pass in, tell Win32 to create the buffer that holds the message for us (because we don't yet know how long the message string will be).
     usize size = FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM
                                   | FORMAT_MESSAGE_IGNORE_INSERTS,
                                 NULL, errorMessageID, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
                                 (LPSTR) &messageBuffer, 0, NULL);
 
+    //Copy the error message into a std::string.
     std::string message(messageBuffer, size);
 
+    //Free the Win32's string's buffer.
     LocalFree(messageBuffer);
 
     return message;
 }
 
+// Utilizes shared memory to store the value. It is deduplicated system-wide (for the single user).
 template<typename T>
 class SharedMemoryBackend {
    public:
@@ -258,6 +273,7 @@ class SharedMemoryBackend {
     void initialize(const std::string& shm_name, const T& value) {
         const usize total_size = sizeof(T) + sizeof(IS_INITIALIZED_VALUE);
 
+        // Try allocating with large pages first.
         hMapFile = windows_try_with_large_page_priviliges(
           [&](usize largePageSize) {
               const usize total_size_aligned =
@@ -277,6 +293,7 @@ class SharedMemoryBackend {
           },
           []() { return (void*) nullptr; });
 
+        // Fallback to normal allocation if no large pages available.
         if (!hMapFile)
         {
             hMapFile = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0,
@@ -301,6 +318,7 @@ class SharedMemoryBackend {
             return;
         }
 
+        // Use named mutex to ensure only one initializer
         std::string mutex_name = shm_name + "$mutex";
         HANDLE      hMutex     = CreateMutexA(NULL, FALSE, mutex_name.c_str());
         if (!hMutex)
@@ -323,12 +341,14 @@ class SharedMemoryBackend {
             return;
         }
 
+        // Crucially, we place the object first to ensure alignment.
         volatile DWORD* is_initialized =
           std::launder(reinterpret_cast<DWORD*>(reinterpret_cast<char*>(pMap) + sizeof(T)));
         T* object = std::launder(reinterpret_cast<T*>(pMap));
 
         if (*is_initialized != IS_INITIALIZED_VALUE)
         {
+            // First time initialization, message for debug purposes
             new (object) T{value};
             *is_initialized = IS_INITIALIZED_VALUE;
         }
@@ -421,6 +441,9 @@ class SharedMemoryBackend {
 
 #else
 
+// For systems that don't have shared memory, or support is troublesome.
+// The way fallback is done is that we need a dummy backend.
+
 template<typename T>
 class SharedMemoryBackend {
    public:
@@ -478,6 +501,7 @@ struct SharedMemoryBackendFallback {
     LargePagePtr<T> fallback_object;
 };
 
+// Platform-independent wrapper
 template<typename T>
 struct SystemWideSharedConstant {
    private:
@@ -488,12 +512,17 @@ struct SystemWideSharedConstant {
     }
 
    public:
+    // We can't run the destructor because it may be in a completely different process.
+    // The object stored must also be obviously in-line but we can't check for that, other than some basic checks that cover most cases.
     static_assert(std::is_trivially_destructible_v<T>);
     static_assert(std::is_trivially_move_constructible_v<T>);
     static_assert(std::is_trivially_copy_constructible_v<T>);
 
     SystemWideSharedConstant() = default;
 
+
+    // Content is addressed by its hash. An additional discriminator can be added to account for differences
+    // that are not present in the content, for example NUMA node allocation.
     SystemWideSharedConstant(const T& value, usize discriminator = 0) {
         usize content_hash    = std::hash<T>{}(value);
         usize executable_hash = hash_string(getExecutablePathHash());
@@ -504,8 +533,10 @@ struct SystemWideSharedConstant {
         std::string shm_name = buf;
 
 #if defined(USE_UNIX_SHM)
+        // POSIX shared memory names must start with a slash
         shm_name = "/sf_" + createHashString(shm_name);
 
+        // hash name and make sure it is not longer than SF_MAX_SEM_NAME_LEN
         if (shm_name.size() > SF_MAX_SEM_NAME_LEN)
         {
             shm_name = shm_name.substr(0, SF_MAX_SEM_NAME_LEN - 1);
@@ -589,6 +620,7 @@ struct SystemWideSharedConstant {
 
     std::variant<std::monostate, SharedMemoryBackend<T>, SharedMemoryBackendFallback<T>> backend;
 };
+
 
 }  // namespace ShashChess
 

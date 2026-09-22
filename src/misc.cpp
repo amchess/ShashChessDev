@@ -24,10 +24,10 @@
 #include <atomic>
 #include <cassert>
 #include <cctype>
+#include <cstring>
 #include <cerrno>
 #include <cmath>
 #include <cstdlib>
-#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -61,6 +61,12 @@ namespace {
 // Version number or dev.
 constexpr std::string_view version = "42";
 
+// Our fancy logging facility. The trick here is to replace cin.rdbuf() and
+// cout.rdbuf() with two Tie objects that tie cin and cout to a file stream. We
+// can toggle the logging of std::cout and std::cin at runtime whilst preserving
+// usual I/O functionality, all without changing a single line of code!
+// Idea from http://groups.google.com/group/comp.lang.c++/msg/1d941c0f26ea0d81
+
 struct Tie: public std::streambuf {
 
     Tie(std::streambuf* b, std::streambuf* l) :
@@ -76,7 +82,7 @@ struct Tie: public std::streambuf {
 
     int log(int c, const char* prefix) {
 
-        static int last = '\n';
+        static int last = '\n';  // Single log file
 
         if (last == '\n')
             logBuf->sputn(prefix, 3);
@@ -125,6 +131,18 @@ class Logger {
 
 }  // namespace
 
+
+// Returns the full name of the current Stockfish version.
+//
+// For local dev compiles we try to append the commit SHA and
+// commit date from git. If that fails only the local compilation
+// date is set and "nogit" is specified:
+//      Stockfish dev-YYYYMMDD-SHA
+//      or
+//      Stockfish dev-YYYYMMDD-nogit
+//
+// For releases (non-dev builds) we only include the version number:
+//      Stockfish version
 std::string engine_version_info() {
     std::stringstream ss;
     ss << "ShashChess " << version << std::setfill('0');
@@ -170,10 +188,21 @@ std::string engine_info(bool to_uci) {
          + "the ShashChess developers (see AUTHORS file)";
 }
 
+
+// Returns a string trying to describe the compiler we use
 std::string compiler_info() {
 
 #define make_version_string(major, minor, patch) \
     stringify(major) "." stringify(minor) "." stringify(patch)
+
+    // Predefined macros hell:
+    //
+    // __GNUC__                Compiler is GCC, Clang or ICX
+    // __clang__               Compiler is Clang or ICX
+    // __INTEL_LLVM_COMPILER   Compiler is ICX
+    // _MSC_VER                Compiler is MSVC
+    // _WIN32                  Building on Windows (any)
+    // _WIN64                  Building on Windows 64 bit
 
     std::string compiler = "\nCompiled by                : ";
 
@@ -286,6 +315,8 @@ std::string compiler_info() {
     return compiler;
 }
 
+
+// Debug functions used mainly to collect run-time statistics
 constexpr int MaxDebugSlots = 32;
 
 namespace {
@@ -412,6 +443,8 @@ void dbg_clear() {
     extremes.fill({});
 }
 
+// Used to serialize access to std::cout
+// to avoid multiple threads writing at the same time.
 std::ostream& operator<<(std::ostream& os, SyncCout sc) {
 
     static std::mutex m;
@@ -428,6 +461,7 @@ std::ostream& operator<<(std::ostream& os, SyncCout sc) {
 void sync_cout_start() { std::cout << IO_LOCK; }
 void sync_cout_end() { std::cout << IO_UNLOCK; }
 
+// Hash function based on public domain MurmurHash64A, by Austin Appleby.
 u64 hash_bytes(const char* data, usize size) {
     const u64 m = 0xc6a4a7935bd1e995ull;
     const int r = 47;
@@ -466,9 +500,12 @@ u64 hash_bytes(const char* data, usize size) {
     return h;
 }
 
+// Trampoline helper to avoid moving Logger to misc.h
 void start_logger(const fs::path& fname) { Logger::start(fname); }
 void start_logger(const std::string& fname) { Logger::start(path_from_utf8(fname)); }
 
+
+// Convert a wide string to an UTF8 string
 std::string utf8_from_wstring(std::wstring_view s) {
 #ifdef _WIN32
     if (s.empty())
@@ -487,10 +524,13 @@ std::string utf8_from_wstring(std::wstring_view s) {
 #endif
 }
 
+
+// This utility allows us to handle filenames and paths with UTF8 encoding
 fs::path path_from_utf8(const std::string& path) {
 #ifdef _WIN32
     int u8len = static_cast<int>(path.size());
 
+    // First attempt UTF-8, then fall back to ANSI for old GUIs like Arena
     constexpr int CodePages[2] = {CP_UTF8, CP_ACP};
     for (int cp : CodePages)
     {
@@ -510,10 +550,13 @@ fs::path path_from_utf8(const std::string& path) {
 #endif
 }
 
+
+// Constructor for the CommandLine class
 CommandLine::CommandLine(int _argc, char** _argv) :
     argc(_argc),
     argv(_argv) {
 #ifdef _WIN32
+    // Convert any non-ANSI characters passed on the command line to UTF-8
     int wargc = 0;
     if (LPWSTR* wargv = CommandLineToArgvW(GetCommandLineW(), &wargc))
     {
@@ -534,6 +577,8 @@ CommandLine::CommandLine(int _argc, char** _argv) :
     Util::init(this);
 }
 
+
+// Read a numerical value from the command line
 std::optional<usize> str_to_size_t(const std::string& s) {
     if (s.empty() || s[0] == '-')
         return std::nullopt;
@@ -546,6 +591,7 @@ std::optional<usize> str_to_size_t(const std::string& s) {
     return static_cast<usize>(value);
 }
 
+// Read the given file as bytes (returns std::nullopt if the file does not exist)
 std::optional<std::string> read_file_to_string(const std::string& path) {
     std::ifstream f(path, std::ios_base::binary);
     if (!f)
@@ -553,17 +599,27 @@ std::optional<std::string> read_file_to_string(const std::string& path) {
     return std::string(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
 }
 
+// Remove all spaces from a string
 void remove_whitespace(std::string& s) {
     s.erase(std::remove_if(s.begin(), s.end(), [](unsigned char c) { return std::isspace(c); }),
             s.end());
 }
 
+// Test if a string has only spaces
 bool is_whitespace(std::string_view s) {
     return std::all_of(s.begin(), s.end(), [](unsigned char c) { return std::isspace(c); });
 }
 
+
+// Return the directory where our Stockfish binary sits. This is useful,
+// because when the NNUE network is not embeded in the binary, this directory
+// is one of the locations where we look for the NNUE file.
 fs::path CommandLine::get_binary_directory(fs::path argv0) {
 #ifdef _WIN32
+    // Prefer the executable path reported by Windows. Unlike _get_wpgmptr,
+    // this does not depend on whether the CRT used a narrow or wide entry
+    // point. Windows paths cannot exceed 32767 characters, so a fixed
+    // buffer is always sufficient. Falls back to argv0 if the API fails.
     constexpr DWORD MaxPath = 32768;
     wchar_t         path[MaxPath];
 
@@ -582,10 +638,12 @@ std::string CommandLine::get_binary_directory(std::string                  argv0
     return get_binary_directory(fs::path(argv0)).string();
 }
 
+// Return the working directory
 fs::path CommandLine::get_working_directory_fs() { return std::filesystem::current_path(); }
 
 std::string CommandLine::get_working_directory() { return get_working_directory_fs().string(); }
 
+// On Windows, tell the console to use UTF8 encoding
 void set_console_utf8() {
 #ifdef _WIN32
     SetConsoleCP(CP_UTF8);

@@ -2175,112 +2175,6 @@ void Position::undo_null_move() {
 // value of the move is greater or equal to the given threshold. We'll use an
 // algorithm similar to alpha-beta pruning with a null window.
 
-// --- FUNZIONI RECUPERATE DA SC41 (Per MCTS e Shashin) ---
-
-Value Position::see(Move m) const {
-    Square from = m.from_sq();
-    Square to   = m.to_sq();
-    Value  swapList[32];
-    int    slIndex = 0;
-
-    PieceType pc     = type_of(piece_on(from));
-    PieceType target = type_of(piece_on(to));
-
-    if (m.type_of() != NORMAL)
-    {
-        if (m.type_of() == CASTLING)
-            return VALUE_ZERO;
-        if (m.type_of() == EN_PASSANT)
-            target = PAWN;
-        else if (m.type_of() == PROMOTION)
-        {
-            pc                  = m.promotion_type();
-            swapList[slIndex++] = PieceValue[pc] - PieceValue[PAWN];
-        }
-    }
-
-    swapList[slIndex] = PieceValue[target];
-    Bitboard occupied =
-      pieces() ^ from
-      ^ (m.type_of() == EN_PASSANT ? to + (sideToMove == WHITE ? SOUTH : NORTH) : 0);
-    Bitboard attackers = attackers_to(to, occupied);
-    Color    stm       = ~sideToMove;
-
-    while (true)
-    {
-        Bitboard stmAttackers = attackers & pieces(stm);
-        if (!stmAttackers)
-            break;
-
-        PieceType attacker;
-        if (stmAttackers & pieces(PAWN))
-            attacker = PAWN;
-        else if (stmAttackers & pieces(KNIGHT))
-            attacker = KNIGHT;
-        else if (stmAttackers & pieces(BISHOP))
-            attacker = BISHOP;
-        else if (stmAttackers & pieces(ROOK))
-            attacker = ROOK;
-        else if (stmAttackers & pieces(QUEEN))
-            attacker = QUEEN;
-        else
-            attacker = KING;
-
-        swapList[slIndex + 1] = PieceValue[pc] - swapList[slIndex];
-        slIndex++;
-
-        occupied ^= lsb(stmAttackers & pieces(attacker));
-
-        if (attacker == PAWN || attacker == BISHOP || attacker == QUEEN)
-            attackers |= attacks_bb<BISHOP>(to, occupied) & pieces(BISHOP, QUEEN);
-        if (attacker == ROOK || attacker == QUEEN)
-            attackers |= attacks_bb<ROOK>(to, occupied) & pieces(ROOK, QUEEN);
-
-        attackers &= occupied;
-        pc  = attacker;
-        stm = ~stm;
-    }
-
-    while (--slIndex)
-        swapList[slIndex - 1] = std::min(-swapList[slIndex], swapList[slIndex - 1]);
-
-    return swapList[0];
-}
-
-bool Position::is_draw_move(Move m) const {
-    assert(m.is_ok());
-    if (st->rule50 >= 99 && type_of(piece_on(m.from_sq())) != PAWN && !capture(m))
-        return true;
-
-    int end = st->rule50;
-    if (type_of(piece_on(m.from_sq())) == PAWN || capture(m) || m.type_of() == CASTLING)
-        return false;
-
-    StateInfo* stp = st->previous;
-    for (int i = 1; i <= end; i += 2)
-    {
-        stp = stp->previous->previous;
-        if (stp->key == st->key)
-            return true;
-    }
-    return false;
-}
-
-bool Position::has_game_cycle(int ply) const {
-    int        end = std::min(st->rule50, st->pliesFromNull);
-    StateInfo* stp = st->previous;
-    for (int i = 3; i <= end; i += 2)
-    {
-        stp   = stp->previous->previous;
-        Key k = stp->key ^ Zobrist::side;
-        if (k == st->key)
-            return ply >= i;
-    }
-    return false;
-}
-
-// --------------------------------------------------------
-
 bool Position::see_ge(Move m, int threshold) const {
 
     assert(m.is_ok());
@@ -2506,15 +2400,10 @@ bool Position::material_key_is_ok() const { return compute_material_key() == st-
 // This is meant to be helpful when debugging.
 bool Position::pos_is_ok() const {
 
-    constexpr bool Fast = true;  // Quick (default) or full check?
-
     if ((sideToMove != WHITE && sideToMove != BLACK) || piece_on(square<KING>(WHITE)) != W_KING
         || piece_on(square<KING>(BLACK)) != B_KING
         || (ep_square() != SQ_NONE && relative_rank(sideToMove, ep_square()) != RANK_6))
         assert(0 && "pos_is_ok: Default");
-
-    if (Fast)
-        return true;
 
     if (count<KING>(WHITE) != 1 || count<KING>(BLACK) != 1
         || attackers_to_exist(square<KING>(~sideToMove), pieces(), sideToMove))

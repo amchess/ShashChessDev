@@ -20,8 +20,8 @@
 #ifndef ENGINE_H_INCLUDED
 #define ENGINE_H_INCLUDED
 
-#include <filesystem>
 #include <functional>
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <optional>
@@ -98,8 +98,6 @@ class Engine {
     void set_on_iter(std::function<void(const InfoIter&)>&&);
     void set_on_bestmove(std::function<void(std::string_view, std::string_view)>&&);
     void set_on_start(std::function<void()>&&);
-
-    // SF19: L'API della rete passa al singolare
     void set_on_verify_network(std::function<void(std::string_view)>&&);
 
     // network related

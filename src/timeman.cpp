@@ -144,7 +144,7 @@ void TimeManagement::init(Search::LimitsType& limits,
     }
 
     // Limit the maximum possible time for this move
-    // [SC] Mantieni il limite di 1 ms di SF19 anche se Minimum Thinking Time è stato messo a 0
+    // [SC]
     optimumTime = TimePoint(std::max({1.0, double(minThinkingTime), optScale * timeLeft}));
     maximumTime =
       TimePoint(std::max(double(optimumTime), std::min(0.8097 * limits.time[us] - moveOverhead,

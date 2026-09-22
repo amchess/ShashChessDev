@@ -70,7 +70,8 @@ Thread::Thread(Search::SharedState&                    sharedState,
 
     run_custom_job([this, &binder, &sharedState, &sm, n]() {
         // Use the binder to [maybe] bind the threads to a NUMA node before doing
-        // the Worker allocation.
+        // the Worker allocation. Ideally we would also allocate the SearchManager
+        // here, but that's minor.
         this->numaAccessToken = binder();
         this->worker          = make_unique_large_page<Search::Worker>(
           sharedState, std::move(sm), n, idxInNuma, totalNuma, this->numaAccessToken);
@@ -174,6 +175,12 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
 
     if (requested > 0)  // create new thread(s)
     {
+        // Binding threads may be problematic when there's multiple NUMA nodes and
+        // multiple Stockfish instances running. In particular, if each instance
+        // runs a single thread then they would all be mapped to the first NUMA node.
+        // This is undesirable, and so the default behaviour (i.e. when the user does not
+        // change the NumaConfig UCI setting) is to not bind the threads to processors
+        // unless we know for sure that we span NUMA nodes and replication is required.
         const std::string numaPolicy(sharedState.options["NumaPolicy"]);
         const bool        doBindThreads = [&]() {
             if (numaPolicy == "none")
@@ -182,6 +189,7 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
             if (numaPolicy == "auto")
                 return numaConfig.suggests_binding_threads(requested);
 
+            // numaPolicy == "system", or explicitly set by the user
             return true;
         }();
 
@@ -225,6 +233,10 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
                                    std::make_unique<Search::SearchManager>(updateContext))
                                           : std::make_unique<Search::NullSearchManager>();
 
+                // When not binding threads we want to force all access to happen
+                // from the same NUMA node, because in case of NUMA replicated memory
+                // accesses we don't want to trash cache in case the threads get scheduled
+                // on the same NUMA node.
                 auto binder = doBindThreads ? OptionalThreadToNumaNodeBinder(numaConfig, numaId)
                                                        : OptionalThreadToNumaNodeBinder(numaId);
 
@@ -233,6 +245,7 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
                                                                          threadsPerNode[numaId], binder));
             };
 
+            // Ensure the worker thread inherits the intended NUMA affinity at creation.
             if (doBindThreads)
                 numaConfig.execute_on_numa_node(numaId, create_thread);
             else
@@ -320,11 +333,18 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
 
     Tablebases::Config tbConfig = Tablebases::rank_root_moves(options, pos, rootMoves);
 
+    // After ownership transfer 'states' becomes empty, so if we stop the search
+    // and call 'go' again without setting a new position states.get() == nullptr.
     assert(states.get() || setupStates.get());
 
     if (states.get())
-        setupStates = std::move(states);
+        setupStates = std::move(states);  // Ownership transfer, states is now empty
 
+    // We use Position::set() to set root position across threads. But there are
+    // some StateInfo fields (previous, pliesFromNull, capturedPiece) that cannot
+    // be deduced from a fen string, so set() clears them and they are set from
+    // setupStates->back() later. The rootState is per thread, earlier states are
+    // shared since they are read-only.
     for (auto&& th : threads)
     {
         th->run_custom_job([&]() {
@@ -332,8 +352,6 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
             // [SC:shashin-crystal] begin
             th->worker->nodes = th->worker->tbHits = th->worker->nmpMinPly =
               th->worker->bestMoveChanges          = 0;
-            th->worker->nmpGuard                   = false;
-            th->worker->nmpSide                    = 0;
             // [SC:shashin-crystal] end
             th->worker->rootDepth = th->worker->completedDepth = 0;
             th->worker->rootMoves                              = rootMoves;
@@ -372,6 +390,7 @@ Thread* ThreadPool::get_best_thread() const {
         const auto bestThreadMoveVote = votes[bestThreadMove.pv[0]];
         const auto newThreadMoveVote  = votes[newThreadMove.pv[0]];
 
+        // Aborted (d1) searches may lead to inexact win (or loss) scores.
         const bool bestThreadDecisive = bestThreadMove.score != -VALUE_INFINITE
                                      && is_decisive(bestThreadMove.score)
                                      && !bestThreadMove.is_inexact();
@@ -381,6 +400,7 @@ Thread* ThreadPool::get_best_thread() const {
 
         if (bestThreadDecisive)
         {
+            // Make sure we pick the shortest mate / TB conversion.
             if (newThreadDecisive && std::abs(newThreadMove.score) > std::abs(bestThreadMove.score))
             {
                 assert((is_win(bestThreadMove.score) && is_win(newThreadMove.score))
@@ -401,6 +421,7 @@ Thread* ThreadPool::get_best_thread() const {
 }
 
 // Start non-main threads.
+// Will be invoked by main thread after it has started searching.
 void ThreadPool::start_searching() {
 
     for (auto&& th : threads)

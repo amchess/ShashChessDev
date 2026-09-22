@@ -31,8 +31,8 @@
 #include <cstring>
 #include <exception>  // IWYU pragma: keep
 // IWYU pragma: no_include <__exception/terminate.h>
-#include <filesystem>
 #include <functional>
+#include <filesystem>
 #include <iosfwd>
 #include <iostream>
 #include <memory>
@@ -630,9 +630,8 @@ struct CommandLine {
     CommandLine(CommandLine&&)                 = default;
     CommandLine& operator=(CommandLine&&)      = default;
 
-    // Da Stockfish 19
     static std::filesystem::path get_binary_directory(std::filesystem::path argv0);
-    // Override di ShashChess
+    // ShashChess Override
     static std::string get_binary_directory(std::string argv0, std::string workingDirectory);
 
     static std::filesystem::path get_working_directory_fs();

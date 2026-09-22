@@ -132,15 +132,13 @@ class Position {
     // Attacks to/from a given square
     Bitboard attackers_to(Square s) const;
     Bitboard attackers_to(Square s, Bitboard occupied) const;
+    // [SC] Un Color verrebbe convertito implicitamente in Bitboard (occupancy 0 o 1):
+    // per gli attaccanti di un colore usare attackers_to(s) & pieces(c).
+    Bitboard attackers_to(Square s, Color c) const = delete;
     bool     attackers_to_exist(Square s, Bitboard occupied, Color c) const;
     void     update_slider_blockers(Color c) const;
     template<PieceType Pt>
     Bitboard attacks_by(Color c) const;
-
-    // Properties of moves
-    Value see(Move m) const;
-    bool  is_draw_move(Move m) const;
-    bool  has_game_cycle(int ply) const;
 
     bool  legal(Move m) const;
     bool  pseudo_legal(const Move m) const;

@@ -346,7 +346,7 @@ void Engine::search_clear() {
     tt.clear(threads);
     threads.clear();
 
-    // @TODO wont work with multiple instances
+    // TODO: does not work with multiple instances
     Tablebases::init(options["SyzygyPath"]);  // Free mapped files
 }
 
@@ -453,6 +453,9 @@ void Engine::resize_threads() {
     threads.set(numaContext.get_numa_config(),
                 {bookMan, options, threads, tt, sharedHists, network, shCfg},  // SF19: singolare
                 updateContext);                                                //book management
+    // [SC] i worker appena creati hanno fullSearch=false: riapplica l'opzione
+    if (options.count("Full depth threads"))
+        threads.setFull(usize(int(options["Full depth threads"])));
     //from shashin end
     // Reallocate the hash with the new threadpool size
     set_tt_size(options["Hash"]);
@@ -471,10 +474,10 @@ void Engine::set_ponderhit(bool b) { threads.main_manager()->ponder = b; }
 
 // network related
 
-void Engine::verify_network() const {  // SF19: singolare
-    const auto fileBig = path_from_utf8(std::string(options["EvalFile"]));
+void Engine::verify_network() const {
+    const auto file = path_from_utf8(std::string(options["EvalFile"]));
 
-    network->verify(onVerifyNetwork, networkFile, fileBig);
+    network->verify(onVerifyNetwork, networkFile, file);
 
     auto statuses = network.get_status_and_errors();
     for (usize i = 0; i < statuses.size(); ++i)
@@ -608,5 +611,4 @@ std::string Engine::thread_allocation_information_as_string() const {
 
     return ss.str();
 }
-
 }

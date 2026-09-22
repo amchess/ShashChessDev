@@ -24,11 +24,11 @@
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
-#include <filesystem>
 #include <iterator>
 #include <optional>
 #include <sstream>
 #include <string_view>
+#include <filesystem>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -145,6 +145,10 @@ void UCIEngine::loop() {
             }
             // [SC:learning] end
         }
+        // The GUI sends 'ponderhit' to tell that the user has played the expected move.
+        // So, 'ponderhit' is sent if pondering was done on the same move that the user
+        // has played. The search should continue, but should also switch from pondering
+        // to the normal search.
         else if (token == "ponderhit")
             engine.set_ponderhit(false);
 
@@ -160,6 +164,7 @@ void UCIEngine::loop() {
             setoption(is);
         else if (token == "go")
         {
+            // send info strings after the go command is sent for old GUIs and python-chess
             print_info_string(engine.numa_config_information_as_string());
             print_info_string(engine.thread_allocation_information_as_string());
             go(is);
@@ -191,6 +196,7 @@ void UCIEngine::loop() {
         else if (token == "isready")
             sync_cout << "readyok" << sync_endl;
 
+        // Add custom non-UCI commands, mainly for debugging purposes.
         else if (token == "flip")
         {
             if (auto err = engine.flip())
@@ -250,7 +256,7 @@ Search::LimitsType UCIEngine::parse_limits(std::istream& is) {
 
     while (is >> token)
     {
-        if (token == "searchmoves")
+        if (token == "searchmoves")  // Needs to be the last command on the line
         {
             while (is >> token)
                 limits.searchmoves.push_back(to_lower(token));
@@ -360,23 +366,26 @@ void UCIEngine::bench(std::istream& args) {
                 setStartPoint();
             }
             // [SC:learning] end
-            engine.search_clear();
+            engine.search_clear();  // search_clear may take a while
             elapsed = now();
         }
     }
 
-    elapsed = now() - elapsed + 1;
+    elapsed = now() - elapsed + 1;  // Ensure positivity to avoid a 'divide by zero'
 
     dbg_print();
 
-    std::cerr << "\n==========================="
-              << "\nTotal time (ms) : " << elapsed << "\nNodes searched  : " << nodes
+    std::cerr << "\n==========================="    //
+              << "\nTotal time (ms) : " << elapsed  //
+              << "\nNodes searched  : " << nodes    //
               << "\nNodes/second    : " << 1000 * nodes / elapsed << std::endl;
 
+    // reset callback, to not capture a dangling reference to nodesSearched
     engine.set_on_update_full([&](const auto& i) { on_update_full(i, options["UCI_ShowWDL"]); });
 }
 
 void UCIEngine::benchmark(std::istream& args) {
+    // Probably not very important for a test this long, but include for completeness and sanity.
     static constexpr int NUM_WARMUP_POSITIONS = 3;
 
     std::string token;
@@ -393,6 +402,8 @@ void UCIEngine::benchmark(std::istream& args) {
     const auto numGoCommands = count_if(setup.commands.begin(), setup.commands.end(),
                                         [](const std::string& s) { return s.find("go ") == 0; });
 
+
+    // Set options once at the start.
     auto ss = std::istringstream("name Threads value " + std::to_string(setup.threads));
     setoption(ss);
     ss = std::istringstream("name Hash value " + std::to_string(setup.ttSize));
@@ -400,6 +411,7 @@ void UCIEngine::benchmark(std::istream& args) {
     ss = std::istringstream("name UCI_Chess960 value false");
     setoption(ss);
 
+    // Warmup
     for (const auto& cmd : setup.commands)
     {
         std::istringstream is(cmd);
@@ -407,10 +419,12 @@ void UCIEngine::benchmark(std::istream& args) {
 
         if (token == "go")
         {
+            // One new line is produced by the search, so omit it here
             std::cerr << "\rWarmup position " << cnt++ << '/' << NUM_WARMUP_POSITIONS;
 
             Search::LimitsType limits = parse_limits(is);
 
+            // Run with silenced network verification
             engine.go(limits);
             engine.wait_for_search_finished();
         }
@@ -418,7 +432,7 @@ void UCIEngine::benchmark(std::istream& args) {
             position(is);
         else if (token == "ucinewgame")
         {
-            engine.search_clear();
+            engine.search_clear();  // search_clear may take a while
         }
 
         if (cnt > NUM_WARMUP_POSITIONS)
@@ -446,7 +460,7 @@ void UCIEngine::benchmark(std::istream& args) {
         }
     };
 
-    engine.search_clear();
+    engine.search_clear();  // search_clear may take a while
 
     Time::time_point elapsed;
     Time::duration   totalTime(0);
@@ -473,10 +487,12 @@ void UCIEngine::benchmark(std::istream& args) {
 
         if (token == "go")
         {
+            // One new line is produced by the search, so omit it here
             std::cerr << "\rPosition " << cnt++ << '/' << numGoCommands;
 
             Search::LimitsType limits = parse_limits(is);
 
+            // Run with silenced network verification
             engine.go(limits);
             engine.wait_for_search_finished();
 
@@ -486,10 +502,11 @@ void UCIEngine::benchmark(std::istream& args) {
             position(is);
         else if (token == "ucinewgame")
         {
-            engine.search_clear();
+            engine.search_clear();  // search_clear may take a while
         }
     }
 
+    // Ensure positivity to avoid a 'divide by zero'
     const auto totalTimeMs = std::max<i64>(std::chrono::duration_cast<ms>(totalTime).count(), 1LL);
 
     dbg_print();
@@ -504,8 +521,13 @@ void UCIEngine::benchmark(std::istream& args) {
     if (threadBinding.empty())
         threadBinding = "none";
 
+    // clang-format off
+
     std::cerr << "==========================="
-              << "\nVersion                    : " << engine_version_info() << compiler_info()
+              << "\nVersion                    : "
+              << engine_version_info()
+              // "\nCompiled by                : "
+              << compiler_info()
               << "Large pages                : " << (has_large_pages() ? "yes" : "no")
               << "\nUser invocation            : " << BenchmarkCommand << " "
               << setup.originalInvocation << "\nFilled invocation          : " << BenchmarkCommand
@@ -522,6 +544,8 @@ void UCIEngine::benchmark(std::istream& args) {
               << "\nTotal nodes searched       : " << nodes
               << "\nTotal search time [s]      : " << totalTimeMs / 1000.0
               << "\nNodes/second               : " << 1000 * nodes / totalTimeMs << std::endl;
+
+    // clang-format on
 
     init_search_update_listeners();
 }
@@ -542,6 +566,8 @@ u64 UCIEngine::perft(const Search::LimitsType& limits) {
 }
 
 void UCIEngine::position(std::istringstream& is) {
+    const std::string fullCommand = is.str();
+
     std::string token, fen;
 
     is >> token;
@@ -549,7 +575,7 @@ void UCIEngine::position(std::istringstream& is) {
     if (token == "startpos")
     {
         fen = StartFEN;
-        is >> token;
+        is >> token;  // Consume the "moves" token, if any
     }
     else if (token == "fen")
         while (is >> token && token != "moves")
@@ -662,8 +688,10 @@ void UCIEngine::on_update_full(const Engine::InfoFull& info, bool showWDL) {
     std::stringstream ss;
 
     ss << "info";
-    ss << " depth " << info.depth << " seldepth " << info.selDepth << " multipv " << info.multiPV
-       << " score " << format_score(info.score);
+    ss << " depth " << info.depth                 //
+       << " seldepth " << info.selDepth           //
+       << " multipv " << info.multiPV             //
+       << " score " << format_score(info.score);  //
 
     if (!info.bound.empty())
         ss << " " << info.bound;
@@ -671,8 +699,12 @@ void UCIEngine::on_update_full(const Engine::InfoFull& info, bool showWDL) {
     if (showWDL)
         ss << " wdl " << info.wdl;
 
-    ss << " nodes " << info.nodes << " nps " << info.nps << " hashfull " << info.hashfull
-       << " tbhits " << info.tbHits << " time " << info.timeMs << " pv " << info.pv;
+    ss << " nodes " << info.nodes        //
+       << " nps " << info.nps            //
+       << " hashfull " << info.hashfull  //
+       << " tbhits " << info.tbHits      //
+       << " time " << info.timeMs        //
+       << " pv " << info.pv;             //
 
     sync_cout << ss.str() << sync_endl;
 }
@@ -681,8 +713,9 @@ void UCIEngine::on_iter(const Engine::InfoIter& info) {
     std::stringstream ss;
 
     ss << "info";
-    ss << " depth " << info.depth << " currmove " << info.currmove << " currmovenumber "
-       << info.currmovenumber;
+    ss << " depth " << info.depth                     //
+       << " currmove " << info.currmove               //
+       << " currmovenumber " << info.currmovenumber;  //
 
     sync_cout << ss.str() << sync_endl;
 }

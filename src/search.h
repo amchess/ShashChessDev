@@ -24,13 +24,13 @@
 #include <array>
 #include <atomic>
 #include <cassert>
-#include <cstring>
 #include <functional>
 #include <map>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
+#include <cstring>
 
 #include "history.h"
 #include "misc.h"
@@ -139,10 +139,6 @@ struct Stack {
     bool                        followPV;
     int                         cutoffCnt;
     int                         reduction;
-    // [SC:shashin-crystal] begin
-    bool secondaryLine = false;
-    bool mainLine      = false;
-    // [SC:shashin-crystal] end
 };
 
 // RootMove struct is used for moves at the root of the tree. For each root move
@@ -163,14 +159,14 @@ struct RootMove {
         return m.score != score ? m.score < score : m.previousScore < previousScore;
     }
 
-    u64         effort             = 0;
-    Value       score              = -VALUE_INFINITE;
-    Value       previousScore      = -VALUE_INFINITE;
-    Value       averageScore       = -VALUE_INFINITE;
-    Value       meanSquaredScore   = -VALUE_INFINITE * VALUE_INFINITE;
-    Value       uciScore           = -VALUE_INFINITE;
-    bool        inexactLower       = false;
-    bool        inexactUpper       = false;
+    u64         effort           = 0;
+    Value       score            = -VALUE_INFINITE;
+    Value       previousScore    = -VALUE_INFINITE;
+    Value       averageScore     = -VALUE_INFINITE;
+    Value       meanSquaredScore = -VALUE_INFINITE * VALUE_INFINITE;
+    Value       uciScore         = -VALUE_INFINITE;
+    bool        inexactLower     = false;  // By default root scores are exact, unless flagged as a
+    bool        inexactUpper     = false;  // one-sided bound here. See also `enum Bound` in types.h
     bool        previousScoreExact = false;
     int         selDepth           = 0;
     int         tbRank             = 0;
@@ -210,7 +206,7 @@ struct SharedState {
                 TranspositionTable&                                      transpositionTable,
                 std::map<NumaIndex, SharedHistories>&                    sharedHists,
                 const LazyNumaReplicatedSystemWide<Eval::NNUE::Network>& net,
-                const ShashChess::ShashinConfig&                         shCfg) :
+                const ShashChess::ShashinConfig                          shCfg) :
         bookMan(bm),
         options(optionsMap),
         threads(threadPool),
@@ -225,7 +221,7 @@ struct SharedState {
     TranspositionTable&                                      tt;
     std::map<NumaIndex, SharedHistories>&                    sharedHistories;
     const LazyNumaReplicatedSystemWide<Eval::NNUE::Network>& network;
-    const ShashinConfig&                                     shashinConfig;
+    const ShashinConfig                                      shashinConfig;
 };
 
 class Worker;
@@ -381,7 +377,6 @@ class Worker {
     usize threadIdx;
 
     Depth           completedDepth;
-    bool            nmpGuard = false, nmpSide = false;
     ShashinManager& getShashinManager();
     int             lastShashinUpdatedDepth = 0;
 
@@ -456,8 +451,8 @@ class Worker {
     Eval::NNUE::AccumulatorStack  accumulatorStack;
     Eval::NNUE::AccumulatorCaches refreshTable;
 
-    std::unique_ptr<ShashinManager>  shashinManager;
-    const ShashChess::ShashinConfig& shConfig;
+    std::unique_ptr<ShashinManager> shashinManager;
+    const ShashChess::ShashinConfig shConfig;
 
     friend class ShashChess::ThreadPool;
     friend class SearchManager;

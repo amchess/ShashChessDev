@@ -115,6 +115,50 @@ VPATH = mcts:syzygy:nnue:nnue/features:book:book/polyglot:book/ctg:learn:shashin
 ### ==========================================================================
 ### Section 2. High-level Configuration
 ### ==========================================================================
+#
+# flag                --- Comp switch        --- Description
+# ----------------------------------------------------------------------------
+#
+# debug = yes/no      --- -DNDEBUG           --- Enable/Disable debug mode
+# sanitize = none/<sanitizer> ... (-fsanitize )
+#                     --- ( undefined )      --- enable undefined behavior checks
+#                     --- ( thread    )      --- enable threading error checks
+#                     --- ( address   )      --- enable memory access checks
+#                     --- ...etc...          --- see compiler documentation for supported sanitizers
+# optimize = yes/no   --- (-O3/-fast etc.)   --- Enable/Disable optimizations
+# arch = (name)       --- (-arch)            --- Target architecture
+# bits = 64/32        --- -DIS_64BIT         --- 64-/32-bit operating system
+# prefetch = yes/no   --- -DUSE_PREFETCH     --- Use prefetch asm-instruction
+# popcnt = yes/no     --- -DUSE_POPCNT       --- Use popcnt asm-instruction
+# pext = yes/no       --- -DUSE_PEXT         --- Use pext x86_64 asm-instruction
+# sse = yes/no        --- -msse              --- Use Intel Streaming SIMD Extensions
+# mmx = yes/no        --- -mmmx              --- Use Intel MMX instructions
+# sse2 = yes/no       --- -msse2             --- Use Intel Streaming SIMD Extensions 2
+# ssse3 = yes/no      --- -mssse3            --- Use Intel Supplemental Streaming SIMD Extensions 3
+# sse41 = yes/no      --- -msse4.1           --- Use Intel Streaming SIMD Extensions 4.1
+# avx2 = yes/no       --- -mavx2             --- Use Intel Advanced Vector Extensions 2
+# avxvnni = yes/no    --- -mavxvnni          --- Use Intel Vector Neural Network Instructions AVX
+# avx512 = yes/no     --- -mavx512bw         --- Use Intel Advanced Vector Extensions 512
+# vnni512 = yes/no    --- -mavx512vnni       --- Use Intel Vector Neural Network Instructions 512
+# avx512icl = yes/no  --- ... multiple ...   --- Use All AVX-512 features available on both Intel Ice Lake and AMD Zen 4
+# altivec = yes/no    --- -maltivec          --- Use PowerPC Altivec SIMD extension
+# vsx = yes/no        --- -mvsx              --- Use POWER VSX SIMD extension
+# neon = yes/no       --- -DUSE_NEON         --- Use ARM SIMD architecture
+# dotprod = yes/no    --- -DUSE_NEON_DOTPROD --- Use ARM advanced SIMD Int8 dot product instructions
+# lsx = yes/no        --- -mlsx              --- Use Loongson SIMD eXtension
+# lasx = yes/no       --- -mlasx             --- Use Loongson Advanced SIMD eXtension
+# relaxedsimd = y/n   --- -mrelaxed-simd     --- Use WebAssembly relaxed SIMD extension
+# syzygy = yes/no     --- -DNO_TABLEBASES    --- Support Syzygy tablebase probing
+#
+# Note that Makefile is space sensitive, so when adding new architectures
+# or modifying existing flags, you have to make sure there are no extra spaces
+# at the end of the line for flag values.
+#
+# Example of use for these flags:
+# make build ARCH=x86-64-avx512 debug=yes sanitize="address undefined"
+
+
+### 2.1. General and architecture defaults
 
 ifeq ($(ARCH),)
    ARCH = native
@@ -124,6 +168,9 @@ ifeq ($(ARCH), native)
    override ARCH := $(shell $(SHELL) ../scripts/get_native_properties.sh | cut -d " " -f 1)
 endif
 
+
+# explicitly check for the list of supported architectures (as listed with make help),
+# the user can override with `make ARCH=x86-64-avx512icl SUPPORTED_ARCH=true`
 ifeq ($(ARCH), $(filter $(ARCH), x86-64-universal x86-64-avx512icl x86-64-vnni512 x86-64-avx512 x86-64-avxvnni x86-64-bmi2 x86-64-avx2 x86-64-sse41-popcnt x86-64-modern x86-64-ssse3 x86-64-sse3-popcnt x86-64 x86-32-sse41-popcnt x86-32-sse2 x86-32 ppc-64 ppc-64-altivec ppc-64-vsx ppc-32 e2k armv7 armv7-neon armv8 armv8-dotprod arm64-universal apple-silicon general-64 general-32 riscv64 riscv64-rva23 riscv64-universal loongarch64 loongarch64-lsx loongarch64-lasx wasm32 wasm32-relaxed-simd))
    SUPPORTED_ARCH=true
 else
@@ -174,6 +221,8 @@ endif
 ### 2.2 Architecture specific
 
 ifeq ($(findstring x86,$(ARCH)),x86)
+
+# x86-32/64
 
 ifeq ($(findstring x86-32,$(ARCH)),x86-32)
 	arch = i386
@@ -296,11 +345,14 @@ ifeq ($(sse),yes)
 	prefetch = yes
 endif
 
+# 64-bit pext is not available on x86-32
 ifeq ($(bits),32)
 	pext = no
 endif
 
 else
+
+# all other architectures
 
 ifeq ($(ARCH),general-32)
 	arch = any
@@ -361,6 +413,8 @@ ifeq ($(ARCH),apple-silicon)
 	arm_version = 8
 endif
 
+# WASM is largely compiled using emcc's x86 compatibility layer, with occasional
+# WASM-specific intrinsics
 ifeq ($(ARCH),wasm32)
 	arch = wasm32
 	sse = yes
@@ -454,21 +508,8 @@ ifeq ($(MAKELEVEL),0)
        export ENV_LDFLAGS := $(LDFLAGS)
 endif
 
-# (In alto CXXFLAGS torna normale)
 CXXFLAGS = $(ENV_CXXFLAGS) -Wall -Wcast-qual -fno-exceptions -std=c++17 $(EXTRACXXFLAGS)
 
-# (Più in basso nel file, verso riga 851, viene aggiunto questo blocco)
-### NNUE network embedding
-# NNUE_EMBEDDING_OFF=yes builds an engine without the embedded network.
-# EXTRACXXFLAGS=-DNNUE_EMBEDDING_OFF is accepted as an alias. The variable is
-# exported because the PGO sub-makes redefine EXTRACXXFLAGS on their command line.
-ifneq ($(filter -DNNUE_EMBEDDING_OFF,$(EXTRACXXFLAGS)),)
-  NNUE_EMBEDDING_OFF := yes
-endif
-ifeq ($(NNUE_EMBEDDING_OFF),yes)
-  export NNUE_EMBEDDING_OFF
-  CXXFLAGS += -DNNUE_EMBEDDING_OFF
-endif
 DEPENDFLAGS = $(ENV_DEPENDFLAGS) -std=c++17
 LDFLAGS = $(ENV_LDFLAGS) $(EXTRALDFLAGS)
 
@@ -579,6 +620,7 @@ ifeq ($(TARGET_KERNEL),Darwin)
 	XCRUN = xcrun
 endif
 
+# To cross-compile for Android, use NDK version r27c or later.
 ifeq ($(COMP),ndk)
 	CXXFLAGS += -stdlib=libc++
 	comp=clang
@@ -611,11 +653,17 @@ ifeq ($(COMP),ndk)
 	LDFLAGS += -static-libstdc++
 endif
 
+### Allow overwriting CXX from command line
 ifdef COMPCXX
 	CXX=$(COMPCXX)
 endif
 
+# llvm-profdata must be version compatible with the specified CXX (be it clang, or the gcc alias)
+# make -j profile-build CXX=clang++-20 COMP=clang
+# Locate the version in the same directory as the compiler used,
+# with fallback to a generic one if it can't be located
 	LLVM_PROFDATA := $(dir $(realpath $(shell which $(CXX) 2> /dev/null)))llvm-profdata
+# for icx
 ifeq ($(wildcard $(LLVM_PROFDATA)),)
 	LLVM_PROFDATA := $(dir $(realpath $(shell which $(CXX) 2> /dev/null)))/compiler/llvm-profdata
 endif
@@ -637,6 +685,7 @@ else
 	endif
 endif
 
+### Sometimes gcc is really clang
 ifeq ($(COMP),gcc)
 	gccversion := $(shell $(CXX) --version 2>/dev/null)
 	gccisclang := $(findstring clang,$(gccversion))
@@ -651,7 +700,9 @@ else ifeq ($(COMP),mingw)
 	CXXFLAGS += -fno-ipa-cp-clone
 endif
 
+# On Android Bionic's C library comes with its own pthread implementation bundled in
 ifneq ($(OS),Android)
+	# Haiku has pthreads in its libroot, so only link it in on other platforms
 	ifneq ($(KERNEL),Haiku)
 		ifneq ($(COMP),ndk)
 		ifneq ($(arch),wasm32)
@@ -674,6 +725,7 @@ ifneq ($(OS),Android)
 	endif
 endif
 
+### 3.2.1 Debugging
 ifeq ($(debug),no)
 	CXXFLAGS += -DNDEBUG
 else
@@ -681,11 +733,13 @@ else
 	CXXFLAGS += -D_GLIBCXX_ASSERTIONS -D_GLIBCXX_DEBUG
 endif
 
+### 3.2.2 Debugging with undefined behavior sanitizers
 ifneq ($(sanitize),none)
         CXXFLAGS += -g3 $(addprefix -fsanitize=,$(sanitize))
         LDFLAGS += $(addprefix -fsanitize=,$(sanitize))
 endif
 
+### 3.3 Optimization
 ifeq ($(optimize),yes)
 
 	CXXFLAGS += -O3 -funroll-loops
@@ -716,10 +770,12 @@ ifeq ($(optimize),yes)
 	endif
 endif
 
+### 3.4 Bits
 ifeq ($(bits),64)
 	CXXFLAGS += -DIS_64BIT
 endif
 
+### 3.5 prefetch and popcount
 ifeq ($(prefetch),yes)
 	ifeq ($(sse),yes)
 		CXXFLAGS += -msse
@@ -736,6 +792,7 @@ ifeq ($(popcnt),yes)
 	endif
 endif
 
+### 3.6 SIMD architectures
 ifeq ($(avx2),yes)
 	CXXFLAGS += -DUSE_AVX2
 	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
@@ -853,6 +910,7 @@ ifeq ($(arch),wasm32)
 	endif
 endif
 
+### 3.7 pext
 ifeq ($(pext),yes)
 	CXXFLAGS += -DUSE_PEXT
 	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
@@ -860,6 +918,7 @@ ifeq ($(pext),yes)
 	endif
 endif
 
+### Syzygy tablebases
 ifeq ($(syzygy),no)
 	CXXFLAGS += -DNO_TABLEBASES
 endif
@@ -876,6 +935,7 @@ ifeq ($(NNUE_EMBEDDING_OFF),yes)
   CXXFLAGS += -DNNUE_EMBEDDING_OFF
 endif
 
+### 3.8.1 Try to include git info for versioning and avoid recompiles if nothing changes
 BUILD_SHA_FILE       := .build_sha.txt
 BUILD_DATE_FILE      := .build_date.txt
 BUILD_DIFFINDEX_FILE := .build_diffindex.txt
@@ -899,10 +959,14 @@ _ := $(call cache_file_contents,$(BUILD_DATE_FILE),$(GIT_DATE))
 _ := $(call cache_file_contents,$(BUILD_DIFFINDEX_FILE),$(GIT_DIFFINDEX))
 endif
 
+### 3.8.2 Try to include architecture
 ifneq ($(ARCH), )
 	CXXFLAGS += -DARCH=$(ARCH)
 endif
 
+### 3.9 Link Time Optimization
+### This is a mix of compile and link time options because the lto link phase
+### needs access to the optimization flags.
 ifeq ($(optimize),yes)
 ifeq ($(debug),no)
 	ifeq ($(arch),wasm32)
@@ -929,6 +993,8 @@ ifeq ($(debug),no)
 		endif
 		LDFLAGS += $(CXXFLAGS)
 
+# GCC and CLANG use different methods for parallelizing LTO and CLANG pretends to be
+# GCC on some systems.
 	else ifeq ($(comp),gcc)
 		ifeq ($(gccisclang),)
 			CXXFLAGS += -flto -flto-partition=one
@@ -938,6 +1004,8 @@ ifeq ($(debug),no)
 			LDFLAGS += $(CXXFLAGS)
 		endif
 
+# To use LTO and static linking on Windows,
+# the tool chain requires gcc version 10.1 or later.
 	else ifeq ($(comp),mingw)
 		CXXFLAGS += -flto -flto-partition=one
 		LDFLAGS += $(CXXFLAGS) -save-temps
@@ -945,11 +1013,14 @@ ifeq ($(debug),no)
 endif
 endif
 
+### 3.10 Android 5 can only run position independent executables. Note that this
+### breaks Android 4.0 and earlier.
 ifeq ($(OS), Android)
 	CXXFLAGS += -fPIE
 	LDFLAGS += -fPIE -pie
 endif
 
+### 3.11 Inline settings
 ifeq ($(optimize), yes)
 	ifeq ($(comp), clang)
 		CXXFLAGS += -Xclang -mllvm -Xclang -inline-threshold=500
@@ -1073,6 +1144,7 @@ profile-build: net config-sanity objclean profileclean
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) profileclean
 endif
 
+# Default network filename, read from evaluate.h's EvalFileDefaultName.
 macos-lipo: NNUE_NET = $(shell grep -oE 'nn-[0-9a-f]+\.nnue' $(CURDIR)/evaluate.h | head -1)
 macos-lipo:
 	@echo ""
@@ -1094,6 +1166,7 @@ macos-lipo:
 	@echo "Universal macOS binary built: $(EXE)"
 
 ifeq ($(TARGET_KERNEL),Darwin)
+# Apple uses ld64 which doesn't have --save-temps
   LTO_OBJ_SUFFIX := .lto.o
   SAVE_TEMPS := -Wl,-object_path_lto,shashchess.lto.o
 else ifeq ($(comp), clang)
@@ -1131,6 +1204,8 @@ universal-object-pgo: objclean profileclean universalclean
 ifeq ($(use_lto_emit_asm),yes)
 	@echo "Step 4/4. Renaming ctors and extracting LTO-optimized relocatable object ..."
 	awk -v MODNAME=$(MODNAME) -f ../../universal/rewrite_asm_sections.awk *.lto.s > renamed.s
+# -mcpu=neoverse-v2 (or another CPU supporting dotprod) is required for clang
+# to not complain when assembling
 	$(CXX) -c renamed.s -o shashchess.o $(ASM_FLAGS)
 else
 	@echo "Step 4/4. Extracting LTO-optimized relocatable object ..."
@@ -1154,12 +1229,15 @@ install:
 	-cp $(EXE) $(BINDIR)
 	$(STRIP) $(BINDIR)/$(EXE)
 
+# clean all
 clean: objclean profileclean universalclean
 	@rm -f .depend *~ core
 
+# clean binaries and objects
 objclean:
 	@rm -f shashchess shashchess.exe *.o ./syzygy/*.o ./nnue/*.o ./nnue/features/*.o ./book/*.o ./book/polyglot/*.o ./book/ctg/*.o ./learn/*.o ./livebook/*.o ./livebook/analysis/*.o ./livebook/json/*.o ./shashin/*.o ./wdl/*.o $(BUILD_SHA_FILE) $(BUILD_DATE_FILE) $(BUILD_DIFFINDEX_FILE)
 
+# clean auxiliary profiling files
 profileclean:
 	@rm -rf profdir
 	@rm -f bench.txt *.gcda *.gcno ./syzygy/*.gcda ./nnue/*.gcda ./nnue/features/*.gcda ./book/*.gcda ./book/polyglot/*.gcda ./book/ctg/*.gcda ./learn/*.gcda ./livebook/*.gcda ./shashin/*.gcda ./wdl/*.o *.s PGOBENCH.out
@@ -1170,10 +1248,13 @@ profileclean:
 	@rm -f ./-lstdc++.res
 
 universalclean:
+# On Windows "ln -s" to a directory makes a native directory symlink that rm
+# cannot unlink; rmdir unlinks it without following it. No-op elsewhere.
 	@find $(TEMP_DIR) -type l -exec rmdir {} + 2</dev/null || true
 	@rm -rf $(TEMP_DIR)
 	@rm -f universal/network_dump.inc
 
+# evaluation network (nnue)
 net:
 	@$(SHELL) ../scripts/net.sh
 
@@ -1319,6 +1400,11 @@ endif
 ### ==========================================================================
 ### Section 6. Universal binary driver
 ### ==========================================================================
+#
+# Usage:
+#   make -j ARCH=x86-64-universal build          # non-PGO
+#   make -j ARCH=x86-64-universal profile-build  # PGO (use RUN_PREFIX for intel SDE)
+#   make -j ARCH=arm64-universal build
 
 TEMP_DIR             := $(CURDIR)/temp_builds
 UNIVERSAL_EXE        := $(CURDIR)/$(EXE)
@@ -1357,8 +1443,11 @@ else
   BASELINE_ARCH := armv8
 endif
 
+# Top-level tracked items in src/ (directories and files)
 TRACKED_TOP := $(sort $(foreach f,$(SRCS) $(HEADERS) Makefile incbin,$(firstword $(subst /, ,$(f)))))
 
+# Baseline build must come first in the final link (Windows --allow-multiple-definition
+# uses the first copy of inline duplicates)
 ARCH_OBJS := $(TEMP_DIR)/$(BASELINE_ARCH)/shashchess.o \
              $(patsubst %,$(TEMP_DIR)/%/shashchess.o,$(filter-out $(BASELINE_ARCH),$(UNIVERSAL_ARCHES)))
 
@@ -1374,20 +1463,26 @@ else ifeq ($(TARGET_KERNEL),Linux)
   else
     UNIVERSAL_FINAL_FLAGS += -lrt -lpthread
   endif
-else
+else    # windows
   UNIVERSAL_FINAL_FLAGS += -Wl,--allow-multiple-definition -static
   ifeq ($(COMP),clang)
     UNIVERSAL_FINAL_FLAGS += -lpthread
   endif
 endif
 
+# $(call arch-namespace,x86-64-avx2) => Stockfish_x86_64_avx2
 arch-suffix     = $(subst -,_,$(1))
 arch-namespace  = ShashChess_$(call arch-suffix,$(1))
+# Itanium ABI mangled name for Stockfish_<suffix>::main(int, char**)
 arch-mangled    = _ZN$(shell printf %s '$(call arch-namespace,$(1))' | wc -c | tr -d ' ')$(call arch-namespace,$(1))4mainEiPPc
+# Mach-O initializer section name: strip "x86-64" or "x86-64-" and prefix with "_i_"
+# (Mach-O section names are restricted to <=16 chars, hence this naming scheme)
 arch-mac-section = _i_$(subst -,_,$(patsubst x86-64,,$(patsubst x86-64-%,%,$(1))))
 
 ifeq ($(TARGET_KERNEL),Darwin)
   arch-defmain = -Wl,-alias,_$(call arch-mangled,$(1)),_main
+# lld-link, used on Windows+clang, doesn't accept --defsym, so
+# we define main directly in main.cpp instead and delete it later.
 else ifeq ($(target_windows)+$(COMP),yes+clang)
   arch-defmain = -DUNIVERSAL_NEEDS_MAIN_SHIM
 else
@@ -1399,6 +1494,9 @@ ifeq ($(EMBED_DIR_SUPPORTED),1)
   EMBED_DIR = --embed-dir=$(CURDIR)
 endif
 
+# macos-lipo sets MACOS_X86_SLICE=1 when building the x86-64 slice so that the
+# slice reads the network out of the Apple-silicon slice instead of embedding
+# its own copy (see universal/nnue_embed.cpp and universal/patch_x86_slice.sh).
 ifeq ($(MACOS_X86_SLICE),1)
   SLICE_DEF := -DUNIVERSAL_BINARY_MACOS_X86_SLICE
 endif
@@ -1452,13 +1550,18 @@ $(TEMP_DIR)/%/shashchess.o: $(TEMP_DIR)/%/.setup $(NNUE_EMBED_OBJ) $(NET_SENTINE
 	        ARCH=$* CXX=$(CXX) COMP=$(COMP) \
 	        NNUE_EMBED_OBJ=$(NNUE_EMBED_OBJ)
 ifeq ($(TARGET_KERNEL),Darwin)
+# Rename the initializer section
 	ld -r -rename_section __DATA __mod_init_func __DATA $(call arch-mac-section,$*) $@ -o $@.tmp
 	mv $@.tmp $@
 else
+# Drop COMDAT groups; clang LTO leaves them around internalized LOCAL
+# template instantiations which causes problems at the final link
 	$(OBJCOPY) -R .group $@
 ifeq ($(use_lto_emit_asm),yes)
+# Delete per-arch main shim
 	$(OBJCOPY) -N main $@
 else
+# Rename .init_array (Linux) or .ctors (Windows) so we can manually invoke them
 	$(OBJCOPY) --rename-section .init_array=$(call arch-suffix,$*)_init $@
 	$(OBJCOPY) --rename-section .ctors=$(call arch-suffix,$*)_init $@
 # Make the array inert

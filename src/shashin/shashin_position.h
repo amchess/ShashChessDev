@@ -48,7 +48,8 @@ inline int count_safe_waiting_moves(const Position& pos) {
             if (m.type_of() == PROMOTION)
                 movedValue = PieceValue[m.promotion_type()];  // Sovrascrive il valore del pedone
 
-            Bitboard attackers           = pos.attackers_to(to, ~pos.side_to_move());
+            Bitboard attackers           = pos.attackers_to(to, pos.pieces() ^ m.from_sq())
+                                         & pos.pieces(~pos.side_to_move());  // [SC fix]
             Value    minOpponentAttacker = VALUE_INFINITE;
 
             // Trova il pezzo attaccante avversario di valore minimo
@@ -216,7 +217,8 @@ inline bool has_safe_waiting_moves(const Position& pos) {
             if (m.type_of() == PROMOTION)
                 movedValue = PieceValue[m.promotion_type()]; 
 
-            Bitboard attackers           = pos.attackers_to(to, ~pos.side_to_move());
+            Bitboard attackers           = pos.attackers_to(to, pos.pieces() ^ m.from_sq())
+                                         & pos.pieces(~pos.side_to_move());  // [SC fix]
             Value    minOpponentAttacker = VALUE_INFINITE;
 
             // Trova il pezzo attaccante avversario di valore minimo

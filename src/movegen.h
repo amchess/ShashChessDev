@@ -26,6 +26,7 @@
 #include "types.h"
 #include "./shashin/moveconfig.h"  //from shashin
 namespace ShashChess {
+
 class Position;
 
 enum GenType {

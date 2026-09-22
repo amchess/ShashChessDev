@@ -203,6 +203,7 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
     Color us = pos.side_to_move();
 
     [[maybe_unused]] Bitboard threatByLesser[KING + 1];
+    [[maybe_unused]] Bitboard enemyAttacks = 0;  // [SC] tutte le case attaccate dall'avversario
     if constexpr (Type == QUIETS)
     {
         threatByLesser[PAWN]   = 0;
@@ -211,6 +212,10 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
           pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<BISHOP>(~us) | threatByLesser[KNIGHT];
         threatByLesser[QUEEN] = pos.attacks_by<ROOK>(~us) | threatByLesser[ROOK];
         threatByLesser[KING]  = 0;
+
+        if (depth > 6)
+            enemyAttacks =
+              threatByLesser[QUEEN] | pos.attacks_by<QUEEN>(~us) | pos.attacks_by<KING>(~us);
     }
 
     ExtMove* it = cur;
@@ -256,26 +261,19 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
             if (ply < LOW_PLY_HISTORY_SIZE)
                 m.value += 8 * (*lowPlyHistory)[ply][m.raw()] / (1 + ply);
 
-            // *** SHASHIN MOVEPICK TUNING ***
-            if (depth > 6)
+            // [SC] Tuning Shashin (versione corretta: prima attackers_to(sq, ~us) usava ~us
+            // come occupancy e le condizioni erano sempre false)
+            if (depth > 6 && pt != PAWN)
             {
-                // 1. CAPABLANCA: Favorisce l'occupazione di avamposti sicuri.
-                if (MoveConfig::isStrategical && type_of(pc) != PAWN && !pos.attackers_to(to, ~us))
+                // Capablanca: avamposto non attaccato dall'avversario
+                if (MoveConfig::isStrategical)
                 {
-                    m.value += 30;
+                    if (!(enemyAttacks & to))
+                        m.value += 30;
                 }
-
-                // 2. FASI TATTICHE (Tal, Petrosian, Caos): Bonus Sopravvivenza/Dinamismo.
-                // Se NON siamo in fase puramente strategica (c'è tensione)
-                // e stiamo spostando un pezzo importante VIA da una minaccia verso la salvezza.
-                else if (!MoveConfig::isStrategical && type_of(pc) != PAWN)
-                {
-                    // Se la casa di partenza ERA minacciata, e la casa di arrivo è SICURA
-                    if (pos.attackers_to(from, ~us) && !pos.attackers_to(to, ~us))
-                    {
-                        m.value += 25;
-                    }
-                }
+                // Fasi tattiche: il pezzo lascia una casa attaccata per una casa sicura
+                else if ((enemyAttacks & from) && !(enemyAttacks & to))
+                    m.value += 25;
             }
         }
         else  // Type == EVASIONS
