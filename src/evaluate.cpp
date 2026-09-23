@@ -481,7 +481,7 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Network& network, bool 
 
         ss << "================================\n";
         ss << "Final Static Activity Evaluation: " << 0.01 * UCIEngine::to_cp(v_white, pos)
-           << " cp | " << static_cast<int>(winProbWhite) << "% win probability (White)\n";
+           << " pawns (White perspective)\n";
         ss << "WDL (Win/Draw/Loss): " << static_cast<int>(wdl.win) << "%/"
            << static_cast<int>(wdl.draw) << "%/" << static_cast<int>(wdl.loss) << "%\n";
         ss << "Shashin Zone: " << shashinZone << "\n";

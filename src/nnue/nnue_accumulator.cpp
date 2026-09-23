@@ -1,7 +1,6 @@
 /*
-  ShashChess, a UCI chess playing engine derived from Stockfish
-  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
-  Copyright (C) 2018-2026 The ShashChess developers (see AUTHORS file)
+  ShashChess, a UCI chess playing engine derived from Glaurung 2.1
+  Copyright (C) 2004-2026 The ShashChess developers (see AUTHORS file)
 
   ShashChess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -121,12 +120,9 @@ void AccumulatorStack::evaluate_side(Color                     perspective,
 
     else
     {
-        // update_accumulator_hybrid() accesses accumulators[size - 2]; guard
-        // against underflow on the very first node (size == 1).
-        assert(size >= 2);
         const auto& dirtyPiece = latest().dirtyPiece;
 
-        if (size >= 2 && dirtyPiece.pc == make_piece(perspective, KING)
+        if (dirtyPiece.pc == make_piece(perspective, KING)
             && accumulators[size - 2].computed[perspective]
             && pos.count<ALL_PIECES>() >= MIN_PC_COUNT_HYBRID
             && ((int(dirtyPiece.from) & 0b100) == (int(dirtyPiece.to) & 0b100))

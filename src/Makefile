@@ -528,17 +528,7 @@ ifneq ($(OS),Android)
 endif
 
 ifeq ($(KERNEL),Linux)
-    # Soppressione warning ABI e impostazioni vettoriali per Linux
-    CXXFLAGS += -Wno-psabi -mprefer-vector-width=256 -mno-avx512f
-    
-    # Flag specifiche per architetture AVX2
-    ifeq ($(avx2),yes)
-        CXXFLAGS += -mavx2 -mbmi2 -mfma
-    endif
-endif
-
-ifeq ($(GOLD_DIGGER),yes)
-	CXXFLAGS += -DGOLD_DIGGER
+    CXXFLAGS += -Wno-psabi
 endif
 
 ifeq ($(COMP),)

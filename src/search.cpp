@@ -920,6 +920,8 @@ bool Search::Worker::iterative_deepening() {
 
         if (!threads.stop)
         {
+            completedDepth = rootDepth;  // [SC] learning + MCTS
+
             if (lastBestMovePV.empty() || lastBestMovePV[0] != rootMoves[0].pv[0])
                 lastBestMoveDepth = rootDepth;
 
@@ -1563,19 +1565,19 @@ Value Search::Worker::search(
         int marginMultiplier = 100;
 
         if (isAggressive || isPetrosian)
-            marginMultiplier = 120;
+            marginMultiplier = 90;
         else if (isStrategical)
-            marginMultiplier = 80;
+            marginMultiplier = 110;
 
         if (!isFortressNode
             && (staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial))
             marginMultiplier = std::max(marginMultiplier, 130);
 
         if (isFortressNode)
-            marginMultiplier = 120;
+            marginMultiplier = 60;
 
         if (isStrategical && legalMoveCount > 30)
-            marginMultiplier = std::min(marginMultiplier + 5, 100);
+            marginMultiplier = std::min(marginMultiplier + 5, 115);
 
         auto futility_margin = [&](Depth d) {
             Value futilityMult = std::min(45 + depth * 4, 85);

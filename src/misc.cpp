@@ -171,14 +171,8 @@ std::string engine_version_info() {
 
 #ifdef GIT_SHA
         ss << stringify(GIT_SHA);
-#else
-        ss << "nogit";
 #endif
     }
-
-#ifdef GOLD_DIGGER
-    ss << " GoldDigger";
-#endif
 
     return ss.str();
 }
