@@ -181,6 +181,10 @@ void UCIEngine::loop() {
             // [SC:learning] begin
             if (LD.is_enabled())
             {
+                // A GUI may end a game (adjudication) while we are still searching:
+                // make sure the search thread is done before flushing the trajectory
+                engine.wait_for_search_finished();
+
                 if (LD.learning_mode() == LearningMode::Self)
                 {
                     putQLearningTrajectoryIntoLearningTable();

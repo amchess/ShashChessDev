@@ -34,6 +34,7 @@
 #include <initializer_list>
 #include <iostream>
 #include <list>
+#include <mutex>
 #include <ratio>
 #include <string>
 #include <utility>
@@ -76,9 +77,15 @@ namespace ShashChess {
 using namespace ShashChess::Shashin;
 
 // [SC:learning] begin
-bool                                    useLearning          = true;
-bool                                    enabledLearningProbe = false;
-thread_local std::vector<QLearningMove> qLearningTrajectory;
+bool useLearning          = true;
+bool enabledLearningProbe = false;
+// NOT thread_local: the trajectory is filled by the main search thread at the end of
+// every search, but it is also flushed by the UCI thread on "ucinewgame" and "quit".
+// With thread_local each thread had its own copy: the UCI thread always flushed an
+// empty vector, so in Self mode nothing was saved unless the game was "decided"
+// inside the search (is_game_decided) - e.g. never with GUI adjudications.
+std::vector<QLearningMove> qLearningTrajectory;
+std::mutex                 qLearningTrajectoryMutex;
 // [SC:learning] end
 
 static constexpr std::array<int, 16> lmrDivisor = {3637, 2787, 2761, 2939, 3171, 3347, 3147, 2762,
@@ -581,6 +588,7 @@ void Search::Worker::start_searching() {
                       + 3 * rootPos.count<BISHOP>() + 5 * rootPos.count<ROOK>()
                       + 9 * rootPos.count<QUEEN>();
                     qLearningMove.materialClamp = std::clamp(qLearningMoveMaterial, 17, 78);
+                    std::lock_guard<std::mutex> lock(qLearningTrajectoryMutex);
                     qLearningTrajectory.push_back(qLearningMove);
                 }
                 else
@@ -3224,6 +3232,7 @@ void putQLearningTrajectoryIntoLearningTable() {
     const double learning_rate = 0.5;
     const double gamma         = 0.99;
 
+    std::lock_guard<std::mutex> lock(qLearningTrajectoryMutex);
     if (qLearningTrajectory.size() <= 1)
         return;
 
@@ -3249,6 +3258,7 @@ void putQLearningTrajectoryIntoLearningTable() {
 void setStartPoint() {
     useLearning = true;
     LD.resume();
+    std::lock_guard<std::mutex> lock(qLearningTrajectoryMutex);
     qLearningTrajectory.clear();
 }
 // [SC:learning] end
