@@ -204,6 +204,10 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
 
     [[maybe_unused]] Bitboard threatByLesser[KING + 1];
     [[maybe_unused]] Bitboard enemyAttacks = 0;  // [SC] tutte le case attaccate dall'avversario
+    // [SC] Shashin ordering bonus only in Capablanca (strategical) or tactical phases:
+    // with no Shashin style the quiet moves keep the Stockfish 19 ordering
+    [[maybe_unused]] const bool shashinOrdering =
+      depth > 6 && (MoveConfig::isStrategical || MoveConfig::isTactical);
     if constexpr (Type == QUIETS)
     {
         threatByLesser[PAWN]   = 0;
@@ -213,7 +217,7 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
         threatByLesser[QUEEN] = pos.attacks_by<ROOK>(~us) | threatByLesser[ROOK];
         threatByLesser[KING]  = 0;
 
-        if (depth > 6)
+        if (shashinOrdering)
             enemyAttacks =
               threatByLesser[QUEEN] | pos.attacks_by<QUEEN>(~us) | pos.attacks_by<KING>(~us);
     }
@@ -263,7 +267,7 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
 
             // [SC] Tuning Shashin (versione corretta: prima attackers_to(sq, ~us) usava ~us
             // come occupancy e le condizioni erano sempre false)
-            if (depth > 6 && pt != PAWN)
+            if (shashinOrdering && pt != PAWN)
             {
                 // Capablanca: avamposto non attaccato dall'avversario
                 if (MoveConfig::isStrategical)

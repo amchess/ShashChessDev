@@ -255,6 +255,7 @@ void ShashinManager::initDynamicRootShashinState(const Eval::NNUE::Network&     
     MoveConfig::useMoveShashinLogic = state.dynamicDerived.useMoveGenCrystalLogic;
     MoveConfig::isStrategical       = isStrategical();
     MoveConfig::isAggressive        = state.dynamicDerived.isAggressive;
+    MoveConfig::isTactical          = isTactical();
 }
 
 void ShashinManager::updateRootShashinState(Value           score,
@@ -282,6 +283,7 @@ void ShashinManager::updateRootShashinState(Value           score,
         MoveConfig::isStrategical       = newStrategical;
         MoveConfig::isAggressive        = newAggressive;
     }
+    MoveConfig::isTactical = isTactical();
 }
 
 void ShashinManager::setDynamicDerivedState() {
@@ -325,6 +327,24 @@ void ShashinManager::setStaticState(const Position& rootPos) {
     staticState.opponentKingSafetyScore = king_safety_score(rootPos, ~rootPos.side_to_move());
     staticState.stmKingExposed          = isStmKingExposed();
     staticState.opponentKingExposed     = isOpponentKingExposed();
+}
+
+// [SC] Threads that do not analyse the root (all but one, see Worker::start_searching()), as
+// the helpers of ShashChess 41 where setStaticState() ran on the main thread only.
+// Static flags cleared (null move, futility and ProbCut keep their non-"hot" behaviour) and
+// fortress logic disabled for this thread; the WDL zone is set afterwards by
+// initDynamicRootShashinState(), so the thread still follows the type of position.
+// It must run on the thread's own OS thread (MoveConfig flags are thread_local).
+void ShashinManager::setNeutralStaticState() {
+    state.staticState = StaticState();
+
+    positionCache.posHash       = 0;
+    positionCache.computedMask  = CACHE_FORTRESS;  // fortress "computed" and false
+    positionCache.fortress      = false;
+    positionCache.pawnNearPromo = false;
+    positionCache.sacrificial   = false;
+
+    MoveConfig::isFortress = false;
 }
 
 bool ShashinManager::isFortress(const Position& pos) {
@@ -415,9 +435,11 @@ bool ShashinManager::isPawnNearPromotion(const Position& rootPos) {
         return positionCache.pawnNearPromo;
     }
 
-    positionCache.pawnNearPromo =
-      ((rootPos.pieces(WHITE, PAWN) & (Rank5BB | Rank6BB | Rank7BB))
-       || (rootPos.pieces(BLACK, PAWN) & (Rank2BB | Rank3BB | Rank4BB)));
+    // [SC] A pawn on its 6th or 7th rank. With the 5th rank too, the flag was true in 78%
+    // of the game positions (90% of the suite); now 18% of the game positions and 51% of
+    // the suite.
+    positionCache.pawnNearPromo = ((rootPos.pieces(WHITE, PAWN) & (Rank6BB | Rank7BB))
+                                   || (rootPos.pieces(BLACK, PAWN) & (Rank3BB | Rank2BB)));
 
     positionCache.computedMask |= CACHE_PAWN_PROMO;
     return positionCache.pawnNearPromo;
@@ -472,8 +494,9 @@ ShashinPosition ShashinManager::getShashinRange(Value value, const Position& roo
 
     if (winProbability == CAPABLANCA_MAX)
     {
-        return (wdl.draw == 100) ? ShashinPosition::CAPABLANCA
-                                 : ShashinPosition::TAL_CAPABLANCA_PETROSIAN;
+        // [SC] draw == 100 is unreachable with the Stockfish 19 WDL model (see CAPABLANCA_MIN_DRAW)
+        return (wdl.draw >= CAPABLANCA_MIN_DRAW) ? ShashinPosition::CAPABLANCA
+                                                 : ShashinPosition::TAL_CAPABLANCA_PETROSIAN;
     }
 
     if (winProbability >= 0 && winProbability <= 100)

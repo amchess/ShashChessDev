@@ -378,9 +378,12 @@ Thread* ThreadPool::get_best_thread() const {
     for (auto&& th : threads)
         minScore = std::min(minScore, th->worker->rootMoves[0].score);
 
-    // Vote according to score, and select the best thread
+    // [SC] Vote according to score and completed depth (as Stockfish did up to version 18
+    // and ShashChess 41): the thread that analyses the root with the static Shashin flags
+    // does not reach the depth of the others, so the votes must not be depth-blind.
     for (auto&& th : threads)
-        votes[th->worker->rootMoves[0].pv[0]] += th->worker->rootMoves[0].score - minScore + 14;
+        votes[th->worker->rootMoves[0].pv[0]] +=
+          i64(th->worker->rootMoves[0].score - minScore + 14) * th->worker->completedDepth;
 
     for (auto&& th : threads)
     {

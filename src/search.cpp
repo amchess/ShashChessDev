@@ -383,9 +383,22 @@ void Search::Worker::start_searching() {
 
     accumulatorStack.reset();
 
-    // Non-main threads go directly to iterative_deepening()
-    shashinManager->setStaticState(rootPos);
+    // [SC] Shashin roles. One thread analyses the root (static state: sacrifices, pawns
+    // near promotion, king danger, fortress, mobility) and follows the WDL zone of its own
+    // search: the main thread when it is alone (hard positions, suite), otherwise the
+    // last helper, so that the main thread, which drives time management, keeps a search
+    // close to Stockfish 19. The other threads follow only the WDL zone of the root, as
+    // the helpers of ShashChess 41 (initDynamicRootShashinState in iterative_deepening).
+    // With the static flags on every thread, null move and futility of the whole pool
+    // were driven by the "hot" root flags, true in most game positions.
+    shashinRootAnalysis = threadIdx + 1 == threads.size();
 
+    if (shashinRootAnalysis)
+        shashinManager->setStaticState(rootPos);
+    else
+        shashinManager->setNeutralStaticState();
+
+    // Non-main threads go directly to iterative_deepening()
     if (!is_mainthread())
     {
         iterative_deepening();
@@ -780,18 +793,11 @@ bool Search::Worker::iterative_deepening() {
             // Reset aspiration window starting size
             delta = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 10193;
 
-            if (localShashinManager.isStrategical())
-            {
-                delta = std::max(6, (delta * 9) / 10);
-                if (MoveConfig::isFortress)
-                    delta = std::max(5, delta - 2);
-            }
-            else if (isAggressive || isHighTal)
-            {
+            // [SC] Only Tal widens the window (+12.5%), as in ShashChess 41; otherwise the
+            // Stockfish 19 window. The narrower window for Capablanca/fortress belonged to
+            // the Gold Digger build only, the cap at depth < 10 was not style dependent.
+            if (isAggressive || isHighTal)
                 delta = (delta * 9) / 8;
-            }
-            if (rootDepth < 10)
-                delta = std::min(delta, 15);
 
             Value avg = rootMoves[pvIdx].averageScore;
             alpha     = std::max(avg - delta, -VALUE_INFINITE);
@@ -929,6 +935,16 @@ bool Search::Worker::iterative_deepening() {
         if (!threads.stop)
         {
             completedDepth = rootDepth;  // [SC] learning + MCTS
+
+            // [SC] A helper that analyses the root follows the WDL zone of its own search
+            // after every completed iteration (for the main thread output_pv() does it)
+            if (shashinRootAnalysis && !mainThread && rootDepth > lastShashinUpdatedDepth
+                && !rootMoves[0].is_inexact())
+            {
+                localShashinManager.updateRootShashinState(rootMoves[0].uciScore, rootPos,
+                                                           rootDepth, rootDepth);
+                lastShashinUpdatedDepth = rootDepth;
+            }
 
             if (lastBestMovePV.empty() || lastBestMovePV[0] != rootMoves[0].pv[0])
                 lastBestMoveDepth = rootDepth;
@@ -1572,14 +1588,15 @@ Value Search::Worker::search(
     {
         int marginMultiplier = 100;
 
-        if (isAggressive || isPetrosian)
+        // [SC] As in ShashChess 41 (not the Gold Digger build): Tal 90%, king danger at
+        // most 85%, fortress 60%, otherwise the Stockfish 19 margin. The previous 130%
+        // whenever pawnsNearPromotion or isSacrificial held (true in most game positions)
+        // removed most of the child-node futility pruning of the main thread.
+        if (isAggressive)
             marginMultiplier = 90;
-        else if (isStrategical)
-            marginMultiplier = 110;
 
-        if (!isFortressNode
-            && (staticState.kingDanger || staticState.pawnsNearPromotion || isSacrificial))
-            marginMultiplier = std::max(marginMultiplier, 130);
+        if (staticState.kingDanger)
+            marginMultiplier = std::min(marginMultiplier, 85);
 
         if (isFortressNode)
             marginMultiplier = 60;
@@ -1676,12 +1693,12 @@ Value Search::Worker::search(
             MovePicker mp(pos, ttData.move, probCutBeta - ss->staticEval, &captureHistory);
             Depth      probCutDepth = depth - (improving ? 5 : 3);
 
+            // [SC] Shashin offsets on the Stockfish 19 depth, without the old SF18 clamp to
+            // [0, depth]: SF19 handles probCutDepth <= 0 (qsearch only, TT depth + 1 >= -2)
             if (isAggressive)
                 probCutDepth++;
             else if (isStrategical)
                 probCutDepth--;
-
-            probCutDepth = std::clamp(probCutDepth, 0, depth);
 
             while ((move = mp.next_move()) != Move::none())
             {
@@ -1995,14 +2012,13 @@ skipExtensionAndPruning:
         // Increase reduction if next ply has a lot of fail high
         if ((ss + 1)->cutoffCnt > 1)
         {
+            // [SC] Tactical positions keep the conservative ShashChess formula; all the
+            // others (Capablanca and no Shashin style) use the Stockfish 19 one.
             if (dynamicDerived.isHighTal || isTacticalReactive || staticState.isSacrificial)
                 r += 120 + 1024 * ((ss + 1)->cutoffCnt > 2) + 100 * ((ss + 1)->cutoffCnt > 3)
                    + 1024 * allNode;
-            else if (isStrategical)
-                r += 264 + 1095 * ((ss + 1)->cutoffCnt > 2) + 1138 * allNode;
             else
-                r += 180 + 1024 * ((ss + 1)->cutoffCnt > 2) + 75 * ((ss + 1)->cutoffCnt > 3)
-                   + 1024 * allNode;
+                r += 264 + 1095 * ((ss + 1)->cutoffCnt > 2) + 1138 * allNode;
         }
         // For first picked move (ttMove) reduce reduction
         else if (move == ttData.move)
@@ -2030,11 +2046,11 @@ skipExtensionAndPruning:
         // Apply the computed LMR
         if (depth >= 2 && moveCount > std::max(sibs, 1) && doLMRStep)
         {
-            int  original_r = r;
-            auto lmrDepth   = [&](int red) {
-                return std::max(1,
-                                  newDepth + std::min(-red / 1024, ss->ply < 2 * rootDepth ? 2 : 0))
-                     + PvNode;
+            int original_r = r;
+            // [SC] Stockfish 19 formula, as ShashChess 41 used the SF18 one: the extra cap
+            // "no extension beyond 2 * rootDepth plies" was not in either of them
+            auto lmrDepth = [&](int red) {
+                return std::max(1, std::min(newDepth - red / 1024, newDepth + 2)) + PvNode;
             };
             Depth d = lmrDepth(r);
 
@@ -2586,7 +2602,9 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             if (!givesCheck && move.to_sq() != prevSq && !is_loss(futilityBase)
                 && move.type_of() != PROMOTION)
             {
-                if (moveCount > 2)
+                // [SC] As in ShashChess 41: Shashin threshold (base 2 as Stockfish 19).
+                // The constant 2 had left moveCountThreshold computed but unused.
+                if (moveCount > moveCountThreshold)
                     continue;
 
                 Value futilityValue = futilityBase + PieceValue[pos.piece_on(move.to_sq())];
@@ -3158,8 +3176,10 @@ void SearchManager::output_pv(Search::Worker&           worker,
             syzygy_extend_pv(worker.options, worker.limits, pos, rootMoves[i], v, multiPV);
 
         // [SC:shashin] begin
-        // Solo punteggi esatti: evita che fail-high/low inquinino lo stato Shashin
-        if ((i == 0) && d > worker.lastShashinUpdatedDepth && !rootMoves[i].is_inexact())
+        // Solo punteggi esatti: evita che fail-high/low inquinino lo stato Shashin.
+        // [SC] Only the thread that analyses the root follows the zone of its own search.
+        if (worker.shashinRootAnalysis && (i == 0) && d > worker.lastShashinUpdatedDepth
+            && !rootMoves[i].is_inexact())
         {
             worker.getShashinManager().updateRootShashinState(v, pos, d, worker.rootDepth);
             worker.lastShashinUpdatedDepth = d;

@@ -75,8 +75,17 @@ inline int count_safe_waiting_moves(const Position& pos) {
 
 [[nodiscard]]
 inline bool king_danger(const Position& pos, Color c) noexcept {
-    const Square   ksq       = pos.square<KING>(c);
-    const Bitboard attackers = pos.attackers_to(ksq) & pos.pieces(~c);
+    // [SC] Enemy pieces attacking the king zone (king square and adjacent squares).
+    // Counting only the attackers of the king square meant counting the checkers: the
+    // weighted sum could exceed the threshold only with a double check by two heavy
+    // pieces, so kingDanger was never true (0% of suite and game positions). With the
+    // king zone it is true in about 13% of the suite positions and 6% of game positions.
+    const Square ksq  = pos.square<KING>(c);
+    Bitboard     zone = Attacks::attacks_bb<KING>(ksq) | ksq;
+    Bitboard     attackers = 0;
+    while (zone)
+        attackers |= pos.attackers_to(pop_lsb(zone));
+    attackers &= pos.pieces(~c) & ~pos.pieces(KING);
     if (!attackers)
         return false;
     constexpr int STRONG_WEIGHT    = 3;
@@ -170,11 +179,22 @@ inline bool is_sacrifice(const Position& pos, Move m) noexcept {
         return false;
     Value moveValue = PieceValue[type_of(moved)];
     if (m.type_of() == PROMOTION)
-    {  
+    {
         moveValue += PieceValue[m.promotion_type()] - PieceValue[PAWN];
     }
 
-    return moveValue > PieceValue[type_of(captured)];
+    if (moveValue <= PieceValue[type_of(captured)])
+        return false;
+
+    // [SC] A real sacrifice against the enemy king: the exchange loses material (SEE < 0)
+    // and the capture gives check or lands in the enemy king zone. Any capture by a more
+    // valuable piece, even of an undefended pawn, made 79% of the game positions
+    // "sacrificial" (85% of the suite); now 27% of the game positions and 45% of the suite.
+    if (pos.see_ge(m, 0))
+        return false;
+
+    const Square theirKing = pos.square<KING>(~pos.side_to_move());
+    return pos.gives_check(m) || ((Attacks::attacks_bb<KING>(theirKing) | theirKing) & to);
 }
 
 // [SC:shashin] begin

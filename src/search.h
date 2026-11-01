@@ -379,6 +379,9 @@ class Worker {
     Depth           completedDepth;
     ShashinManager& getShashinManager();
     int             lastShashinUpdatedDepth = 0;
+    // [SC] True for the thread that runs the Shashin analysis of the root in the current
+    // search (static state + WDL zone of its own search), see start_searching()
+    bool shashinRootAnalysis = false;
 
    private:
     bool iterative_deepening();

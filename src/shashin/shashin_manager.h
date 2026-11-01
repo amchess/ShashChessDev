@@ -72,6 +72,9 @@ class ShashinManager {
     // Position analysis
     bool isFortress(const Position& pos);
     void setStaticState(const Position& rootPos);
+    // [SC] Threads that do not analyse the root: no static analysis, only the WDL zone
+    // (as the helpers of ShashChess 41). Clears the static flags and the fortress logic.
+    void setNeutralStaticState();
     bool isSacrificialPosition(const Position& rootPos);
     bool isPawnNearPromotion(const Position& rootPos);
 
@@ -143,8 +146,10 @@ class ShashinManager {
 
     inline __attribute__((always_inline)) bool isStrategical() const {
         // È strategico solo se è Capablanca E non ci sono pericoli immediati.
+        // [SC] A sacrifice against the enemy king is an immediate danger too (isSacrificial
+        // is now true only for losing captures with check or on the enemy king zone).
         return inRange<ShashinPosition::CAPABLANCA>() && !state.staticState.kingDanger
-            && !state.staticState.pawnsNearPromotion;
+            && !state.staticState.pawnsNearPromotion && !state.staticState.isSacrificial;
     }
 
     inline __attribute__((always_inline)) bool isPassive() const {
@@ -157,8 +162,11 @@ class ShashinManager {
     }
 
     inline __attribute__((always_inline)) bool isPetrosian() const {
-        return ShashChess::isInRange(state.dynamicBase.currentRange, ShashinPosition::LOW_PETROSIAN,
-                                     ShashinPosition::HIGH_PETROSIAN);
+        // [SC] The enum grows with the win probability: HIGH_PETROSIAN = 0 ... LOW_PETROSIAN = 4.
+        // The bounds were swapped (LOW_PETROSIAN, HIGH_PETROSIAN), i.e. 4 <= v <= 0:
+        // isPetrosian() was always false and every Petrosian branch was dead code.
+        return ShashChess::isInRange(state.dynamicBase.currentRange, ShashinPosition::HIGH_PETROSIAN,
+                                     ShashinPosition::LOW_PETROSIAN);
     }
     inline __attribute__((always_inline)) bool isTal() const {
         return ShashChess::isInRange(state.dynamicBase.currentRange, ShashinPosition::LOW_TAL,

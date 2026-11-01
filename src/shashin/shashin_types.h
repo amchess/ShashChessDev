@@ -65,6 +65,13 @@ constexpr int   MIDDLE_LOW_TAL_MAX        = 84;
 constexpr int   MIDDLE_TAL_MAX            = 89;
 constexpr int   MIDDLE_HIGH_TAL_MAX       = 94;
 constexpr int   HIGH_TAL_MAX              = 100;
+// [SC] Pure Capablanca (dead draw): win probability == CAPABLANCA_MAX and draw probability
+// >= CAPABLANCA_MIN_DRAW; otherwise win probability 50 is total chaos (TAL_CAPABLANCA_PETROSIAN).
+// The Stockfish 19 WDL model never reaches a 100% draw (at eval 0 its maximum is 99%), so the
+// old "draw == 100" test could never succeed. With 99 the pure Capablanca region (material
+// <= 59, |eval| up to about 26-73 internal units) matches the one ShashChess 41 had with its
+// WDL coefficients (draw == 100 for material <= 52). The zone thresholds are unchanged.
+constexpr int   CAPABLANCA_MIN_DRAW       = 99;
 constexpr Value PawnConversionFactor      = 356;
 constexpr Value VALUE_TB_WIN              = 51 * PawnConversionFactor;
 constexpr Value VALUE_MAX_EVAL            = VALUE_TB_WIN - 8 * PawnConversionFactor;
