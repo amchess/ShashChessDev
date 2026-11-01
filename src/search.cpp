@@ -391,7 +391,13 @@ void Search::Worker::start_searching() {
     // the helpers of ShashChess 41 (initDynamicRootShashinState in iterative_deepening).
     // With the static flags on every thread, null move and futility of the whole pool
     // were driven by the "hot" root flags, true in most game positions.
-    shashinRootAnalysis = threadIdx + 1 == threads.size();
+    // With "MCTS by Shashin" the helpers 1..MCTSThreads may run MCTS instead of alpha-beta:
+    // if the last helper is one of them, the main thread analyses the root.
+    usize rootAnalyst = threads.size() - 1;
+    if (bool(options["MCTS by Shashin"]) && rootAnalyst <= usize(int(options["MCTSThreads"])))
+        rootAnalyst = 0;
+
+    shashinRootAnalysis = threadIdx == rootAnalyst;
 
     if (shashinRootAnalysis)
         shashinManager->setStaticState(rootPos);
